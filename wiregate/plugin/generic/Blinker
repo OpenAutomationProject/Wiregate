@@ -1,0 +1,23 @@
+### Definitionen
+# Eigenen Aufruf-Zyklus auf 300 Sekunden setzen
+$plugin_info{$plugname.'_cycle'} = 86400; # egal..
+
+my $aktiv_ga = "14/6/111";  # Gruppenadresse zum aktivieren
+my $schalt_ga = "1/6/26";     # GA zu schalten
+my $blinkpause = 2;  # Frequenz in sek.
+### Ende Definitionen
+
+if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $aktiv_ga) {
+   $plugin_info{$plugname.'_aktiv'} = int($msg{'data'});
+   knx_write($schalt_ga,int($msg{'data'}),1);
+   $plugin_info{$plugname.'_cycle'} = $blinkpause;
+} else { # zyklischer Aufruf
+   # Plugin an Gruppenadresse "anmelden"
+   $plugin_subscribe{$aktiv_ga}{$plugname} = 1;
+   if ($plugin_info{$plugname.'_aktiv'}) {
+   	knx_write($schalt_ga,knx_read($schalt_ga,0,1)^1,1); # read&write last value - logical OR
+	$plugin_info{$plugname.'_cycle'} = $blinkpause;
+   }
+}
+
+return;

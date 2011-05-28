@@ -1,0 +1,20 @@
+# roomba abfragen und Grafiken speichern
+
+# Eigenen Aufruf-Zyklus auf 300 Sekunden (Default globales RRD-Intervall) setzen
+$plugin_info{$plugname.'_cycle'} = $wg_config{''}{'rrd_interval'};
+
+# Werte holen
+
+my ($dist,$voltage,$current,$temp,$charge,$capacity) = split (',',`/root/roombacmd -p /dev/rfcomm0 -C`);
+
+return "timeout" unless $capacity;
+
+chomp($capacity);
+update_rrd("roomba_EG_volt","",$voltage);
+update_rrd("roomba_EG_current","",$current);
+update_rrd("roomba_EG_temp","",$temp);
+update_rrd("roomba_EG_charge","",$charge);
+update_rrd("roomba_EG_capacity","",$capacity);
+
+#return "RRDs wurden aktualisiert";
+return 0;

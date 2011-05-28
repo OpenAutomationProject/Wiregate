@@ -1,0 +1,83 @@
+# Demo-Plugin PI-Regler (einfach)
+# V1.11 2010-12-14
+
+### Definitionen 
+### Hier werden die Werte/Gruppenadressen definiert
+my $aktiv_ga = "14/5/50"; 
+my $sollwert = 24.0;             # statischer Sollwert, nur falls nicht von sollwert_ga lesbar!
+my $sollwert_ga = "3/2/57";       # Gruppenadresse für Temperatur-Sollwert DPT9 - leer für statischen
+my $istwert_ga = "3/2/56";       # Gruppenadresse für Temperatur-Istwert DPT9
+my $ventil_ga_8bit = "14/5/63";  # Gruppenadresse für Stellantrieb 8bit/1Byte
+my $taktzeit = 15;               # Taktzeit in Minuten für schaltenden Stellantrieb-Regler
+my $proportional = 50;             # Proportionalbereich (P)
+my $nachstellzeit = 240;         # Nachstellzeit in Minuten; Standard 50/240 für FBH
+### Ende Definitionen
+
+
+# Eigenen Aufruf-Zyklus auf 60 Sekunden setzen
+# der Aufrufzyklus ist unabhängig von der Taktzeit und muss kürzer sein!
+$plugin_info{$plugname.'_cycle'} = 60;
+
+my $aktiviert = knx_read($aktiv_ga) || 1; # aktiv falls Adresse nicht lesbar
+if (!int($aktiviert)) {
+   if (knx_read($ventil_ga_8bit) ne 0) { # nur wenn nicht bereits 0 
+      knx_write($ventil_ga_8bit,0,5); # Ventilstellung als DPT5 auf den Bus schreiben
+   } 
+   $plugin_info{$plugname.'_esum1'} = 0;
+   $plugin_info{$plugname.'_stellung1'} = 0;  # Reset
+   return;
+}
+
+if ($sollwert_ga) {
+  # Plugin an Gruppenadresse "anmelden"
+  $plugin_subscribe{$sollwert_ga}{$plugname} = 1;
+  
+  if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $sollwert_ga) {
+     #sollwert vom bus
+     if (!defined $msg{'value'}) { 
+        # falls GA/DPT nicht importiert
+        $msg{'value'} = decode_dpt9($msg{'data'}); 
+     } 
+     $plugin_info{$plugname.'_sollwert'} = $msg{'value'};
+
+     #Wenn sollwert alt ungleich neu: reset
+     if ($msg{'value'} != $plugin_info{$plugname.'_sollwert'}) {
+	     $plugin_info{$plugname.'_esum1'} = 0;
+	     $plugin_info{$plugname.'_stellung1'} = 0;
+	}
+  }
+} else {
+  $plugin_info{$plugname.'_sollwert'} = $sollwert;
+}
+  
+if (time() - $plugin_info{$plugname.'_tlast'} > $taktzeit*60) {   # Aktualisierung nur nach taktzeit
+  $plugin_info{$plugname.'_tlast'} = time(); 
+  my $istwert = knx_read($istwert_ga,300,9); # gecached lesen, max. 300s alt, DPT9
+  my $stellungalt1 = $plugin_info{$plugname.'_stellung1'};
+  
+  # Reglerstellung berechnen
+  my $kp = (1000/$proportional);
+  my $e = ($plugin_info{$plugname.'_sollwert'} - $istwert);
+  if ($stellungalt1 <= 100 and $stellungalt1 >=0) { 
+      $plugin_info{$plugname.'_esum1'} = $plugin_info{$plugname.'_esum1'} + $e;
+  } 
+  my $v4 = ($plugin_info{$plugname.'_esum1'} * $kp * $taktzeit / $nachstellzeit);
+  $plugin_info{$plugname.'_stellung1'} = ($e * $kp) + $v4;
+  
+  if ($plugin_info{$plugname.'_stellung1'} >100) {
+      $plugin_info{$plugname.'_stellung1'}=100;
+      $plugin_info{$plugname.'_esum1'} = ($stellungalt1 - $e * $kp) * $nachstellzeit / $kp / $taktzeit;
+  } 
+  if ($plugin_info{$plugname.'_stellung1'} <0 or $plugin_info{$plugname.'_esum1'} <0) {
+      $plugin_info{$plugname.'_esum1'} = 0;
+      $plugin_info{$plugname.'_stellung1'} = 0 if $plugin_info{$plugname.'_stellung1'} <0;
+  }
+  $plugin_info{$plugname.'_stellung1'} = round($plugin_info{$plugname.'_stellung1'});
+  if ($ventil_ga_8bit) {
+      knx_write($ventil_ga_8bit,$plugin_info{$plugname.'_stellung1'},5);  # Ventilstellung als DPT5 auf den Bus schreiben
+  }
+#  Logeintrag auskommentiert
+#return "Soll $plugin_info{$plugname.'_sollwert'} Ist $istwert P $proportional I $plugin_info{$plugname.'_esum1'} Stell $plugin_info{$plugname.'_stellung1'}"; 
+}
+
+return 0; # Kein Logeintrag

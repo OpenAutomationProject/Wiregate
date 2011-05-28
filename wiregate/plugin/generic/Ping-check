@@ -1,0 +1,73 @@
+# Zum Anzeigen des Status mehrerer Netzwerkgeräte oder der Internetverbindung
+#    Aufgrund der Laufzeitbeschränkung der Plugins nicht mehr als 4-5 IPs testen 
+#
+# Diese Plugin nutzt einen Ping zum Test
+
+### Definitionen
+my @start_ga   = ( "1/1/2", "1/1/4" ); 	             # Gruppenadressen um den Test auszulösen, 
+                                                       # wenn nur eine GA angegeben wird, werden alle IPs geprüft
+my @return_ga  = ( "1/1/1", "1/1/3" );               # Gruppenadressen zur Rückmeldung, 
+                                                       # die Anzahl muss mit der Anzahl der IP-Adressen übereinstimmen)
+my @ip_address = ( "192.168.0.1", "192.168.0.2" );   # IP-Adressen der zu testenden PCs/Geräte
+my $auto_test = "60";		                         # Wert für automatischen Test in Sekunden, leer lassen für keinen auto test,
+                                                       # wenn ein Wert eingetragen wurde, werden immer IPs alle getestet
+### Ende Definitionen
+
+# Plugin an Gruppenadresse(n) "anmelden"
+foreach(@start_ga)
+{
+   $plugin_subscribe{$start_ga[$_]}{$plugname} = 1;
+}
+
+# Eigenen Aufruf-Zyklus auf x Sekunden setzen
+# der Aufrufzyklus ist unabhängig von der Taktzeit und muss kürzer sein!
+if ( $auto_test > 0 ) {
+   $plugin_info{$plugname.'_cycle'} = $auto_test; 
+} else {
+   $plugin_info{$plugname.'_cycle'} = 86400; # Aufruf alle 24 Stunden
+}
+
+
+my $on_off;
+if ( @start_ga == 1 || $auto_test > 0 ) {
+   # Alle Geräte/PCs testen
+  test_all();
+} else {
+   # Nur den aufgerufenden PCs testen
+   if (%msg) { 
+      if ($msg{'apci'} eq "A_GroupValue_Write") { 
+         foreach(@start_ga) {
+            if ($msg{'dst'} eq $start_ga[$_]) {
+               $on_off = ping_test($ip_address[$_]);
+               if ( $on_off == 1 || $on_off == 0 ) {
+	              knx_write($return_ga[$_],$on_off,1);
+               }
+            }
+         }
+      }
+   }
+}
+
+return;
+
+sub test_all {
+   foreach(@return_ga) {
+      # Status des Netzwerkgerätes durch einen Ping testen
+      $on_off = ping_test($ip_address[$_]);
+      # Je nach Ergebnis eine Rückmeldung geben
+      if ( $on_off == 1 || $on_off == 0 ) {
+	     knx_write($return_ga[$_],$on_off,1);
+      } 
+   }
+   return;
+}
+
+sub ping_test {
+	(my $ip_adr) = @_;
+        my $command = "ping -c 2 -w 2 ".$ip_adr;
+	my $status = `$command`;
+	if($status =~ /bytes from/) { return 1; }
+	elsif($status =~ /0 received/) { return 0; }
+	return "Ein Fehler ist beim Testen der IP $ip_adr aufgetreten";
+}
+

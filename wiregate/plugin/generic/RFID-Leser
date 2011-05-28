@@ -1,0 +1,62 @@
+# Plugin R.S-Systems RFID-Reader to KNX
+# Version: 0.2 2010-10-02
+# Benötigt 
+# - RSS RFID-Reader an einem USB-Seriell-Wandler
+# - Eintrag unter Socketverbindungen (socat)
+
+##################
+### DEFINITION ###
+##################
+
+my $socknum = 5;                # Eindeutige Nummer des Sockets +1
+
+# Eigenen Aufruf-Zyklus setzen (Initialisierung/zyklisches prüfen)
+$plugin_info{$plugname.'_cycle'} = 300;
+
+my $recv_ip = "192.168.xxx.xxx"; # Empfangsport (UDP, wie in Socket-Einstellungen)
+my $recv_port = "50011"; # Empfangsport (UDP, wie in Socket-Einstellungen)
+my %rfid_ga;
+$rfid_ga{'30343136323c3634373a20'} = '11/2/1'; # Gruppenadresse auf die bei dieser RFID gesendet wird
+#.. usw.
+my $interval = 30;       # Sendeintervall für RFIDs in Reichweite in Sekunden
+
+#######################
+### ENDE DEFINITION ###
+#######################
+
+# Hauptverarbeitung
+# or ($fh and eof($socket[$socknum]))
+if (!$socket[$socknum]) { # socket erstellen
+    if (defined $socket[$socknum]) { #debug
+        if ($socket[$socknum]->opened) { $socket[$socknum]->close(); }
+        undef $socket[$socknum];
+    }  #debug
+    $socksel->remove($socket[$socknum]);
+    $socket[$socknum] = IO::Socket::INET->new(LocalPort => $recv_port,
+                              Proto => "udp",
+                              LocalAddr => $recv_ip
+                                  )
+         or return ("open of $recv_ip : $recv_port failed: $!");
+    $socksel->add($socket[$socknum]); # add socket to select
+    $plugin_socket_subscribe{$socket[$socknum]} = $plugname; # subscribe plugin
+    return "opened UDP-Socket $socknum";
+} 
+elsif ($fh) { # Read from UDP-Socket
+    my $buf;
+    recv($fh,$buf,255,0);
+    next if(!$buf || length($buf) < 2);            # Bogus messages    
+    my $bufhex = $buf;
+    $bufhex =~ s/(.)/sprintf("%x",ord($1))/eg;
+    if (time() - $plugin_info{$plugname.'_rfidlast_'.$bufhex} < $interval) {
+      # repeated
+      return;
+    }
+    $plugin_info{$plugname.'_rfidlast_'.$bufhex} = time();  
+    if ($rfid_ga{$bufhex}) {
+      knx_write($rfid_ga{$bufhex},1,1);
+      return "RFID $bufhex - sent 1 to $rfid_ga{$bufhex}";
+    }
+    return "Unknown RFID $bufhex";
+}
+return;
+

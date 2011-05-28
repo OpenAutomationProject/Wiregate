@@ -1,0 +1,292 @@
+# Plugin für die Denro One Wettervorhersage
+#
+
+### Definitionen
+my $wetter_anfordern_ga = "5/0/2"; # Gruppenadresse für Objekt 109 Wetterdaten anfordern
+my $wetterdaten_ga = "5/0/3";      # Gruppenadresse für Objekt 110 Wetterdaten
+
+my $abend_daten = "Nacht"; # Entweder "Nacht" oder "Abend" eintragen (Groß- und Kleinschreibung beachten!), 
+                           # bei Abend wird die durchschnittliche Temperatur zwischen 17:00 Uhr und 23:00 Uhr
+                           # und bei Nacht zwischen 23:00 Uhr und 6:00 Uhr ausgegeben
+my $temp_ausgabe = "Mittel"; # Darstellung der Temperaturanzeige (Groß- und Kleinschreibung beachten!)
+                             # Möglich ist: Mittel - Mittelwert zwischen der minimalen und maximalen Temperatur
+                             #              Min    - Minimale Temperatur
+                             #              Max    - Maximale Temperatur
+                             #              Extrem - Bei postiven Temperaturwerten die höchste und
+                             #                       bei negativen Temperaturen die tiefste Temperatur
+
+# Benötigte Daten für die Webabfrage bei wetter.com (Der Link zur API ist ganz unten rechts auf der Seite) 
+my $ProjektName = "denro";  # Name des Projekts bei wetter.com
+my $ApiKey      = "36e8ab1b118408f7ed3a4d9319823621"; # API Key des Projektes
+my $StadtCode    = "DE0001020"; # Stadt-Code z.B. durch Suchen einer Stadt und Kopieren des Codes aus der URL von wetter.com
+### Ende Definitionen
+
+#   XML-Tags von wetter.com
+#    <du>	UTC Zeit (Unix Timestamp)
+#    <d>	Lokale Zeit (Unix Timestamp)
+#    <dhu>	UTC Zeit (ISO 8601)
+#    <dhl> 	Lokale Zeit (ISO 8601)
+#    <p>	Gültigkeitszeitraum der Prognose
+#    <w> 	Code fuer den Wetterzustand
+#    <pc> 	Niederschlagswahrscheinlichkeit in Prozent
+#    <tn> 	Minimaltemperatur in Grad Celsius
+#    <tx> 	Maximaltemperatur in Grad Celsius
+#    <wd> 	Windrichtung in Grad
+#    <ws> 	Windgeschwindigkeit in km/h
+#    <w_txt> 	Wetter in Textform
+#    <wd_txt> 	Windrichtung Text
+#
+#   Aufbau des 14Bytes Datentys (DPT16)
+#    Byte Wert 			Typ
+#    1 	Tag-Id 			INTEGER
+#    2 	01 			fest
+#    3 	Temperatur Früh		INTEGER
+#    4 	Temperatur Mittag 	INTEGER
+#    5 	Temperatur Abend 	INTEGER
+#    6 	02 			fest
+#    7 	Icon-Id Früh 		INTEGER
+#    8 	Icon-Id Mittag 		INTEGER
+#    9 	Icon-Id Abend 		INTEGER
+#    10 04 			fest
+#    11 00 			fest
+#    12 FF 			fest
+#
+
+use LWP::Simple;
+use XML::Simple;
+use Digest::MD5 "md5_hex";
+
+# Plugin an Gruppenadresse "anmelden"
+$plugin_subscribe{$wetter_anfordern_ga}{$plugname} = 1;
+
+# Eigenen Aufruf-Zyklus auf 3 Stunden setzen
+# der Aufrufzyklus ist unabhängig von der Taktzeit und muss kürzer sein!
+$plugin_info{$plugname.'_cycle'} = 10800;
+
+my $SeitenURL     = "http://api.wetter.com/forecast/weather";
+# Generieren der Checksumme, diese wird für jede Stadt neu berechnet
+my $Checksumme    = md5_hex($ProjektName.$ApiKey.$StadtCode); # Berechnen der Checksumme
+my $URL         = $SeitenURL."/city/".$StadtCode."/project/".$ProjektName."/cs/".$Checksumme; # Komplette URL zum Abruf der XML-Infos
+my $xml         = XMLin( get($URL) ); # Globales Array das die abgerufenen Wetterinformationen enthält
+
+# Wetterauswertung heute
+my $denro_heute = wetter_heute();
+knx_write($wetterdaten_ga,$denro_heute,16);
+
+# Wetterauswertung morgen
+my $denro_morgen = wetter_morgen();
+knx_write($wetterdaten_ga,$denro_morgen,16);
+
+# Wetterauswertung übermorgen
+my $denro_uebermorgen = wetter_uebermorgen();
+knx_write($wetterdaten_ga,$denro_uebermorgen,16);
+
+# Wiederholen des Sendens nach fünf Sekunden, da manchmal Werte "verschluckt" werden
+sleep(5);
+# Wetterauswertung heute
+my $denro_heute = wetter_heute();
+knx_write($wetterdaten_ga,$denro_heute,16);
+
+# Wetterauswertung morgen
+my $denro_morgen = wetter_morgen();
+knx_write($wetterdaten_ga,$denro_morgen,16);
+
+# Wetterauswertung übermorgen
+my $denro_uebermorgen = wetter_uebermorgen();
+knx_write($wetterdaten_ga,$denro_uebermorgen,16);
+
+return 0;
+
+sub wetter_heute {
+  my $temp;
+  my $tag_id = "00"; # heute
+  # Früh
+  my $code = substr($xml->{forecast}->{date}->[0]->{time}->[0]->{w},0,1);
+  my $id_frueh = weatherCode_translation( $code );
+  my $temp_min_frueh = $xml->{forecast}->{date}->[0]->{time}->[0]->{tn};
+  my $temp_max_frueh =  $xml->{forecast}->{date}->[0]->{time}->[0]->{tx};
+  my $temp_frueh = denro_temp($temp_min_frueh, $temp_max_frueh);
+  # Nachnmittag
+  $code = substr($xml->{forecast}->{date}->[0]->{time}->[1]->{w},0,1);
+  my $id_mittag = weatherCode_translation( $code );
+  my $temp_min_mittag = $xml->{forecast}->{date}->[0]->{time}->[1]->{tn};
+  my $temp_max_mittag =  $xml->{forecast}->{date}->[0]->{time}->[1]->{tx};
+  my $temp_mittag = denro_temp($temp_min_mittag, $temp_max_mittag);  
+  # Abend 
+  my $id_abend;
+  my $temp_min_abend;
+  my $temp_max_abend;
+  if ( $abend_daten == "Abend" )
+  {
+     # Abends
+     $code = substr($xml->{forecast}->{date}->[0]->{time}->[2]->{w},0,1);
+     $id_abend = weatherCode_translation( $code );
+     $temp_min_abend = $xml->{forecast}->{date}->[0]->{time}->[2]->{tn};
+     $temp_max_abend =  $xml->{forecast}->{date}->[0]->{time}->[2]->{tx};
+     
+  } 
+  else
+  {
+     # Nachts
+     $code = substr($xml->{forecast}->{date}->[0]->{time}->[3]->{w},0,1);
+     $id_abend = weatherCode_translation( $code );
+     $temp_min_abend = $xml->{forecast}->{date}->[0]->{time}->[3]->{tn};
+     $temp_max_abend =  $xml->{forecast}->{date}->[0]->{time}->[3]->{tx}; 
+  }
+  my $temp_abend = denro_temp($temp_min_abend, $temp_max_abend);   
+
+  my $denro_value = chr($tag_id).chr(01).chr($temp_frueh).chr($temp_mittag).chr($temp_abend).chr(02).chr($id_frueh).chr($id_mittag).chr($id_abend).chr(04).chr(00).chr(255);
+  return $denro_value; 
+}
+
+sub wetter_morgen {
+  my $temp;
+  my $tag_id = "01"; # morgen
+  # Früh
+  my $code = substr($xml->{forecast}->{date}->[1]->{time}->[0]->{w},0,1);
+  my $id_frueh = weatherCode_translation( $code );
+  my $temp_min_frueh = $xml->{forecast}->{date}->[1]->{time}->[0]->{tn};
+  my $temp_max_frueh =  $xml->{forecast}->{date}->[1]->{time}->[0]->{tx};
+  my $temp_frueh = denro_temp($temp_min_frueh, $temp_max_frueh);
+  # Nachnmittag
+  $code = substr($xml->{forecast}->{date}->[1]->{time}->[1]->{w},0,1);
+  my $id_mittag = weatherCode_translation( $code );
+  my $temp_min_mittag = $xml->{forecast}->{date}->[1]->{time}->[1]->{tn};
+  my $temp_max_mittag =  $xml->{forecast}->{date}->[1]->{time}->[1]->{tx};
+  my $temp_mittag = denro_temp($temp_min_mittag, $temp_max_mittag);  
+  # Abend
+  my $id_abend;
+  my $temp_min_abend;
+  my $temp_max_abend;
+  if ( $abend_daten == "Abend" )
+  {
+     # Abends
+     $code = substr($xml->{forecast}->{date}->[1]->{time}->[2]->{w},0,1);
+     $id_abend = weatherCode_translation( $code );
+     $temp_min_abend = $xml->{forecast}->{date}->[1]->{time}->[2]->{tn};
+     $temp_max_abend =  $xml->{forecast}->{date}->[1]->{time}->[2]->{tx};
+
+  }
+  else
+  {
+     # Nachts
+     $code = substr($xml->{forecast}->{date}->[1]->{time}->[3]->{w},0,1);
+     $id_abend = weatherCode_translation( $code );
+     $temp_min_abend = $xml->{forecast}->{date}->[1]->{time}->[3]->{tn};
+     $temp_max_abend =  $xml->{forecast}->{date}->[1]->{time}->[3]->{tx};
+  }
+  my $temp_abend = denro_temp($temp_min_abend, $temp_max_abend);  
+
+  my $denro_value = chr($tag_id).chr(01).chr($temp_frueh).chr($temp_mittag).chr($temp_abend).chr(02).chr($id_frueh).chr($id_mittag).chr($id_abend).chr(04).chr(00).chr(255);
+  return $denro_value; 
+}
+
+sub wetter_uebermorgen {
+  my $temp;
+  my $tag_id = "02"; # übermorgen
+  # Früh
+  my $code = substr($xml->{forecast}->{date}->[2]->{time}->[0]->{w},0,1);
+  my $id_frueh = weatherCode_translation( $code );
+  my $temp_min_frueh = $xml->{forecast}->{date}->[2]->{time}->[0]->{tn};
+  my $temp_max_frueh =  $xml->{forecast}->{date}->[2]->{time}->[0]->{tx};
+  my $temp_frueh = denro_temp($temp_min_frueh, $temp_max_frueh);
+  # Nachnmittag
+  $code = substr($xml->{forecast}->{date}->[2]->{time}->[1]->{w},0,1);
+  my $id_mittag = weatherCode_translation( $code );
+  my $temp_min_mittag = $xml->{forecast}->{date}->[2]->{time}->[1]->{tn};
+  my $temp_max_mittag =  $xml->{forecast}->{date}->[2]->{time}->[1]->{tx};
+  my $temp_mittag = denro_temp($temp_min_mittag, $temp_max_mittag);  
+  # Abend
+  my $id_abend;
+  my $temp_min_abend;
+  my $temp_max_abend;
+  if ( $abend_daten == "Abend" )
+  { 
+     # Abends
+     $code = substr($xml->{forecast}->{date}->[2]->{time}->[2]->{w},0,1);
+     $id_abend = weatherCode_translation( $code );
+     $temp_min_abend = $xml->{forecast}->{date}->[2]->{time}->[2]->{tn};
+     $temp_max_abend =  $xml->{forecast}->{date}->[2]->{time}->[2]->{tx};
+  }
+  else
+  {
+     # Nachts
+     $code = substr($xml->{forecast}->{date}->[2]->{time}->[3]->{w},0,1);
+     $id_abend = weatherCode_translation( $code );
+     $temp_min_abend = $xml->{forecast}->{date}->[2]->{time}->[3]->{tn};
+     $temp_max_abend =  $xml->{forecast}->{date}->[2]->{time}->[3]->{tx};
+  }
+  my $temp_abend = denro_temp($temp_min_abend, $temp_max_abend); 
+
+  my $denro_value = chr($tag_id).chr(01).chr($temp_frueh).chr($temp_mittag).chr($temp_abend).chr(02).chr($id_frueh).chr($id_mittag).chr($id_abend).chr(04).chr(00).chr(255);
+
+  return $denro_value; 
+}
+
+sub denro_temp {
+    my $temp_min = shift;
+    my $temp_max = shift;
+    my $denro_temp_value;
+    my $temp;
+    # Abfrage welche Temperaturen der denro one anzeigen soll
+    if ( $temp_ausgabe eq "Max" ) { $temp = $temp_max; }
+    elsif ($temp_ausgabe eq "Min" ) { $temp = $temp_min; }
+    elsif ($temp_ausgabe eq "Extrem" ) 
+    {
+       if ( abs( $temp_min ) >= abs( $temp_max ) ) { $temp = $temp_min; }
+       else { $temp = $temp_max; }
+    }
+    else { $temp = round ( ($temp_min + $temp_max) / 2 ); }
+    # Aufbereiten der negativen Temperaturwerte für den denro one
+    if ( $temp < 0 ) { $denro_temp_value = 256 + $temp; } 
+    else { $denro_temp_value = $temp; }
+    return $denro_temp_value;
+}
+
+sub round {
+    my $value = shift;          # 1. Wert enthält die Zahl die gerundet werden soll
+    my $precision = int(shift); # 2. Wert enthält die Anzahl der Stellen nach dem Komma, auf die gerundet werden soll.
+
+    # Speichert das Vorzeichen und setzt value auf den Absolutwert.
+    my $sign = 1;
+    if($value < 0) 
+        { $sign = -1; }
+    $value = abs($value);
+
+    # Berrechnet den Genauigkeitsfaktor
+    my $pFactor = 10 ** $precision;
+    
+    # Rundet den Wert
+    $value = int(($value * $pFactor) + 0.5) / $pFactor;
+    
+    # Berücksichtigt das ursprüngliche Vorzeichen
+    $value *= $sign;
+    
+    return $value;
+}
+
+sub weatherCode_translation {
+  my $wether_code = shift;
+  my $denro_id;
+  # See denro documentation for codes: http://denro.com/media/files/handbuch_de/KNX-Telegramme_Wetter_de.pdf
+  if    ( $wether_code == "0" ) { $denro_id = "01"; } # heiter
+  elsif ( $wether_code == "1" ) { $denro_id = "02"; } # leicht bewölkt
+  elsif ( $wether_code == "2" ) { $denro_id = "03"; } # partiell bewölkt
+  elsif ( $wether_code == "3" ) { $denro_id = "04"; } # bewölkt
+  elsif ( $wether_code == "4" ) { $denro_id = "12"; } # neblig
+  elsif ( $wether_code == "5" ) { $denro_id = "16"; } # Nieselregen
+  elsif ( $wether_code == "6" ) { $denro_id = "05"; } # Regen
+  elsif ( $wether_code == "7" ) { $denro_id = "07"; } # Schnee
+  elsif ( $wether_code == "8" ) { $denro_id = "09"; } # Regenschauer
+  elsif ( $wether_code == "9" ) { $denro_id = "15"; } # Gewitter
+  else                          { $denro_id = "02"; } # leicht bewölkt als default Wert 
+  
+  return $denro_id;
+}
+
+sub dec2hex {
+   my $dec_value = shift;
+   my $hex_value = sprintf("%02x", abs($dec_value));
+   return $hex_value;
+}
+

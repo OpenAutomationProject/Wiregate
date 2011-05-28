@@ -1,0 +1,32 @@
+# Plugin um daemons (Dienste) per KNX Gruppenadresse zu starten/beenden
+# pptpd in diesem Beispiel, geht natuerlich auch fuer alle anderen
+# Eigenen Aufruf-Zyklus auf taeglich setzen
+$plugin_info{$plugname.'_cycle'} = 86400;
+
+##############################################################################
+### Definitionen
+##############################################################################
+my $daemon = "pptpd";  # Name des dienstes
+my $ga = "0/7/254";      # Gruppenadresse, die ihn starten/beenden soll
+
+##############################################################################
+### Ende Definitionen
+##############################################################################
+
+my $dummy;
+if (%msg) {
+  if ($msg{'apci'} eq "A_GroupValue_Write" and $ga eq $msg{'dst'}) {
+	if($msg{'data'}+0) {
+		$dummy = `/etc/init.d/$daemon restart`;
+		return; # "started $daemon
+	} else {
+		$dummy = `/etc/init.d/$daemon stop`;
+		return; # "stopped $daemon
+	}
+  }
+} else {
+    # cyclic/init/change
+    # subscribe GA's
+      $plugin_subscribe{$ga}{$plugname} = 1;
+}
+return;

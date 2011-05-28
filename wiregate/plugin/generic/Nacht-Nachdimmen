@@ -1,0 +1,33 @@
+# Nachts Licht nur gedimmt einschalten.
+# Plugin hört auf GA des Ein-Befehles und schickt Dimmwert hinterher.
+# V0.5 2011-03-06
+
+### Definitionen 
+### Hier werden die Werte/Gruppenadressen definiert
+my $lichtein_ga = "1/1/11";  # Gruppenadresse Licht Ein/Aus
+my $lichtdim_ga  = "1/3/65";   # Gruppenadresse Licht Dimmwert
+my $dimvalue = 25;   # Dimmwert
+my $starthour = 21;   # Stunde, ab der gedimmt werden soll
+my $endhour = 7;   # Stunde, ab der nicht mehr gedimmt werden soll
+### Ende Definitionen
+
+# Eigenen Aufruf-Zyklus auf 1x täglich setzen, hört ja auf GA
+$plugin_info{$plugname.'_cycle'} = 86400;
+
+# Plugin an Gruppenadresse "anmelden"
+$plugin_subscribe{$lichtein_ga}{$plugname} = 1;
+
+# Nur bei einer gesendeten 1 reagieren
+if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $lichtein_ga && defined $msg{'value'} && $msg{'value'} == "1" ) {
+    # Aktuelle Stunde
+    my $crthour = `date \"+%H\"`;
+    # Wenn innerhalb des Zeitraumes
+    if ($crthour >= $starthour || $crthour <=$endhour) {
+        knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
+        #return "Gedimmt";
+    }
+}
+
+# Kein Log
+return 0;
+
