@@ -1,0 +1,36 @@
+# Plugin zum senden setzen der Uhrzeit des WireGate durch Bustelegramme 
+# z.B. von einer Wetterstation, falls kein NTP-Server erreicht werden kann
+# Datum&Uhrzeit MUESSEN vom Bus lesbar sein! (Lesen-Flag gesetzt)
+#
+# Version: 1.0 2010-07-07
+
+##################
+### DEFINITION ###
+##################
+
+### Definitionen
+# Eigenen Aufruf-Zyklus auf 1x taeglich setzen
+$plugin_info{$plugname.'_cycle'} = 86400;
+
+my $uhrzeit_ga = "0/7/201";  # Gruppenadresse Uhrzeit
+my $datum_ga  = "0/7/200";   # Gruppenadresse Datum
+
+#######################
+### ENDE DEFINITION ###
+#######################
+
+
+# Plugin an Gruppenadresse "anmelden"
+#$plugin_subscribe{$wert_ga}{$plugname} = 1;
+
+my $knxdate = knx_read($datum_ga,1,11);
+my ($dummy,$knxtime) = split(" ",knx_read($uhrzeit_ga,1,10));
+
+if ($knxdate and $knxtime) {
+    my $oldtime = `date \"+%Y-%m-%d %H:%M:%S\"`;
+    my $newtime = `date --set=\"$knxdate $knxtime\"`;
+    $dummy = `hwclock --systohc`;
+    return "Uhrzeit vom Bus gesetzt: $oldtime -> $newtime";
+} else {
+    return "Fehler beim lesen von Datum/Uhrzeit von $datum_ga / $uhrzeit_ga!";
+}

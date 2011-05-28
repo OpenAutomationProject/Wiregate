@@ -1,0 +1,43 @@
+# This plugin handles the mpg123 to stream music
+
+# do all configs here:
+my $knx_addr = '14/5/4'; # address to start/stop the mpg123
+my $mpg123_fifo = '/tmp/mpg123_fifo';
+
+# NOTE: mpg123 currently has a bug that causes it not to be 
+#       able to use the .M3U (container-)format.
+#       => you have to download it and look inside yourself
+# Bug report: https://sourceforge.net/tracker/?fun...04&atid=733194
+my $stream = 'http://gffstream.ic.llnwd.net/stream/gffstream_w12b'; # Bayern3
+
+
+#################################################################
+# do not change anything below, all config stays above
+#################################################################
+
+# subscribe plugin and call it only when necessary
+$plugin_subscribe{$knx_addr}{$plugname} = 1;
+$plugin_info{$plugname.'_cycle'} = 0;
+
+# handle telegrams
+return if ($msg{'dst'} ne $knx_addr); # early exit if the message wasn't meant for us
+
+if ($msg{'apci'} eq 'A_GroupValue_Write') # state of mpg123
+{
+  if( $msg{'data'} eq '00' ) # stop mpg123
+  {
+    my $debug = `echo "Q" > $mpg123_fifo` if( -p $mpg123_fifo );
+    return ; #$debug;
+  } else {                   # start mpg123
+    return "nothing todo"  if( -p $mpg123_fifo ); # nothing to do
+    unlink( $mpg123_fifo ) if( -e $mpg123_fifo ); # delete if it's a file and not a named pipe (see check above)
+    my $debug = `echo "run"; nohup mpg123 -R --fifo $mpg123_fifo > /dev/null &`;
+    
+    sleep 1; # wait a bit so that it can start up...
+    
+    # run stream after sanity check
+    `echo "L $stream" > $mpg123_fifo` if( -p $mpg123_fifo );
+    return ; #$debug;
+  }
+}
+

@@ -1,0 +1,191 @@
+# Plugin zum verarbeiten aller Funktelegramme von FS20/(K)S300/FHZ/FHT/HMS/EM via CUL
+# Version: 0.71 2010-07-28
+
+# - KS300,S300TH-Empfang
+# - FS20<->KNX
+# Code partially derived from fhem.pl, Copyright: Rudolf Koenig (r dot koenig at koeniglich dot de)
+
+# Aufbau möglichst so, dass man unterhalb der Definitionen nichts ändern muss!
+
+##################
+### DEFINITION ###
+##################
+
+my $socknum = 1;                # Eindeutige Nummer des Sockets fuer das CUL; frei wählbar 0-99
+
+#my $cul_dev = "/dev/cul868";    # Adresse / Port CUL/CUN ip:2323
+#my $cul_dev = "192.168.1.191:2323";    # Adresse / Port CUN ip:2323
+my $cul_dev = "localhost:2323";    # Adresse / Port CUL/CUN ip:2323
+# Eigenen Aufruf-Zyklus setzen (Initialisierung/zyklisches prüfen)
+$plugin_info{$plugname.'_cycle'} = 600;
+# Gruppenadressen KS300 - leer um Versand zu unterbinden
+my $ks300_temp_ga = "14/4/1";    # Gruppenadresse für Temperatur-Istwert DPT9
+my $ks300_hum_ga = "14/4/2";     # Gruppenadresse für Luftfeuchte DPT5
+my $ks300_wind_ga = "14/4/3";    # Gruppenadresse für Windgeschwindigkeit DPT9
+my $ks300_rain_ga = "14/4/4";    # Gruppenadresse für Regenmenge l/qm DPT9
+my $ks300_israin_ga = "14/4/5";  # Gruppenadresse für Regen DPT1
+my @s300th_temp_ga; # Nicht auskommentieren!
+my @s300th_hum_ga; # Nicht auskommentieren!
+$s300th_temp_ga[1] = "14/4/6";    # Gruppenadresse für Temperatur-Istwert DPT9 des TH-Sensors mit der Adresse 0
+$s300th_hum_ga[1] = "14/4/7";     # Gruppenadresse für Luftfeuchte DPT5 des Sensors mit der Adresse 0
+my $debug_log = 1;                # Debug-Ausgabe in Plugin-Log
+
+# FS20->KNX
+my %fs20_empfang_ga; # Eintrag darf nicht auskommentiert werden, solange nachfolgend keine GA definiert erfolgt kein Empfang
+#$fs20_empfang_ga{'1234'}{'01'} = "14/5/100";
+# Hauscode 1234, Buttone/Gerät 01 sendet auf EIB-GA 14/5/100
+#$fs_empfang_ga{'1234'}{'02'} = "14/5/101";
+# usw..
+
+# KNX->FS20
+my %fs20_sende_ga; # Eintrag darf nicht auskommentiert werden, solange nachfolgend keine GA definiert erfolgt kein Versand!
+#$fs20_sende_ga{'14/5/200'} = "123401"; # HHHHBB - vierstelliger Hauscode + Button
+#usw...
+
+#######################
+### ENDE DEFINITION ###
+#######################
+# Hauptverarbeitung
+if (!$socket[$socknum] or !$socket[$socknum]->opened or (defined $fh and eof($socket[$socknum]))) { # socket erstellen
+    $socksel->remove($socket[$socknum]);
+    undef $socket[$socknum];
+    if ($cul_dev =~ /^\//) { # local device
+       sysopen($socket[$socknum], $cul_dev, 0x02 ) # 2 O_RDRW 0x800 | 0x800 O_NONBLOCK
+         or return ("open of $cul_dev  failed: $!");
+    } else {
+         $socket[$socknum] = IO::Socket::INET->new(PeerAddr => $cul_dev, Timeout => 2, Blocking => 0)
+         or return ("open of $cul_dev  failed: $!");
+    }
+    syswrite($socket[$socknum],"X01\n");
+    syswrite($socket[$socknum],"l01\n"); # LED on
+    syswrite($socket[$socknum],"V\n"); # LED on
+    $socksel->add($socket[$socknum]); # add socket to select
+    $plugin_socket_subscribe{$socket[$socknum]} = $plugname; # subscribe plugin, damit es bei eintreffenden Daten aufgerufen wird
+    $plugin_info{$plugname.'_cycle'} = 1; # rerun to subscribe GA's
+    return "opened CU* $cul_dev on socket $socknum";
+} elsif ($fh) { # Readline from cul 
+    while (my $buf = <$fh>) {
+            next if(!$buf || length($buf) < 2);            # Bogus messages
+            my $bufhex = $buf;
+            $bufhex =~ s/(.)/sprintf("0x%x ",ord($1))/eg;
+            chomp $buf;
+            $buf =~ s/\r//;
+            my $fn = substr($buf,0,1);
+            my $len = length($buf);
+            syswrite($socket[$socknum],"V\n") unless $fn eq "V"; # update watchdog
+            if($fn eq "F" && $len >= 9) # FS20 F53340311
+            {
+              my $hauscode = substr($buf,1,4);
+              my $button = substr($buf,5,2);
+              my $val = substr($buf,8,1);
+              if ($fs20_empfang_ga{$hauscode}{$button}) { # nur an KNX senden wenn GA definiert
+                knx_write($fs20_empfang_ga{$hauscode}{$button},$val,1);
+              }
+              return "Debug FS20 recv: $buf Hauscode: $hauscode Button $button Wert $val";
+            }
+            elsif($fn eq "T") # FHT
+            {
+              return "Debug FHT recv: $buf \n";
+            }
+            elsif($fn eq "H" && $len >= 13) # HMS
+            {
+                my $type = hex(substr($buf,6,1));
+                my $stat = $type > 1 ? hex(substr($buf,7,2)) : hex(substr($buf,5,2));
+                my $prf  = $type > 1 ? "02" : "05";
+                my $bat  = $type > 1 ? hex(substr($buf,5,1))+1 : 1;
+                my $HA = substr($buf,1,4);
+                my $values = $type > 1 ?  "000000" : substr($buf,7);
+                # RM100: T3
+                return "HMS recv: $buf T$type Status $stat P$prf Batt:$bat Code:$HA Val:$values";
+            }
+            elsif($fn eq "K" && $len == 15)   # KS300
+            {
+                my @a = split("", $buf);
+                my $rain = sprintf("%0.1f", hex("$a[14]$a[11]$a[12]") * 255 / 1000);
+                my $wnd  = sprintf("%0.1f", "$a[9]$a[10].$a[7]" + 0);
+                my $hum  = sprintf( "%02d", "$a[8]$a[5]" + 0);
+                my $tmp  = sprintf("%0.1f", ("$a[6]$a[3].$a[4]"+ 0)*
+                                       (($a[1] & 0xC) ? -1 : 1));
+                my $ir = ((hex($a[1]) & 2)) ? 1 : 0;
+          
+                my $val = "T: $tmp  H: $hum  W: $wnd  R: $rain  IR: $ir";
+                # Add $ks300_interval
+                knx_write($ks300_temp_ga,$tmp,9);
+                knx_write($ks300_hum_ga,$hum,5);
+                knx_write($ks300_wind_ga,$wnd,9);
+                knx_write($ks300_rain_ga,$rain,9);
+                knx_write($ks300_israin_ga,$ir,1);
+                return "KS300 recv: $val";
+            }
+            elsif($fn eq "K" && $len == 9) # S300TH
+            { 
+                my @a = split("", $buf);
+                my $addr = $a[2]+(hex($a[1])&7);
+                my $hum  = sprintf( "%02d", "$a[7]$a[8].$a[5]" + 0);
+                my $tmp  = sprintf("%0.1f", ("$a[6]$a[3].$a[4]"+ 0)*
+                                       ((hex($a[1]) & 8) ? -1 : 1));
+          
+                my $val = "Addr: $addr T: $tmp  H: $hum";
+                # Add $ks300_interval
+                if ($s300th_temp_ga[$addr]) {
+                  knx_write($s300th_temp_ga[$addr],$tmp,9);
+                }
+                if ($s300th_hum_ga[$addr]) {
+                  knx_write($s300th_hum_ga[$addr],$hum,5);
+                }
+                return "S300TH recv: $val : $buf :";
+            }
+            elsif($fn eq "E" && $len >= 11)
+            {
+#             For EM:
+#                Ettaacc111122223333
+#                  tt:type 01=EM-1000s, 02=EM-100-EM, 03=1000GZ
+#                  aa:address, depending on the type above 01:01-04, 02:05-08, 03:09-12
+#                  cc:counter, will be incremented by one for each message
+#                  1111: cumulated value
+#                  2222: last value (Not set for type 2)
+#                  3333: top value  (Not set for type 2)
+              return "Debug EM recv: $buf";
+            }
+            elsif($fn eq "?" or $fn eq "") # empty/error-message
+            {
+              syswrite($socket[$socknum],"B00\n"); # reboot tut gut
+              return "Unknown message $buf! ($len) $bufhex";
+            }
+            elsif($fn eq "V") # watchdog
+            {
+              $plugin_info{$plugname.'_watchdog'} = time();
+              return; # "Watchdog $buf! ($len)";
+            }
+            else { 
+              return "Unknown message $buf! ($len) $bufhex";
+            }
+  }
+} elsif (%msg) {
+  # write from KNX -> send here
+  # There is no checking of 1% bandwidth rule here! If saturated it gets lost/not sent!
+  if ($msg{'apci'} eq "A_GroupValue_Write" and $fs20_sende_ga{$msg{'dst'}}) {
+     my $cmd = ($msg{'data'}+0) ? "11" : "00";
+     my $culcmd = "F".$fs20_sende_ga{$msg{'dst'}}.$cmd."\n";
+     syswrite($socket[$socknum],$culcmd);
+  }
+} else {
+    # cyclic/init/change
+    # subscribe GA's
+    while( my ($k, $v) = each(%fs20_sende_ga) ) {
+      # Plugin an Gruppenadresse "anmelden"
+      $plugin_subscribe{$k}{$plugname} = 1;
+    }
+    my $res = syswrite($socket[$socknum],"X01\n");
+    $res = syswrite($socket[$socknum],"V\n");
+    
+    if (!$res or (($plugin_info{$plugname.'_watchdog'} + $plugin_info{$plugname.'_cycle'}+10) < time())) {
+       $socksel->remove($socket[$socknum]);
+       $socket[$socknum]->close();
+       undef $socket[$socknum];
+       $plugin_info{$plugname.'_cycle'} = 1;
+       return "CU* $cul_dev check failed - disconnect";
+    }
+    return;
+    return("CUL return dunno R1 $res T R2 ");
+}

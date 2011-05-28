@@ -1,0 +1,131 @@
+# Plugin Eiwomisa RGB DMX-Controller
+# Version: 0.1 2011-01-21
+# Benötigt Eiwomisa RGB DMX Controller und socat Eintrag für USB-RS232 Wandler
+
+##################
+### DEFINITION ###
+##################
+
+my $socknum = 9;                # Eindeutige Nummer des Sockets +1
+
+# Eigenen Aufruf-Zyklus setzen (Initialisierung/zyklisches prüfen)
+$plugin_info{$plugname.'_cycle'} = 300;
+# Gruppenadressen <-> DMX 
+# 8Bit/1Byte Dimmwerte werden 1:1 auf DMX-Adressen übersetzt
+my $knx_startGA = "11/1/0"; # DMX-Kanal 0, DMX-Kanal 256=11/1/255, DMX-Kanal 257..512=11/2/0..255
+my $dmx_channels = 8;       # Anzahl der DMX-Kanäle, hier 4 für RGBW Eiwomisa, +3 für externen RGB DMX Empfänger [+1, da 0 nicht benutzt]
+
+
+my $dmx_send_ip = "localhost"; # Sendeport (UDP, sie in Socket-Einstellungen)
+my $dmx_send_port = "50015";   # Sendeport (UDP, sie in Socket-Einstellungen)
+
+# pre-defining bytes for serial data stream to Eiwomisa DMX controller
+my $byte1 = 0;
+my $byte2 = 0;
+my $byte3 = 0;
+my $byte4 = 0;
+my $byte5 = 0;
+my $byte6 = 0;
+
+#######################
+### ENDE DEFINITION ###
+#######################
+
+# Hauptverarbeitung
+if (!$socket[$socknum]) { # socket erstellen
+    if (defined $socket[$socknum]) { #debug
+        if ($socket[$socknum]->opened) { $socket[$socknum]->close(); }
+        undef $socket[$socknum];
+    }  #debug
+    $socksel->remove($socket[$socknum]);
+    $socket[$socknum] = IO::Socket::INET->new(
+                              Proto => "udp",
+                              PeerPort  => $dmx_send_port,
+                              PeerAddr  => $dmx_send_ip,
+                              ReuseAddr => 1
+                               )
+         or return ("open of $dmx_send_ip : $dmx_send_port failed: $!");
+    $socksel->add($socket[$socknum]); # add socket to select
+    
+    $plugin_socket_subscribe{$socket[$socknum]} = $plugname; # subscribe plugin
+    for (my $i=0; $i<$dmx_channels;$i++) {
+        $plugin_subscribe{$knx_startGA}{$plugname} = 1;
+        $knx_startGA = addr2str(str2addr($knx_startGA)+1,1);
+    }
+    return "opened UDP-Socket $socknum";
+} 
+if (%msg) { # telegramm vom KNX
+
+    my $destN = str2addr($msg{'dst'});
+    my $startN = str2addr($knx_startGA);
+    my $dmxchan = $destN - $startN;
+  if ($msg{'apci'} eq "A_GroupValue_Write" and $destN >= $startN and $destN <= $startN+$dmx_channels) {
+
+
+#---- section specific to Eiwomisa controller --- 
+# Encoding value and DMX channel number into specific protocol.
+# For detailed protocol definitions check the website eiwomisa.de
+# Each serial command consists of 6 bytes: 112233445566h 
+# 1. Byte = Startbyte, must be 255
+# 2. Byte = 1. part of value, can be 0-254
+# 3. Byte = 2. part of value, can be 0-1
+# 4. Byte = 1. part of channel, can be 0-254
+# 5. Byte = 2. part of channel, can be 0-254
+# 6. Byte = 3. part of channel, can be 0-4
+
+    $byte1 = 255;     # Settting start byte
+        
+    # encode value
+    if(hex($msg{'data'})>254) {
+        $byte2 = 254; # setting byte 2 to FEh
+        $byte3 = 1;   # setting byte 3 to 1h -> Byte 2+3 == FF
+    }else {
+        $byte2 = hex($msg{'data'}); # byte 2 can take up all values until FE
+        $byte3 = 0;                 # byte 3 will remain empty
+    }
+
+    # encode DMX channel
+    if($dmxchan>512) {    # 254+254+4 == 512
+        $byte4 = 254;     # setting byte 4 
+        $byte5 = 254;     # setting byte 5 
+        $byte6 = 4;       # setting byte 6 
+    }
+    elsif ($dmxchan>508) {       
+        $byte4 = 254;      
+        $byte5 = 254;      
+        $byte6 = $dmxchan-508;   
+    } 
+    elsif($dmxchan>254) {
+        $byte4 = 254;      
+        $byte5 = $dmxchan-254;   
+        $byte6 = 0;        
+    }
+    else {
+        $byte4 = $dmxchan;       
+        $byte5 = 0;        
+        $byte6 = 0;        
+    }
+#---- End of Eiwomisa protocol encode ---
+
+
+        # putting bytes together
+        my $dgram = pack("C[6]",$byte1,$byte2,$byte3,$byte4,$byte5,$byte6);
+
+        # sending to existing socket (via UDP to socat)
+        $socket[$socknum]->send($dgram) or return "send failed: $!";
+
+      ## --uncomment this section for debugging--
+       # my @myArray=unpack('C*', $dgram);              # re-converting $dgram 
+       # my $myStringHex = '';                          # into HEX to be able 
+       #   foreach my $c (@myArray) {                   # to see 
+       #    $myStringHex .= "" . sprintf ("%lX", $c);   # what was sent
+       #   }
+      ## print debug output to logfile
+       #return "Received GA: $msg{'dst'}, value: $msg{'data'}h, which I will send to DMX channel $dmxchan. Serial byte stream: $myStringHex " ; # debug output
+      ##-- end of debug code -- 
+      
+     }
+} 
+
+return;
+

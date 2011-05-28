@@ -1,0 +1,30 @@
+# Plugin # Highspeed-polling
+# Version: 0.1 2010-05-10
+# Sensoren temporär mit maximaler Geschwindigkeit abfragen lassen
+
+##################
+### DEFINITION ###
+##################
+
+my $ga = "10/4/2";
+my $sensorid = "28.28520E020000";
+
+#######################
+### ENDE DEFINITION ###
+#######################
+
+# wird von GA ausgelöst
+$plugin_info{$plugname.'_cycle'} = 0;
+# anmelden
+$plugin_subscribe{$ga}{$plugname} =1;
+
+if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $ga) {
+    if (int($msg{'data'})) {
+      push(@a_owdev_fast,$sensorid) unless grep /$sensorid/, @a_owdev_fast; # avoid dups
+    } else {
+      # remove from highspeed-array
+      @a_owdev_fast = grep !/$sensorid/, @a_owdev_fast;
+    }
+}
+
+return;	

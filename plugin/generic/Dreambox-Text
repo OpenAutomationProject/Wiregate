@@ -1,0 +1,43 @@
+# Plugin zum versenden von Textmeldungen an die Dreambox
+# Version 0.1 13.03.2011
+# Copyright: swiss (http://knx-user-forum.de/members/swiss.html)
+# License: GPL (v2)
+# Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
+
+
+####################
+###Einstellungen:###
+####################
+
+
+my $aufrufende_ga = '1/1/1';
+my $dreambox_ip = '192.168.1.11';
+my $text = 'Zeile1&Zeile2&Zeile3&usw...'; #Für mehrere Zeilen einfach zwischen den Zeilen ein & einfügen
+
+my $timeout = 10; #Zeit in sekunden in der die Meldung angezeigt wird
+my $type = 2; #Meldungstyp: 1=Info, 2=Neutral, 3=Fehler
+
+
+######################
+##ENDE Einstellungen##
+######################
+
+
+# Eigenen Aufruf-Zyklus auf 1T setzen
+$plugin_info{$plugname.'_cycle'} = 86400; 
+# Zyklischer Aufruf nach restart und alle 86400 sek., dient dem anmelden an die Gruppenadresse, einmalig (0) würde in diesem Fall auch genügen
+
+
+
+if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $aufrufende_ga) {
+
+while($text =~ /&/) {
+$text =~ s/&/%20%5Cn/;
+}
+
+get( "http://".$dreambox_ip."/web/message?text=".$text."&type=".$type."&timeout=".$timeout );
+} else { # zyklischer Aufruf
+   # Plugin an Gruppenadresse "anmelden", hierdurch wird das Plugin im folgenden bei jedem eintreffen eines Telegramms auf die GA aufgerufen und der obere Teil dieser if-Schleife durchlaufen
+   $plugin_subscribe{$aufrufende_ga}{$plugname} = 1;
+}
+

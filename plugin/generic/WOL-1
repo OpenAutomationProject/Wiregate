@@ -1,0 +1,103 @@
+# Plugin um ein Netzwerkgerät per Wake On LAN (WOL) aufzuwecken und per ssh/telnet auszuschalten
+#
+# Copyright of original wol part:
+# Perl version by ken.yap@acm.org after DOS/Windows C version posted by
+# Steve_Marfisi@3com.com on the Netboot mailing list
+# Released under GNU Public License, 2000-01-05
+#
+# Hinweise zur Einrichtung von Wake On LAN unter Ubuntu gibt es hier:
+# http://wiki.ubuntuusers.de/Wake_on_LAN
+#
+# Folgende Paket unter Update installieren (nur wenn ssh genutzt werden soll):
+# sshpass
+#
+# Achtung:
+# --------
+# sshpass ist sehr unsicher, da das Passwort im Klartext hier im Plugin steht
+#         und unverschlüsselt an ssh übergeben wird.
+#
+
+### Definitionen
+my $switch_ga = "1/1/0"; 		# Gruppenadresse die einen PC wecken oder ausschalten soll
+my $mac_address = "aa:bb:cc:dd:ee:ff";  # MAC-Adresse des PCs
+my $ip_address = "192.168.0.24";	# IP-Adrssse des PCs
+my $user = "User";			# Benutzername für ssh/telnet login
+my $password = "Pass";			# Passwort des Benutzers
+my $remote_method = "ssh";		# Methode zum Login entweder "ssh" oder "telnet" (Groß- und Kleinschreibung beachten!)
+my $remote_command = "shutdown -h now";	# Befehl zum Ausschalten oder "schlafen legen" des PCs, z. B.
+					#   - Ausschalten: "shutdown -h now" (Default)
+					#   - Suspend-to-RAM (S3): "pm-suspend"
+ 					#   - Suspend-to-disk (S4): "pm-hibernate"
+					#   Weitere Informationen für Ubuntu: http://wiki.ubuntuusers.de/pm-utils
+					#   Um die Befehle von allen Benutzern ohne Administratorrechte auszuführen 
+					#   folgende Zeilen auf dem Ziel-PC eingeben (für Ubuntu, bei anderen Distris den Pfad ggf. anpassen):
+					#      sudo chmod u+s /sbin/shutdown
+					#      sudo chmod u+s /usr/sbin/pm-*
+### Ende Definitionen
+
+use Getopt::Std;
+use Socket;
+use Net::Telnet;
+
+# Plugin an Gruppenadresse "anmelden"
+$plugin_subscribe{$switch_ga}{$plugname} = 1;
+
+# Eigenen Aufruf-Zyklus auf 3 Stunden setzen
+# der Aufrufzyklus ist unabhängig von der Taktzeit und muss kürzer sein!
+$plugin_info{$plugname.'_cycle'} = 10800;
+
+if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $switch_ga) {
+	#Wert vom Bus
+	if (defined $msg{'value'}) { 
+		if ( $msg{'value'} == "1" ) {
+			my $return_value = send_broadcast_packet($mac_address);
+			return "WOL ".$return_value." an ".$mac_address;
+		} else {
+			my $return_value = remote_login();
+			return "Ausschaltbefahl an ".$ip_address." ".$return_value;
+		}
+	}
+}
+
+return;
+
+
+sub send_broadcast_packet {
+	(my $mac) = @_;
+
+	if ($mac !~ /[\da-f]{2}:[\da-f]{2}:[\da-f]{2}:[\da-f]{2}:[\da-f]{2}:[\da-f]{2}/i)  {
+		return "Fehlerhafte MAC-Adresse $mac\n";
+	}
+	print "Sende WOL-Paket an MAC-Adresse $mac\n";
+	# Remove colons
+	$mac =~ tr/://d;
+	# Magic packet is 6 bytes of FF followed by the MAC address 16 times
+	my $magic = ("\xff" x 6) . (pack('H12', $mac) x 16);
+	# Create socket
+	socket(S, PF_INET, SOCK_DGRAM, getprotobyname('udp'))
+		or return "Fehler im Socket: $!\n";
+	# Enable broadcast
+	setsockopt(S, SOL_SOCKET, SO_BROADCAST, 1)
+		or return "Fehler bei Setsockopt: $!\n";
+	# Send the wakeup packet
+	defined(send(S, $magic, 0, sockaddr_in(0x2fff, INADDR_BROADCAST)))
+		or print "Sende: $!\n";
+	close(S);
+	return "Magic Packet gesendet";
+}
+
+sub remote_login {
+	my $command;
+	if ( $remote_method eq "telnet" ) {
+		# Telnet
+		my $telnet = Net::Telnet->new($ip_address);
+		$telnet->login($user,$password);
+		my @lines = $telnet->cmd("$remote_command");
+	} else {
+		# SSH
+		$command = "sshpass -p $password ssh $user"."@".$ip_address.' "'.$remote_command.'"';	
+		my $status = system($command);
+	}
+	return "gesendet";
+}
+

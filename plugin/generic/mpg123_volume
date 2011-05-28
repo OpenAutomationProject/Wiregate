@@ -1,0 +1,35 @@
+# This plugin sets and gets the volume for the WireGate internal sound
+
+# do all configs here:
+my $knx_addr = '14/5/5';
+my $alsa_chanel = 'Headphone';  # other possibility: Master
+
+#################################################################
+# do not change anything below, all config stays above
+#################################################################
+
+# subscribe plugin and call it only when necessary
+$plugin_subscribe{$knx_addr}{$plugname} = 1;
+$plugin_info{$plugname.'_cycle'} = 0;
+
+# handle telegrams
+return if ($msg{'dst'} ne $knx_addr); # early exit if the message wasn't meant for us
+
+if ($msg{'apci'} eq 'A_GroupValue_Write') # change volume
+{
+  # if address is already imported:
+  #my $volume = $msg{'value'};
+  # if address wasn't imported:
+  my $volume = decode_dpt6($msg{'data'});
+
+  my $debug = `amixer sset $alsa_chanel $volume`;
+  return ; #$debug;
+}
+
+if ($msg{'apci'} eq 'A_GroupValue_Read') # get volume
+{
+  my $volume = `amixer sget $alsa_chanel | grep 'Left:' | sed 's/.*Playback \\([0-9]*\\) .*/\\1/'`;
+  knx_write( $knx_addr, $volume, 6 );
+  return ; #"Figured out volume of $volume and sent it to $knx_addr";
+}
+

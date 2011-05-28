@@ -1,0 +1,69 @@
+# Perl script um Zählerwerte via MBUS10(Pegelwandler) auszulesen
+# welcher über die serielle Schnittstelle am Wiregate angeschlossen ist
+
+use Device::SerialPort;
+
+##################
+### DEFINITION ###
+##################
+
+my $zaehler_ga="14/6/1"; # Zaehler GA im EIS 9 Format
+my @zaehler_id=(0x10,0x7B,0x01,0x7C,0x16); # Zaehler ID des MBus Geraet
+my $port = Device::SerialPort->new("/dev/usbserial-1-3.4");
+my $anzahl_zeichen=33; # Anzahl Zeichen welche vom MBus Geraet gelesen werden
+
+
+my $send_data = pack("C*", @zaehler_id);
+# Set up the serial port
+# 2400, 81E on the USB2Serial driver
+$port->read_char_time(0);     # don't wait for each character
+$port->read_const_time(1000); # 1 second per unfulfilled "read" call
+$port->baudrate(2400);
+$port->databits(8);
+$port->stopbits(1);
+$port->parity("even");
+
+my $timeout=1;
+
+#######################
+### ENDE DEFINITION ###
+#######################
+
+# Eigenen Aufruf-Zyklus auf X Sekunden setzen
+$plugin_info{$plugname.'_cycle'} = 300;
+
+# Hauptverarbeitung
+
+my $count_out = $port->write("$send_data\n")
+        || die "Kann Daten nicht schreiben ...\n";
+
+my $chars=0;
+my $buffer="";
+while ($timeout > 0) {
+    my ($count,$saw)=$port->read($anzahl_zeichen);
+    if ($count > 0) {
+        $chars+=$count;
+        $buffer.=$saw;
+    }
+    else {
+        $timeout--;
+    }
+}
+
+# If we get data, then print it
+my $data="";
+if ($chars eq $anzahl_zeichen) {
+    $data=unpack("H*", $buffer);
+    my $zaehlerstand=int(substr($data,60,2) . substr($data,58,2) . substr($data,56,2) . substr($data,54
+,2));
+    if ($plugin_info{$plugname.'_result_saved'} < $zaehlerstand) {
+        $plugin_info{$plugname.'_result_saved'} = $zaehlerstand;
+        knx_write($zaehler_ga,$zaehlerstand,14); # Zaehlerstand auf den Bus schreiben
+        return $zaehlerstand;
+    } else {
+        return 0;
+    }
+} else {
+    return "no data received!\n";
+}
+

@@ -1,0 +1,390 @@
+# Plugin um ein XBMC-MediaCenter als "Radio" zu verwenden
+# 
+
+### Definitionen
+# Gruppenadressen zur Steuerung mit dem Denro One
+# Nicht benötigte Gruppenadressen leer lassen
+my $volume_ga = "8/1/0"; 	# Obj. 211 Audio-Lautstärke
+my $volume_status_ga = "8/1/1";	# Obj. 212 Status der Audio-Lautstärke
+my $mute_ga = "8/1/2";		# Obj. 213 Audio-Stumm
+my $back_ga = "8/1/3";		# Obj. 214 Audio-Zurück, bzw. Vor-/Zurückspringen (1/0) wenn $next_ga = ""
+my $play_ga = "8/1/4";		# Obj. 215 Audio-Abspielen
+my $play_status_ga = "8/1/5";	# Obj. 216 Status der Audio-Wiedergabe
+my $next_ga = "";		# Obj. 217 Audio-Vor, bzw. wenn "" dann ist $back_ga Vor-/Zurückspringen (beim Denro One nicht verwendet)
+# Weitere Gruppenadressen
+my $stop_ga = "";		# Wiedergabe beenden
+my $title_status_ga = "";	# Aktuell abgespielter Titel
+my $rewind_ga = "";             # Zurückspulen, bzw. Vor-/Zurückspulen (1/0) wenn $fast_forward_ga = ""
+my $fast_forward_ga = "";       # Vorspulen, bzw. wenn "" dann ist $rewind_ga Vor-/Zurückspulen
+
+# XBMC Einstellungen
+my $xbmc_ip = "192.168.0.24";		# IP-Adresse vom MediaCenter mit XBMC
+my $xbmc_port = "8080";			# Port des XBMC-Webservers
+my $user = "xbmc";			# Benutzername für Login
+my $password = "xbmc";			# Passwort des Benutzers
+my $default_volume = "50";		# Lautstärke beim Einschalten von 0 bis 100 und "" für keine Default-Lautstärke
+my $path_to_playlist = "/home/xbmc/.xbmc/userdata/playlists/music/Radio.m3u"; # Pfad zur Radio-Playlist auf dem XBMC
+### Ende Definitionen
+
+# Eigenen Aufruf-Zyklus auf 15 Sekunden setzen
+# der Aufrufzyklus ist unabhängig von der Taktzeit und muss kürzer sein!
+$plugin_info{$plugname.'_cycle'} = 15;
+
+# Plugin an Gruppenadressen "anmelden"
+if ( $volume_ga ) { $plugin_subscribe{$volume_ga}{$plugname} = 1; }
+if ( $mute_ga ) { $plugin_subscribe{$mute_ga}{$plugname} = 1; }
+if ( $back_ga ) { $plugin_subscribe{$back_ga}{$plugname} = 1; }
+if ( $play_ga ) { $plugin_subscribe{$play_ga}{$plugname} = 1; }
+if ( $next_ga ) { $plugin_subscribe{$next_ga}{$plugname} = 1; }
+if ( $stop_ga ) { $plugin_subscribe{$stop_ga}{$plugname} = 1; }
+
+# Weitere globale Variablen
+my $playlist_id;         # ID der aktuellen Playlist
+my $current_volume;      # Aktuelle Lautstärke
+my $current_title;       # Aktuell abgespielter Titel
+my $current_play_status; # Status des Player (Wiedergabe/Pause)
+my $current_volume;      # Aktuelle Laustärke
+
+if (%msg) { 
+    if ($msg{'apci'} eq "A_GroupValue_Write") { 
+       if ($msg{'dst'} eq $volume_ga) {
+          #Wert vom Bus
+          if (defined $msg{'value'}) {
+             $current_volume = volume($msg{'value'});
+             knx_write($volume_status_ga,$current_volume,5);
+          }
+       } elsif ($msg{'dst'} eq $mute_ga) {
+          if (defined $msg{'value'}) { 
+             #$current_volume = volume_status();
+             #if ( $msg{'value'} == "1" && $current_volume > 0) {
+             #   mute();
+             #} elsif ($msg{'value'} == "0" && $current_volume == 0) {
+             #   mute();
+             #}
+             $current_volume = volume(0);
+             knx_write($volume_status_ga,$current_volume,5);
+          }
+       } elsif ($msg{'dst'} eq $back_ga) {
+          if (defined $msg{'value'}) { 
+             if ( !$next_ga ) {
+                if ( $msg{'value'} == "1" ) {
+                   skip_next();
+                } else {
+                   skip_back();
+                }
+             } else {
+               if ( $msg{'value'} == "1" ) {
+                  skip_back();
+               }
+            }
+          }
+       } elsif ($msg{'dst'} eq $rewind_ga) {
+          if (defined $msg{'value'}) { 
+             if ( !$fast_forward_ga ) {
+                if ( $msg{'value'} == "1" ) {
+                   fast_forward();
+                } else {
+                   rewind();
+                }
+             } else {
+               if ( $msg{'value'} == "1" ) {
+                  rewind();
+               }
+            }
+          }
+       } elsif ($msg{'dst'} eq $fast_forward_ga) {
+          if (defined $msg{'value'}) { 
+             if ( $msg{'value'} == "1" ) {
+                fast_forward();
+             }
+          }
+       } elsif ($msg{'dst'} eq $play_ga) {
+          my $play_status = play_status();
+          if ( $msg{'value'} == "1" && $play_status == "0") {
+             $current_play_status = play();
+          } elsif ($msg{'value'} == "0" && $play_status == "1") {
+             $current_play_status = pause();
+          }
+          knx_write($play_status_ga,$current_play_status,1);
+       } elsif ($msg{'dst'} eq $next_ga) {
+          if (defined $msg{'value'}) { 
+             if ( $msg{'value'} == "1" ) {
+                skip_next();
+             }
+          }
+       }
+    }
+}
+
+# Um die Busbelastung zu minimieren, wird der Status nur aktualisiert, 
+#   wenn das MediaCenter auf einen Ping antwortet
+my $ping_result = ping_test( $xbmc_ip );
+if ( $ping_result == 1 ) {
+    # Status aktualisieren
+    if ( $volume_status_ga ) {
+       $current_volume = volume_status();
+       knx_write($volume_status_ga,int($current_volume),5);
+    }
+
+    if ( $play_status_ga ) {
+       $current_play_status = play_status();
+       knx_write($play_status_ga,$current_play_status,1);
+    }
+
+    if ( $title_status_ga ) {
+       $current_title = current_title();
+       knx_write($title_status_ga,$current_title,16);
+    }
+}
+
+return;
+
+sub volume {
+  my ($volume) = @_;
+  if ( $volume eq "" ) { $volume == 0; }
+  my $method = "XBMC.SetVolume";
+  my $result = json_request($method, int($volume));
+  $result =~ m#.*"result"\s:\s(\d*).*#s;  
+  return $1;  
+}
+
+sub volume_status {
+  my $method = "XBMC.GetVolume";
+  my $result = json_request($method);
+  #print $result."\n";
+  $result =~ m#.*"result"\s:\s(\d*).*#s;  
+  return $1;
+}
+
+sub mute {
+  my $method = "XBMC.ToggleMute";
+  my $result = json_request($method);
+  #print $result."\n";
+  $result =~ m#.*"result"\s:\s(\d*).*#s;  
+  return $1;
+}
+
+sub skip_back {
+  my $player = active_player();
+  if ( !$player ) { return 0; } # Wenn nichts aktiv die Funktion verlassen
+  my $method = $player."Player.SkipPrevious";
+  my $result = json_request($method);
+  $result =~ m#.*"result"\s:\s"(\w*)".*#s;  
+  return $1;
+}
+
+sub play {
+  my $player = active_player();
+  if ( $player eq "" ) { 
+     $player = "Audio";
+     radio_playlist_create();   # Neue Radio-Playlist erzeugen
+     volume( $default_volume ); # Default-Lautstärke setzen
+     play_list( $player );      # Ersten Eintrag der Playlist abspielen
+     return 1;
+  }
+  my $playStatus = play_status( $player );
+  if ( $playStatus == "1" ) {
+     return 1;
+  } else {
+     my $method = $player."Player.PlayPause";
+     my $result = json_request($method);
+     #print $result."\n";
+     $result =~ m#.*"paused"\s:\s(\w*).*"playing"\s:\s(\w*).*#s;  
+     my $pause = $1;
+     my $playing = $2;
+     #print "Playing: $playing Pause: $pause\n";
+     if ( $playing eq "true" && $pause eq "false" ) {
+        return 1;
+     } else {
+        return 0;
+     }
+  }
+  return 0;
+}
+
+sub pause {
+  my $player = active_player();
+  if ( !$player ) { return 0; };
+  my $playStatus = play_status( $player );
+  if ( $playStatus == 0 ) {
+     return 0;
+  } else {
+     my $method = $player."Player.PlayPause";
+     my $result = json_request($method);
+     #print $result."\n";
+     $result =~ m#.*"paused"\s:\s(\w*).*"playing"\s:\s(\w*).*#s;  
+     my $pause = $1;
+     my $playing = $2;
+     #print "Playing: $playing Pause: $pause\n";
+     if ( $playing eq "true" && $pause eq "false" ) {
+        return 1;
+     } else {
+        return 0;
+     }
+  }
+  return 0;
+}
+
+sub play_list {
+  (my $player) = @_;
+  if ( !$player ) { 
+      $player = active_player();
+      if ( !$player ) { 
+	     return 0;     # Wenn nichts aktiv die Funktion verlassen
+      }
+  }
+  my $method = $player."Playlist.Play"; 
+  my $playing_id = get_playing_id($player);
+  if ( $playing_id eq "" ) { $playing_id = 0; }
+  my $result = json_request($method, $playing_id);
+  #print "\n$result\n";
+}
+
+sub skip_next {
+  my $player = active_player();
+  if ( !$player ) { return 0; } # Wenn nichts aktiv die Funktion verlassen
+  my $method = $player."Player.SkipNext";
+  my $result = json_request($method);
+  $result =~ m#.*"result"\s:\s"(\w*)".*#s;  
+  return $1;
+}
+
+sub stop {
+  my $player = active_player();
+  if ( !$player ) { return 0; } # Wenn nichts aktiv die Funktion verlassen
+  my $method = $player."Player.Stop";
+  my $result = json_request($method);
+  $result =~ m#.*"result"\s:\s"(\w*)".*#s;  
+  return $1;
+}
+
+sub play_status {
+  (my $player) = @_;
+  if ( !$player ) { 
+      $player = active_player();
+      if ( $player eq "" ) { 
+	     return 0;     # Wenn nichts aktiv die Funktion verlassen
+      }
+  }
+  my $method = $player."Player.State";
+  my $result = json_request($method);
+  #print $result."\n";
+  $result =~ m#.*"partymode"\s:\s(\w*),.*"paused"\s:\s(\w*),.*"playing"\s:\s(\w*).*#s; 
+  my $partymode = $1;
+  my $pause = $2;
+  my $playing = $3;
+  if ( $playing eq "true" && $pause eq "false" ) {
+     return 1;
+  } else {
+     return 0;
+  } 
+}
+
+sub current_title {
+  (my $player) = @_;
+  if ( !$player ) { 
+      $player = active_player();
+      if ( !$player ) { 
+	     return 0;     # Wenn nichts aktiv die Funktion verlassen
+      }
+  }
+  my $method = $player."Playlist.GetItems";
+  my $result = json_request($method);
+  my @labels;
+  print "\Result: $result\n";
+  while ($result =~ s#"label"\s:\s"(.*?)"##s) {
+     push(@labels, $1);
+  }
+  #print "\nAlle Label: @labels\n"; 
+  my $current_id = get_playing_id($player);
+  $labels[$current_id]=substr($labels[$current_id],0,14); # String auf 14 Byte kürzen (DPT 16)
+  #print "\nAktueller Titel: $labels[$current_id]\n";
+  return "$labels[$current_id]";
+}
+
+sub rewind {
+  my $player = active_player();
+  if ( !$player ) { return 0; } # Wenn nichts aktiv die Funktion verlassen
+  my $method = $player."Player.Rewind";
+  my $result = json_request($method);
+  $result =~ m#.*"result"\s:\s"(\w*)".*#s;  
+  return $1;
+}
+
+sub fast_forward {
+  my $player = active_player();
+  if ( !$player ) { return 0; } # Wenn nichts aktiv die Funktion verlassen
+  my $method = $player."Player.Forward";
+  my $result = json_request($method);
+  $result =~ m#.*"result"\s:\s"(\w*)".*#s;  
+  return $1;
+}
+
+
+sub json_request {
+  my ($method, $param) = @_;
+  my $command = "curl -s -S -m 3 -X POST -d '".'{"jsonrpc": "2.0", "method": "'.$method.'"';
+  if ( $param ne "" ) {
+     $command = $command.', "params": '.$param;
+  }
+  my $command = $command.', "id": 1}'."'"." http://$xbmc_ip:$xbmc_port/jsonrpc";
+  #print "Command: ".$command."\n";
+  my $result = `$command`;
+  return $result;
+}
+
+sub radio_playlist_create {
+  # Eine vorhandene Playlist leeren
+  my $method = "AudioPlaylist.Clear";
+  my $result = json_request($method);
+  # Playlist neu füllen mit den Inhalten der angegebenen Playlist
+  $method = "AudioPlaylist.Add";
+  my $params = '{ "playlist-file" : "'.$path_to_playlist.'"}';
+  $result = json_request($method, $params);
+}
+
+sub active_player {
+  my $method = "Player.GetActivePlayers";
+  my $result = json_request($method);
+  print $result."\n";
+  $result =~ m#.*"audio"\s:\s(\w*),.*"picture"\s:\s(\w*),.*"video"\s:\s(\w*).*#s;
+  if ( $1 eq "true" ) {
+     # Audio aktiv
+     return "Audio";
+  } elsif ( $2 eq "true") {
+     # Picture aktiv
+     return "Picture";
+  } elsif ( $3 eq "true") {
+     # Video aktiv
+     return "Video";
+  } else {
+     # Nichts ist aktiv
+     return;
+  }
+}
+
+sub get_playing_id {
+  (my $player) = @_;
+  if ( !$player ) { 
+      $player = active_player();
+      if ( !$player ) { 
+	     return 0;     # Wenn nichts aktiv die Funktion verlassen
+      }
+  }
+  my $method = $player."Playlist.GetItems"; 
+  # my $params = '{ "fields": ["title","artist"] }';
+  my $result = json_request($method);
+  $result =~ m#.*"current"\s:\s(\d+),.*"end"\s:\s(.*),.*"start"\s:\s(\d+),.*"total"\s:\s(\d+).*#s;
+  #print $result."Current ID: $1 Letzte ID: $2 Start ID: $3 Anzahl: $4\n";
+  return $1;
+}
+
+sub ping_test {
+	(my $ip_adr) = @_;
+    my $command = "ping -c 2 -w 5 ".$ip_adr;
+	my $status = `$command`;
+	if($status =~ /bytes from/) { return 1; }
+	elsif($status =~ /0 received/) { return 0; }
+	return "Ein Fehler ist beim Testen der IP $ip_adr aufgetreten";
+}
+
