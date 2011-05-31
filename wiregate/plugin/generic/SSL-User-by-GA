@@ -1,0 +1,48 @@
+# Plugin zu (de)aktivieren von SSL(Apache)-Usern per KNX-GA
+# Einrichtung Apache mit Reverse-SSL Proxy sep. notwendig!
+# Hinweise:
+# Umlaute, Sonderzeichen, Leerzeichen etc. in VPN-Clientnamen vermeiden!
+# (default) hier nicht genannte VPN-User sind aktiviert
+
+# Eigenen Aufruf-Zyklus auf 300 Sekunden setzen
+$plugin_info{$plugname.'_cycle'} = 86400;
+##############################################################################
+### Definitionen
+##############################################################################
+my $install = 1; # Installiere skripte/config bei Bedarf
+my %ssl_usermap; # Eintrag darf nicht auskommentiert werden
+my %ssl_passwd;  # Eintrag darf nicht auskommentiert werden
+my %ssl_usermap_status; # Eintrag darf nicht auskommentiert werden
+$ssl_usermap{'0/4/8'} = '/C=DE/ST=Bayern/L=Hohenbrunn/O=WireGate/OU=SSL-Userzertifikat/CN=zertifikat/emailAddress=ssl-user@wiregateXXX';
+$ssl_passwd{'0/4/8'} = 'password'; # xxj31ZMTZzkVA 
+
+$ssl_usermap{'0/4/1'} = 'admin';
+$ssl_passwd{'0/4/1'} = 'password123';
+$ssl_usermap{'0/4/2'} = 'user1';
+$ssl_passwd{'0/4/2'} = 'password456';
+##############################################################################
+### Ende Definitionen
+##############################################################################
+
+if (%msg) {
+  if ($msg{'apci'} eq "A_GroupValue_Write" and $ssl_usermap{$msg{'dst'}}) {
+        if($msg{'data'}+0) {
+        #enable
+                my $dummy = `htpasswd -b /etc/apache2/htpasswd $ssl_usermap{$msg{'dst'}} "$ssl_passwd{$msg{'dst'}}"`;
+                return "enabled $ssl_usermap{$msg{'dst'}} by $msg{'dst'}: $dummy";
+        } else {
+        #disable
+                my $dummy = `htpasswd -D /etc/apache2/htpasswd $ssl_usermap{$msg{'dst'}}`;
+                return "DISabled $ssl_usermap{$msg{'dst'}} by $msg{'dst'}: $dummy";
+        }
+  }
+} else {
+    # cyclic/init/change
+    # subscribe GA's
+    while( my ($k, $v) = each(%ssl_usermap) ) {
+      # Plugin an Gruppenadresse "anmelden"
+      $plugin_subscribe{$k}{$plugname} = 1;
+    }
+}
+return;
+

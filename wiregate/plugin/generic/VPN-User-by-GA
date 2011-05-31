@@ -1,0 +1,97 @@
+# Plugin zu (de)aktivieren von VPN-Usern per KNX-GA
+# Hinweise: 
+# Umlaute, Sonderzeichen, Leerzeichen etc. in VPN-Clientnamen vermeiden!
+# Gross/Kleinschreibung beachten!
+# (default) hier nicht genannte VPN-User sind aktiviert
+ 
+# Eigenen Aufruf-Zyklus auf 300 Sekunden setzen
+$plugin_info{$plugname.'_cycle'} = 86400;
+my %vpn_usermap; # Eintrag darf nicht auskommentiert werden
+my %vpn_usermap_status; # Eintrag darf nicht auskommentiert werden
+
+##############################################################################
+### Definitionen
+##############################################################################
+my $install = 1; # Installiere skripte/config bei Bedarf
+# KNX-Ga zum freigeben der User - Namen wie in VPN-config
+$vpn_usermap{'0/7/202'} = "kunde-hsbetreuer";
+$vpn_usermap{'0/7/204'} = "kunde-notebook";
+$vpn_usermap{'0/7/206'} = "kunde-knx-betreuer";
+$vpn_usermap{'0/7/210'} = "kunde-netzwerkbetreuer";
+# KNX-GA Verbindungs-Status der User  - Namen wie in VPN-config
+$vpn_usermap_status{'0/7/203'} = "kunde-hsbetreuer";
+$vpn_usermap_status{'0/7/205'} = "kunde-notebook";
+$vpn_usermap_status{'0/7/207'} = "kunde-knx-betreuer";
+$vpn_usermap_status{'0/7/211'} = "kunde-netzwerkbetreuer";
+##############################################################################
+### Ende Definitionen
+##############################################################################
+
+if (%msg) {
+  if ($msg{'apci'} eq "A_GroupValue_Write" and $vpn_usermap{$msg{'dst'}}) {
+	if($msg{'data'}+0) {
+	#enable
+		unlink("/etc/openvpn/servers/$vpn_usermap{$msg{'dst'}}.disabled");
+		return "enabled $vpn_usermap{$msg{'dst'}} by $msg{'dst'}";
+	} else {
+	#disable
+		my $dummy = `echo "disabled" > /etc/openvpn/servers/$vpn_usermap{$msg{'dst'}}.disabled`;
+		my $resp = `echo kill $vpn_usermap{$msg{'dst'}} | nc localhost 8001 -q 1`;
+		return "DISabled $vpn_usermap{$msg{'dst'}} by $msg{'dst'} - VPN-server said: $resp";
+	}
+  } elsif ($msg{'apci'} eq "A_GroupValue_Read" and $vpn_usermap{$msg{'dst'}}) {
+    my $status = 0;
+    $status = 1 unless (-e "/etc/openvpn/servers/$vpn_usermap{$msg{'dst'}}.disabled");
+		my @args = ($eib_grpresp_bin, $eib_url, $msg{'dst'},sprintf("%02X", $status));
+		system(@args);
+  } elsif ($msg{'apci'} eq "A_GroupValue_Read" and $vpn_usermap_status{$msg{'dst'}}) {
+    my $status = `grep "^$vpn_usermap_status{$msg{'dst'}}" /var/run/openvpn.server.status`;
+    $status = 1 unless (!$status);
+		my @args = ($eib_grpresp_bin, $eib_url, $msg{'dst'},sprintf("%02X", $status));
+		system(@args);
+  }
+} else {
+    # cyclic/init/change
+    # subscribe GA's
+    while( my ($k, $v) = each(%vpn_usermap) ) {
+      # Plugin an Gruppenadresse "anmelden"
+      $plugin_subscribe{$k}{$plugname} = 1;
+    }
+    open(OUT, ">/etc/openvpn/servers/VPNGA_MAP");
+    while( my ($k, $v) = each(%vpn_usermap_status) ) {
+      # Plugin an Gruppenadresse "anmelden"
+      $plugin_subscribe{$k}{$plugname} = 1;
+      # Write VPNGA_MAP
+      print OUT "$v=$k\n";
+    }
+    close(OUT);
+    # Self-installer ;) Multiline-print doesn't work somehow
+    return unless $install;
+    if (! -e '/etc/openvpn/connect.sh' or ! -e '/etc/openvpn/disconnect.sh') {
+      open(OUT, ">/etc/openvpn/connect.sh");
+      print OUT "#!/bin/bash\n\nif [ -e /etc/openvpn/servers/\$common_name.disabled ]; then\n";
+      print OUT "\tlogger -t VPN 'refused disabled VPN-user \$common_name from \$trusted_ip'\n";
+      print OUT "\texit 1\nelse \n";
+      print OUT "\tlogger -t VPN '\$common_name logged in from \$trusted_ip (\$ifconfig_pool_remote_ip)'\n";
+      print OUT "\tVPNGA=`grep \"^\$common_name=\" /etc/openvpn/servers/VPNGA_MAP | cut -d'=' -f 2`\n";
+      print OUT "\tgroupswrite local:/tmp/eib \$VPNGA 1\nfi\nexit 0\n";
+      close(OUT);
+      open(OUT, ">/etc/openvpn/disconnect.sh");
+      print OUT "#!/bin/bash\n\n";
+      print OUT "logger -t VPN '\$common_name logged out from \$trusted_ip (\$ifconfig_pool_remote_ip) T: \$time_duration S: \$bytes_sent R: \$bytes_received'\n";
+      print OUT "VPNGA=`grep \"^\$common_name\" /etc/openvpn/servers/VPNGA_MAP | cut -d'=' -f 2`\n";
+      print OUT "groupswrite local:/tmp/eib \$VPNGA 0\n";
+      close(OUT);
+      chmod 0755, "/etc/openvpn/connect.sh","/etc/openvpn/disconnect.sh";
+      `sync`;
+    }
+    if (! `grep '^client-connect' /etc/openvpn/server.conf` ) {
+        open(OUT, ">>/etc/openvpn/server.conf");
+        print OUT "script-security 2\nclient-connect connect.sh\nclient-disconnect disconnect.sh\n";
+        close OUT;
+        `/etc/init.d/openvpn restart`;
+        `sync`;
+    }
+}
+return;
+
