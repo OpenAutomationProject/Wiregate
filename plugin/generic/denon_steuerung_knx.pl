@@ -28,8 +28,8 @@ my $ga_einaus = '9/5/0'; #Hier die GA für EIN/AUS eintragen (0=AUS, 1=EIN)
 my $ga_status_einaus = '9/5/30'; #Hier die Rückmelde-GA für die Statusled EIN/AUS eintragen (0=AUS, 1=EIN)
 
 my $ga_lautstaerke = '9/5/4'; #Hier die GA für MAINZONE leiser/lauter eintragen (0=leiser, 1=lauter)
-my $ga_main_lauter = '9/5/5';
-my $ga_main_leiser = '9/5/6';
+my $ga_main_lauter = '9/5/5'; #Hier die GA für MAINZONE lauter eintragen (0=NICHTS, 1=lauter)
+my $ga_main_leiser = '9/5/6'; #Hier die GA für MAINZONE leiser eintragen (0=NICHTS, 1=leiser)
 
 my $ga_status_mute = '9/5/8'; #Hier die Rückmelde-GA für die Statusled Stummschaltung eintragen (0=AUS, 1=EIN)
 
@@ -41,12 +41,12 @@ my $ga_kurzwahltaste2 = '9/1/7'; #Hier die GA für die MEMORY-Taste 2 eintragen (
 my $ga_kurzwahltaste3 = '9/1/8'; #Hier die GA für die MEMORY-Taste 3 eintragen (1=abrufen)
 my $ga_kurzwahltaste4 = '9/1/9'; #Hier die GA für die MEMORY-Taste 4 eintragen (1=abrufen)
 
-my $ga_status_kurzwahltaste1 = '9/1/10';
-my $ga_status_kurzwahltaste2 = '9/1/11';
-my $ga_status_kurzwahltaste3 = '9/1/12';
-my $ga_status_kurzwahltaste4 = '9/1/13';
+my $ga_status_kurzwahltaste1 = '9/1/10'; #Hier die GA für die Status LED der Taste 1 eintragen (1=EIN, 0=Aus)
+my $ga_status_kurzwahltaste2 = '9/1/11'; #Hier die GA für die Status LED der Taste 2 eintragen (1=EIN, 0=Aus)
+my $ga_status_kurzwahltaste3 = '9/1/12'; #Hier die GA für die Status LED der Taste 3 eintragen (1=EIN, 0=Aus)
+my $ga_status_kurzwahltaste4 = '9/1/13'; #Hier die GA für die Status LED der Taste 4 eintragen (1=EIN, 0=Aus)
 
-my $socknum = 118;                # Eindeutige Nummer des Sockets +1
+my $socknum = 118; # Eindeutige Nummer des Sockets +1
 
 
 #Diese Einstellungen können normalerweise so belassen werden!
@@ -61,6 +61,8 @@ my $recv_port = "50105"; # Empfangsport (UDP, siehe in Socket-Einstellungen)
 
 use Time::HiRes qw(usleep nanosleep);
 
+
+#Hier werden den Denon-befehle interne Namen zugewiesen
 my %denon_befehle = ("PWOFF" => "PWSTANDBY\r",
 		     "PWON" => "PWON\r",
 		     "MVDOWN" => "MVDOWN\r",
@@ -74,9 +76,9 @@ my %denon_befehle = ("PWOFF" => "PWSTANDBY\r",
 		     "IRADIO" => "SIIRADIO\r",
 		     "DVR" => "SIDVR\r");  
 
-# Eigenen Aufruf-Zyklus auf 1T setzen
+
 $plugin_info{$plugname.'_cycle'} = 600; 
-# Zyklischer Aufruf nach restart und alle 600 sek., dient dem anmelden an die Gruppenadresse, einmalig (0) würde in diesem Fall auch genügen
+# Zyklischer Aufruf nach restart und alle 600 sek.
 
 if (!$socket[$socknum]) { # socket erstellen
         $socket[$socknum] = IO::Socket::INET->new(LocalPort => $recv_port,
@@ -206,7 +208,7 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
 			}
 		}
 	}
-} elsif ($fh) { # incoming datagram
+} elsif ($fh) { # Wenn der Denon ein Antworttelegramm sendet, wird ab hier der entsprechende Status ausgelesen.
 	my $buf = <$fh>;
 	my $bufhex = unpack("H*",$buf);
 	chomp $buf;
