@@ -1,5 +1,5 @@
-# Plugin zur Multimediasteuerung über einen 8fach Tastsensor
-# Version 0.1 20.06.2011 BETA
+# Plugin zur Multimediasteuerung über einen 8fach Tastsensor oder eine Visu
+# Version 0.2 23.06.2011 BETA
 # Copyright: swiss (http://knx-user-forum.de/members/swiss.html)
 # Die Vorlage für die Datenübertragung via socat stammt von makki (http://knx-user-forum.de/members/makki.html)
 # Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
@@ -32,6 +32,8 @@ my $ga_main_lauter = '9/5/5'; #Hier die GA für MAINZONE lauter eintragen (0=NICH
 my $ga_main_leiser = '9/5/6'; #Hier die GA für MAINZONE leiser eintragen (0=NICHTS, 1=leiser)
 
 my $ga_status_mute = '9/5/8'; #Hier die Rückmelde-GA für die Statusled Stummschaltung eintragen (0=AUS, 1=EIN)
+
+my $ga_status_lautstaerke = '9/5/9'; #Hier wird die aktuelle Lautstärke als 14byte TEXT zurückgegeben (z.B. -35.5)
 
 my $ga_umschalttaste = '9/1/5';
 my $ga_status_umschalttaste = '9/1/14';
@@ -258,7 +260,30 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
 		my $return_value = rueckmeldung_led();
 		return;
 	} elsif ($fn eq "MV" and $buf !~ /^MVMAX/) { # MVMAX is undocumented?
-		# broken, just sends every 2, .5 isn't considered
+		# Hier wird die aktuelle Lautstärke aus der Rückmeldung berechnet
+		$plugin_info{$plugname.'_debug_mv'} = $buf;
+		my $laenge = length($buf);
+		my $wert;
+		
+		if ($laenge == 4){
+			$wert = substr($buf,2,2);
+			$wert = $wert."0";	
+		}elsif ($laenge == 5){
+			$wert = substr($buf,2,3);	
+		}
+		
+		if ($wert ne ""){
+			if ($wert <= 800){
+				$wert = 800 - $wert;
+				$wert = "-".substr($wert,0,2).".".substr($wert,2,1);
+			} elsif ($wert == 995){
+				$wert = "-80.5";
+			} else {
+				$wert = "---.-";
+			}
+			knx_write($ga_status_lautstaerke,$wert,16); #Hier funktioniert etwas noch nicht ganz!
+			$plugin_info{$plugname.'_mv_vol'} = $wert;
+		}
 		return;
 	} else {
 	        return;
@@ -282,7 +307,7 @@ syswrite($socket[$socknum],"MU?\r");
 syswrite($socket[$socknum],"SI?\r");
 return;
 
-#Hier werden die Status LED der Quellenwahltasten angesteuert
+#Hier werden die Status LED's der Quellenwahltasten angesteuert
 sub rueckmeldung_led{
 	SELECT:{
 	if ($plugin_info{$plugname.'_status_quelle'} == 0){ knx_write($ga_status_umschalttaste,0,1); knx_write($ga_status_kurzwahltaste1,0,1); knx_write($ga_status_kurzwahltaste2,0,1); knx_write($ga_status_kurzwahltaste3,0,1); knx_write($ga_status_kurzwahltaste4,0,1); last SELECT; }
