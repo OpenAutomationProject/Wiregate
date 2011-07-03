@@ -1,5 +1,5 @@
 # Plugin zum Zeit abhängigem schaten von GA's (Schaltuhr)
-# Version 0.4 BETA 03.07.2011
+# Version 0.5 BETA 03.07.2011
 # Copyright: swiss (http://knx-user-forum.de/members/swiss.html)
 # License: GPL (v2)
 # Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
@@ -12,9 +12,9 @@ my @Schaltzeiten;
 
 #Pro Schaltpunkt einfach den unten stehenden Eintrag kopieren und anpassen.
 
-push @Schaltzeiten, { name => "bewässerung_ein", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 1, Stunden => 20, Minuten => 30, Wert => 1, DPT => 1, ga => '2/0/0', KW => '', Monat => '' };
+push @Schaltzeiten, { name => "bewässerung_ein", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 1, Stunden => 21, Minuten => 02, Wert => 1, DPT => 1, ga => '2/0/0', KW => '', Monat => '' };
 
-push @Schaltzeiten, { name => "bewässerung_aus", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 1, Stunden => 20, Minuten => 31, Wert => 0, DPT => 1, ga => '2/0/0', KW => '', Monat => '' };
+push @Schaltzeiten, { name => "bewässerung_aus", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 1, Stunden => 21, Minuten => 03, Wert => 0, DPT => 1, ga => '2/0/0', KW => '', Monat => '' };
 
 ######################
 ##ENDE Einstellungen##
@@ -44,27 +44,27 @@ $year += 1900;
 $mon += 1;
 
 my $kw = getWeekNumber($year, $mon, $mday);
-$plugin_info{$plugname.'_debug'} = $kw;
 
 foreach my $element (@Schaltzeiten) {
-
-	if ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} ne '') {
-		if ($element->{KW} == $kw) {
+	if (knx_read($element->{ga},0,$element->{DPT}) ne $element->{Wert}) {
+		if ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} ne '') {
+			if ($element->{KW} == $kw) {
+				knx_write($element->{ga},$element->{Wert},$element->{DPT});
+				next;
+			} else {
+				next;
+			}
+		} elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{Monat} ne '') {
+			if ($element->{Monat} == $mon) {
+				knx_write($element->{ga},$element->{Wert},$element->{DPT});
+				next;
+			} else {
+				next;
+			}
+		} elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} eq '' && $element->{Monat} eq '') {
 			knx_write($element->{ga},$element->{Wert},$element->{DPT});
 			next;
-		} else {
-			next;
 		}
-	} elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{Monat} ne '') {
-		if ($element->{Monat} == $mon) {
-			knx_write($element->{ga},$element->{Wert},$element->{DPT});
-			next;
-		} else {
-			next;
-		}
-	} elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} eq '' && $element->{Monat} eq '') {
-		knx_write($element->{ga},$element->{Wert},$element->{DPT});
-		next;
 	}	
 next;
 }
