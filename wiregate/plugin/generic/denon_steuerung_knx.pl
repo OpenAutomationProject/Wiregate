@@ -1,5 +1,5 @@
 # Plugin zur Multimediasteuerung über einen 8fach Tastsensor oder eine Visu
-# Version 0.2 23.06.2011 BETA
+# Version 0.3 09.07.2011 BETA
 # Copyright: swiss (http://knx-user-forum.de/members/swiss.html)
 # Die Vorlage für die Datenübertragung via socat stammt von makki (http://knx-user-forum.de/members/makki.html)
 # Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
@@ -35,18 +35,33 @@ my $ga_status_mute = '9/5/8'; #Hier die Rückmelde-GA für die Statusled Stummscha
 
 my $ga_status_lautstaerke = '9/5/9'; #Hier wird die aktuelle Lautstärke als 14byte TEXT zurückgegeben (z.B. -35.5)
 
-my $ga_umschalttaste = '9/1/5';
-my $ga_status_umschalttaste = '9/1/14';
+
+my $ga_umschalttaste = '9/1/5'; #Hier wird die GA für die Umschalttaste eingetragen. Damit lassen sich die MEMORY-Tasten doppelt belegen.
+my $ga_status_umschalttaste = '9/1/14'; #Hier wird die GA für die Rückmeldung der Umschalttaste eingetragen.
 
 my $ga_kurzwahltaste1 = '9/1/6'; #Hier die GA für die MEMORY-Taste 1 eintragen (1=abrufen)
-my $ga_kurzwahltaste2 = '9/1/7'; #Hier die GA für die MEMORY-Taste 2 eintragen (1=abrufen)
-my $ga_kurzwahltaste3 = '9/1/8'; #Hier die GA für die MEMORY-Taste 3 eintragen (1=abrufen)
-my $ga_kurzwahltaste4 = '9/1/9'; #Hier die GA für die MEMORY-Taste 4 eintragen (1=abrufen)
-
 my $ga_status_kurzwahltaste1 = '9/1/10'; #Hier die GA für die Status LED der Taste 1 eintragen (1=EIN, 0=Aus)
+my $quelle_kurzwahltaste1 = 'SAT';  #Hier kann die aufzurufende Quelle für die Grundbelegung eingetragen. z.B. SAT, DVD, TV, IRADIO (Internet Radio) oder TUNER angegeben werden
+my $quelle_kurzwahltaste1u = 'NET'; #Hier kann die aufzurufende Quelle für die Zweitbelegung eingetragen. z.B. SAT, DVD, TV, IRADIO (Internet Radio) oder TUNER angegeben werden
+
+
+my $ga_kurzwahltaste2 = '9/1/7'; #Hier die GA für die MEMORY-Taste 2 eintragen (1=abrufen)
 my $ga_status_kurzwahltaste2 = '9/1/11'; #Hier die GA für die Status LED der Taste 2 eintragen (1=EIN, 0=Aus)
+my $quelle_kurzwahltaste2 = 'TV';  #Hier kann die aufzurufende Quelle für die Grundbelegung eingetragen. z.B. SAT, DVD, TV, IRADIO (Internet Radio) oder TUNER angegeben werden
+my $quelle_kurzwahltaste2u = 'IRADIO'; #Hier kann die aufzurufende Quelle für die Zweitbelegung eingetragen. z.B. SAT, DVD, TV, IRADIO (Internet Radio) oder TUNER angegeben werden
+
+
+my $ga_kurzwahltaste3 = '9/1/8'; #Hier die GA für die MEMORY-Taste 3 eintragen (1=abrufen)
 my $ga_status_kurzwahltaste3 = '9/1/12'; #Hier die GA für die Status LED der Taste 3 eintragen (1=EIN, 0=Aus)
+my $quelle_kurzwahltaste3 = 'DVD';  #Hier kann die aufzurufende Quelle für die Grundbelegung eingetragen. z.B. SAT, DVD, TV, IRADIO (Internet Radio) oder TUNER angegeben werden
+my $quelle_kurzwahltaste3u = 'DVR'; #Hier kann die aufzurufende Quelle für die Zweitbelegung eingetragen. z.B. SAT, DVD, TV, IRADIO (Internet Radio) oder TUNER angegeben werden
+
+
+my $ga_kurzwahltaste4 = '9/1/9'; #Hier die GA für die MEMORY-Taste 4 eintragen (1=abrufen)
 my $ga_status_kurzwahltaste4 = '9/1/13'; #Hier die GA für die Status LED der Taste 4 eintragen (1=EIN, 0=Aus)
+my $quelle_kurzwahltaste4 = 'CD';  #Hier kann die aufzurufende Quelle für die Grundbelegung eingetragen. z.B. SAT, DVD, TV, IRADIO (Internet Radio) oder TUNER angegeben werden
+my $quelle_kurzwahltaste4u = 'TUNER'; #Hier kann die aufzurufende Quelle für die Zweitbelegung eingetragen. z.B. SAT, DVD, TV, IRADIO (Internet Radio) oder TUNER angegeben werden
+
 
 my $socknum = 118; # Eindeutige Nummer des Sockets +1
 
@@ -57,26 +72,28 @@ my $send_port = "50106"; # Sendeport (UDP, siehe in Socket-Einstellungen)
 my $recv_ip = "localhost"; # Empfangsport (UDP, siehe in Socket-Einstellungen)
 my $recv_port = "50105"; # Empfangsport (UDP, siehe in Socket-Einstellungen)
 
+
 ######################
 ##ENDE Einstellungen##
 ######################
 
+
+
 use Time::HiRes qw(usleep nanosleep);
 
-
 #Hier werden den Denon-befehle interne Namen zugewiesen
-my %denon_befehle = ("PWOFF" => "PWSTANDBY\r",
-		     "PWON" => "PWON\r",
-		     "MVDOWN" => "MVDOWN\r",
-		     "MVUP" => "MVUP\r",
-		     "SAT" => "SISAT/CBL\r",
-		     "DVD" => "SIDVD\r",
-		     "TV" => "SITV\r",
-		     "NET" => "SINET/USB\r",
-		     "CD" => "SICD\r",
-		     "TUNER" => "SITUNER\r",
-		     "IRADIO" => "SIIRADIO\r",
-		     "DVR" => "SIDVR\r");  
+my %denon_befehle = ("PWOFF" => "PWSTANDBY",
+		     "PWON" => "PWON",
+		     "MVDOWN" => "MVDOWN",
+		     "MVUP" => "MVUP",
+		     "SAT" => "SISAT/CBL",
+		     "DVD" => "SIDVD",
+		     "TV" => "SITV",
+		     "NET" => "SINET/USB",
+		     "CD" => "SICD",
+		     "TUNER" => "SITUNER",
+		     "IRADIO" => "SIIRADIO",
+		     "DVR" => "SIDVR");  
 
 
 $plugin_info{$plugname.'_cycle'} = 600; 
@@ -122,7 +139,7 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
 		if (knx_read($msg{'dst'},0,1) == 1){
 			do
 			{
-				my $return_value2 = command_senden('MVDOWN');
+				my $return_value2 = command_senden('MVDOWN').'\r';
 				usleep(150000);
 			} until (knx_read($msg{'dst'},0,1) == 0);
 			return;
@@ -150,12 +167,12 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
 			if (knx_read($msg{'dst'},0,1) == 1){
 				if ($plugin_info{$plugname.'_status_umschaltung'} == 0) {
 					$plugin_info{$plugname.'_status_quelle'} = 1;
-					my $return_value2 = command_senden('SAT');
+					my $return_value2 = command_senden($quelle_kurzwahltaste1);
 					my $return_value = rueckmeldung_led();
 					return;
 				} elsif ($plugin_info{$plugname.'_status_umschaltung'} == 1){
 					$plugin_info{$plugname.'_status_quelle'} = 5;
-					my $return_value2 = command_senden('NET');
+					my $return_value2 = command_senden($quelle_kurzwahltaste1u);
 					my $return_value = rueckmeldung_led();
 					return;
 				}
@@ -166,12 +183,12 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
 			if (knx_read($msg{'dst'},0,1) == 1){
 				if ($plugin_info{$plugname.'_status_umschaltung'} == 0) {
 					$plugin_info{$plugname.'_status_quelle'} = 2;
-					my $return_value2 = command_senden('TV');
+					my $return_value2 = command_senden($quelle_kurzwahltaste2);
 					my $return_value = rueckmeldung_led();
 					return;
 				} elsif ($plugin_info{$plugname.'_status_umschaltung'} == 1){
 					$plugin_info{$plugname.'_status_quelle'} = 6;
-					my $return_value2 = command_senden('IRADIO');
+					my $return_value2 = command_senden($quelle_kurzwahltaste2u);
 					my $return_value = rueckmeldung_led();
 					return;
 				}
@@ -182,12 +199,12 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
 			if (knx_read($msg{'dst'},0,1) == 1){
 				if ($plugin_info{$plugname.'_status_umschaltung'} == 0) {
 					$plugin_info{$plugname.'_status_quelle'} = 3;
-					my $return_value2 = command_senden('DVD');
+					my $return_value2 = command_senden($quelle_kurzwahltaste3);
 					my $return_value = rueckmeldung_led();
 					return;
 				} elsif ($plugin_info{$plugname.'_status_umschaltung'} == 1){
 					$plugin_info{$plugname.'_status_quelle'} = 7;
-					my $return_value2 = command_senden('DVR');
+					my $return_value2 = command_senden($quelle_kurzwahltaste3u);
 					my $return_value = rueckmeldung_led();
 					return;
 				}
@@ -198,12 +215,12 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
 			if (knx_read($msg{'dst'},0,1) == 1){
 				if ($plugin_info{$plugname.'_status_umschaltung'} == 0) {
 					$plugin_info{$plugname.'_status_quelle'} = 4;
-					my $return_value2 = command_senden('CD');
+					my $return_value2 = command_senden($quelle_kurzwahltaste4);
 					my $return_value = rueckmeldung_led();
 					return;
 				} elsif ($plugin_info{$plugname.'_status_umschaltung'} == 1){
 					$plugin_info{$plugname.'_status_quelle'} = 8;
-					my $return_value2 = command_senden('TUNER');
+					my $return_value2 = command_senden($quelle_kurzwahltaste4u);
 					my $return_value = rueckmeldung_led();
 					return;
 				}
@@ -237,24 +254,15 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
 			$plugin_info{$plugname.'_status_quelle'} = 0;
 			
 		} else {
-			if ($buf eq "SISAT/CBL"){
-				$plugin_info{$plugname.'_status_quelle'} = 1;
-			} elsif ($buf eq "SITV") {
-				$plugin_info{$plugname.'_status_quelle'} = 2;
-			} elsif ($buf eq "SIDVD") {
-				$plugin_info{$plugname.'_status_quelle'} = 3;		
-			} elsif ($buf eq "SICD") {
-				$plugin_info{$plugname.'_status_quelle'} = 4;
-			} elsif ($buf eq "SINET/USB") {
-				$plugin_info{$plugname.'_status_quelle'} = 5;
-			} elsif ($buf eq "SIIRADIO") {
-				$plugin_info{$plugname.'_status_quelle'} = 6;
-			} elsif ($buf eq "SIDVR") {
-				$plugin_info{$plugname.'_status_quelle'} = 7;
-			} elsif ($buf eq "SITUNER") {
-				$plugin_info{$plugname.'_status_quelle'} = 8;
-			} else {
-				$plugin_info{$plugname.'_status_quelle'} = 0;
+			SELECT:{
+			if ($buf eq $denon_befehle{$quelle_kurzwahltaste1}){ $plugin_info{$plugname.'_status_quelle'} = 1; last SELECT; }
+			if ($buf eq $denon_befehle{$quelle_kurzwahltaste2}){ $plugin_info{$plugname.'_status_quelle'} = 2; last SELECT; }
+			if ($buf eq $denon_befehle{$quelle_kurzwahltaste3}){ $plugin_info{$plugname.'_status_quelle'} = 3; last SELECT; }
+			if ($buf eq $denon_befehle{$quelle_kurzwahltaste4}){ $plugin_info{$plugname.'_status_quelle'} = 4; last SELECT; }
+			if ($buf eq $denon_befehle{$quelle_kurzwahltaste1u}){ $plugin_info{$plugname.'_status_quelle'} = 5; last SELECT; }
+			if ($buf eq $denon_befehle{$quelle_kurzwahltaste2u}){ $plugin_info{$plugname.'_status_quelle'} = 6; last SELECT; }
+			if ($buf eq $denon_befehle{$quelle_kurzwahltaste3u}){ $plugin_info{$plugname.'_status_quelle'} = 7; last SELECT; }
+			if ($buf eq $denon_befehle{$quelle_kurzwahltaste4u}){ $plugin_info{$plugname.'_status_quelle'} = 8; last SELECT; }
 			}
 		}
 		my $return_value = rueckmeldung_led();
@@ -322,7 +330,10 @@ sub rueckmeldung_led{
 	}
 }
 
+
 sub command_senden{
 	my $befehl = $_[0];
-	syswrite($socket[$socknum], $denon_befehle{$befehl});
+	my $command = $denon_befehle{$befehl}."\r";
+	$plugin_info{$plugname.'_debug'} = $command;
+	syswrite($socket[$socknum], $command);
 }
