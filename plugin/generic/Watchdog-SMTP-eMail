@@ -1,0 +1,42 @@
+# Demo-Plugin zum prüfen auf Timeout-Fehler und eMail-Versand
+use Net::SMTP;
+
+my $Empfaenger = 'meine@keine.de';
+my $Absender = 'WireGate <wiregate102@elabnet.de>';
+my $Betreff = "Plugin-Alarm!";
+my $mailserver='mail-out.elabnet.de'; # SMTP-Relay: das muss natuerlich angepasst werden!
+# Das kann tricky sein mit GMX&co..
+# Fix-me: besser waere den lokale Exim-Mailserver zu verwenden
+# Dieser muesste jedoch erst mit einem entspr. Relay konfiguriert werden
+
+$plugin_info{$plugname.'_cycle'} = 300;
+
+my $ret;
+foreach (@plugins) {
+my $plugname2 = basename($_);
+if ($plugin_info{$plugname2.'_timeout_err'} >= $plugin_max_errors) {
+      $ret .= "Alarm: Plugin $plugname2 hat $plugin_info{$plugname2.'_timeout_err'} Timeout-Fehler (Max: $plugin_max_errors)";
+      # Alert
+      if (!$plugin_info{$plugname2.'_timeout_alarm'}) {
+            # sende Warn-eMail
+            my $smtp = Net::SMTP->new($mailserver, Timeout => 5);
+            $smtp->mail($Absender);
+            $smtp->to($Empfaenger); 
+            $smtp->data();
+            $smtp->datasend("To: $Empfaenger\n"); # Empfänger (Header)
+            $smtp->datasend("Subject: $Betreff\n"); # Betreff
+            $smtp->datasend("\n");
+            $smtp->datasend("$ret\n");
+            $smtp->dataend();
+            $smtp->quit;
+        }
+        $plugin_info{$plugname2.'_timeout_alarm'} = 1;
+    } else {
+      # Reset Merker
+      $plugin_info{$plugname2.'_timeout_alarm'} = 0;
+    }
+    #$ret .= "$plugname2 Timeouts: $plugin_info{$plugname2.'_timeout_err'}";
+}
+
+return $ret;
+
