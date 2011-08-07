@@ -1,12 +1,20 @@
-# Plugin zum Zeitabhängigen Schalten von GA's (Schaltuhr)
+# Plugin zum Zeitabhaengigen Schalten von GA's (Schaltuhr)
 # License: GPL (v2)
 # version von emax
-# Version 1, 8.7.2011
+# $Id$
 # Copyright: Edgar (emax) Hermanns, emax at berlios Punkt de
+#--------------------------------------------------------------------
+#  CHANGE LOG:
+#  ##  who  yyyymmdd   bug#  description
+#  --  ---  --------  -----  ----------------------------------------
+#   .  ...  ........  .....  vorlage 
+#   1  edh  20110807  -----  wg. utf-8 Zirkus Umlaute in ae/ue/oe geaendert
+#   0  edh  20110708  -----  erste Version
+ 
 
-####################
-###Einstellungen:###
-####################
+#---------------
+# Einstellungen:
+#---------------
 
 my @Zeiten = 
     ( 
@@ -16,39 +24,39 @@ my @Zeiten =
       { Name=>'AussenlichtAus', Aktiv=>'1', Std=>'7',   Min=> '0',  MTag=>undef, Mon=>undef, WTag=>'2,4,6', Wert=>'0', DPT=>'1', GA=>'1/2/40' }
     );
 
-######################
-##ENDE Einstellungen##
-######################
+#-------------------  
+# ENDE Einstellungen  
+#-------------------  
 
 use POSIX;
 
-############################################################
+#--------------------------------------------------------------------
 # Eigenen Aufruf-Zyklus setzen
 # Das script verarbeitet keine Sekunden, weshalb die kleinste 
-# Granulaität ohne zusätzlioche Statusverarbeitung eine Minute ist. 
-############################################################
+# Granulaitaet ohne zusaetzlioche Statusverarbeitung eine Minute ist. 
+#--------------------------------------------------------------------
 my $cycleTime = 60;
 
-############################################################
-# definiert die Sekunde, ab der neu synchronisiert wird    #
-############################################################
+#--------------------------------------------------------------------
+# definiert die Sekunde, ab der neu synchronisiert wird
+#--------------------------------------------------------------------
 my $slotEnd = 10; 
 
-############################################################
+#--------------------------------------------------------------------
 # Die Versionsnummer ist Teil des plugin_info hashes und dient
 # dazu, dass das script definierte Anfangskonditionen findet 
-# auch ohne alles neu starten zu müssen. Die Nummer 
-# einfach nach einer Änderung des scripts um eins erhöhen.
-############################################################
+# auch ohne alles neu starten zu muessen. Die Nummer 
+# einfach nach einer AEnderung des scripts um eins erhoehen.
+#--------------------------------------------------------------------
 my $version = 1;
 
-###################################################################
-# Auswertung von Bereichs und Listenvergleichen                   #
-# Prüft, ob ein Wert zu einer Liste oder in einen Bereich passt   #
-###################################################################
+#--------------------------------------------------------------------
+# Auswertung von Bereichs und Listenvergleichen 
+# Prueft, ob ein Wert zu einer Liste oder in einen Bereich passt
+#--------------------------------------------------------------------
 sub matches
 {
-    my ($value, $def) = @_;  # Zu prüfender Wert, Bereichsdefinition
+    my ($value, $def) = @_;  # Zu pruefender Wert, Bereichsdefinition
     (!$def) and return 1;
     foreach (split(/,/, $def))
     {        
@@ -59,9 +67,9 @@ sub matches
     return 0;
 }
 
-##########
-# main() #
-##########
+#====================================================================
+# main()
+#====================================================================
 
 # kontrollierte Startkonditionen setzen
 if (!defined $plugin_info{$plugname.$version.'firstRun'}) 
@@ -75,19 +83,19 @@ if (!defined $plugin_info{$plugname.$version.'firstRun'})
 my ($curSec,$curMin,$curStu,$curMTag,$curMon,$curJahr,$curWTag,$curJTag,$isdst) = localtime(time);
 $curJahr += 1900;
 
-#######################################################################
-# Es ist sinnvoll, dafür zu sorgen, dass die Startzeit dieses Plugins 
-# mit der Zeit nicht "abdriftet", da sonst über lange Laufzeiten ein 
-# Minutenüberlauf entstehen könnte, und so Ereignisse verloren gingen.
-# Aus diesem Grund prüft das script, ob es innerhalb der ersten 10 Sekunden 
-# einer Minute läuft, Wenn das nicht der Fall ist, wird so lange eine 
-# verkürzte Zykluszeit verwendet, bis die Ausführung wieder im vorgesehenen 
-# Zeitraum abläuft.
+#--------------------------------------------------------------------  
+# Es ist sinnvoll, dafuer zu sorgen, dass die Startzeit dieses Plugins 
+# mit der Zeit nicht "abdriftet", da sonst ueber lange Laufzeiten ein 
+# Minutenueberlauf entstehen koennte, und so Ereignisse verloren gingen.
+# Aus diesem Grund prueft das script, ob es innerhalb der ersten 10 Sekunden 
+# einer Minute laeuft, Wenn das nicht der Fall ist, wird so lange eine 
+# verkuerzte Zykluszeit verwendet, bis die Ausfuehrung wieder im vorgesehenen 
+# Zeitraum ablaeuft.
 #
-# Bei der Erstausführung des Plugins nimmt dieses erst nach Erreichen 
+# Bei der Erstausfuehrung des Plugins nimmt dieses erst nach Erreichen 
 # des vorgesehenen Zeitfensters die eigentliche Arbeit auf, weil der 
-# Abstand zwischen zwei sonst zu klein werden könnte.
-#######################################################################
+# Abstand zwischen zwei sonst zu klein werden koennte.
+#--------------------------------------------------------------------
 
 if ($curSec >= $slotEnd)
 {
@@ -97,11 +105,11 @@ if ($curSec >= $slotEnd)
             $plugin_info{$plugname.'_cycle'} = 1;
     }
     
-    # bei Erstausführung auf Zeitfenster warten
+    # bei Erstausfuehrung auf Zeitfenster warten
     ($plugin_info{$plugname.$version.'firstRun'} == 1) and return;
 }
 
-# prüfen, ob in dieser Minute bereits ausgeführt
+# pruefen, ob in dieser Minute bereits ausgefuehrt
 (defined $plugin_info{$plugname.$version.'lastMinute'} && $plugin_info{$plugname.$version.'lastMinute'} == $curMin) and return;
 
 foreach my $Zeit (@Zeiten) 
