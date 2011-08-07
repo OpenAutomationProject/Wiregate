@@ -1,7 +1,9 @@
 # Plugin zum Zeitabhaengigen Schalten von GA's (Schaltuhr)
 # License: GPL (v2)
 # version von emax
+#
 # $Id$
+#
 # Copyright: Edgar (emax) Hermanns, emax at berlios Punkt de
 #--------------------------------------------------------------------
 #  CHANGE LOG:
