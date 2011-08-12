@@ -1,5 +1,5 @@
-# Plugin zum versenden von Textmeldungen an die Dreambox
-# Version 0.1 13.03.2011
+﻿# Plugin zum versenden von Textmeldungen an die Dreambox
+# Version 0.2 12.08.2011
 # Copyright: swiss (http://knx-user-forum.de/members/swiss.html)
 # License: GPL (v2)
 # Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
@@ -22,6 +22,7 @@ my $type = 2; #Meldungstyp: 1=Info, 2=Neutral, 3=Fehler
 ##ENDE Einstellungen##
 ######################
 
+use LWP::Simple;
 
 # Eigenen Aufruf-Zyklus auf 1T setzen
 $plugin_info{$plugname.'_cycle'} = 86400; 
