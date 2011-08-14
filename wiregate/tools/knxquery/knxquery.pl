@@ -49,20 +49,12 @@ sub dumpGa
     # koennte man mit dem Dumper machen ... 
     #    print Dumper(%eibgaconf), "\n";
     # ... soll aber schoener aussehen:
-
-    my ($dptid, $dptsubid, $dptname, $gaName) = ('','','');
-
     &printGaInfo($_) foreach (sort keys %eibgaconf);
 } # dumpGa
 
 sub printGaInfo
 {
     my $ga = shift || die "\n\n fehlender GA-paramater in printGaInfo()\n\n";
-
-    # koennte man mit dem Dumper machen ... 
-    #    print Dumper(%eibgaconf), "\n";
-    # ... soll aber schoener aussehen:
-
     my ($dptid, $dptsubid, $dptname, $gaName) = ('','','');
 
     if (!exists $eibgaconf{$ga})
