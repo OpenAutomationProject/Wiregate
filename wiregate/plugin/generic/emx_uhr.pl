@@ -10,6 +10,7 @@
 #  ##  who  yyyymmdd   bug#  description
 #  --  ---  --------  -----  ----------------------------------------
 #   .  ...  ........  .....  vorlage 
+#   2  edh  20110910  -----  Bug im Wertevergleich in 'matches()' gefixt
 #   1  edh  20110807  -----  wg. utf-8 Zirkus Umlaute in ae/ue/oe geaendert
 #   0  edh  20110708  -----  erste Version
  
@@ -58,12 +59,13 @@ my $version = 1;
 #--------------------------------------------------------------------
 sub matches
 {
-    my ($value, $def) = @_;  # Zu pruefender Wert, Bereichsdefinition
+    my ($value, $def) = @_;        # Zu pruefender Wert, Bereichsdefinition
     (!$def) and return 1;
     foreach (split(/,/, $def))
     {        
-        s/\s+//g;
-        (/^$value$/) and return 1;
+        s/\s+//g;                  # Blanks entfernen
+        s/^0+//g;                  # fuehrende Nullen entfernen
+        (/^$value$/) and return 1; # Alpha-Vergleich (vermeidet Laufzeitfehler)
         (/^([\d]+)-(\d+)/) and return ($value >= $1 && $value <= $2);
     }
     return 0;
@@ -96,7 +98,7 @@ $curJahr += 1900;
 #
 # Bei der Erstausfuehrung des Plugins nimmt dieses erst nach Erreichen 
 # des vorgesehenen Zeitfensters die eigentliche Arbeit auf, weil der 
-# Abstand zwischen zwei sonst zu klein werden koennte.
+# Abstand zwischen zwei Triggern sonst zu klein werden koennte.
 #--------------------------------------------------------------------
 
 if ($curSec >= $slotEnd)
