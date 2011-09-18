@@ -1,0 +1,88 @@
+#############################################################################
+# Plugin StateSave
+# V0.5 2011-09-18
+# Copyright: Christian Mayer (mail at ChristianMayer.de)
+# License: GPL (v3)
+#
+# Plugin to remember states on the bus if over power failures
+#
+# TODO: DPT is currently required - but it should be optional
+#############################################################################
+
+#############################################################################
+# Configuration:
+
+# The %states hash defines the global names to use in the plugins in the form of
+#   $plugin_info{'Global_...'}
+# as well as the KNX GA
+
+# Syntax:
+# 'Global_Name' => [ 'KNX GA', 'Initial Value', 'DPT (optional)' ],
+my %states = (
+  'Global_ErzwingeWochenende'             => [ '0/3/20', 0    ],
+  'Global_WeihnachtsbeleuchtungAutomatik' => [ '0/3/21', 0, 1 ], 
+);
+
+my $reset_states = 0; # set to 1 to reset the states, run script and change to 0 again
+my $show_debug   = 1; # switches debug information that will be shown in the log
+
+#############################################################################
+# Do NOT change anything below!
+#############################################################################
+
+#############################################################################
+# Initialisation
+for my $this_state ( keys %states ) 
+{ 
+  # Initialise global variable an the bus
+  if( $reset_states or not exists $plugin_info{ $this_state } )
+  {
+    $plugin_info{ $this_state } = $states{ $this_state }[1];
+    knx_write( $states{ $this_state }[0], $plugin_info{ $this_state }, $states{ $this_state }[2] );
+  }
+  
+  # subscribe GA
+  $plugin_subscribe{ $states{ $this_state }[0] }{ $plugname } = 1;
+}
+
+# No cycling, run only on request
+$plugin_info{$plugname.'_cycle'} = 0;
+
+my $ret_val = '';
+
+#############################################################################
+# Handle the bus traffic
+
+# Early exit during a response messeage - it's usually from us...
+if( $msg{'apci'} eq 'A_GroupValue_Response' )
+{
+  return;
+}
+
+# a linear search isn't smart but OK for only a few states:
+for my $this_state ( keys %states ) 
+{ 
+  my $GA  = $states{ $this_state }[0];
+  my $DPT = $states{ $this_state }[2];
+  
+  if( $msg{'dst'} eq $GA )
+  {
+    $ret_val .= $GA . '[' . $DPT . ']:';
+    
+    if(   $msg{'apci'} eq 'A_GroupValue_Read' ) 
+    {
+      $ret_val .= 'read <- "' . $plugin_info{ $this_state } . '";';
+      knx_write( $GA, $plugin_info{ $this_state }, $DPT, 1 ); # send response
+    } 
+    elsif($msg{'apci'} eq 'A_GroupValue_Write')
+    {
+      # read from eibd cache, so we'll the cast for free:
+      my $v = knx_read( $GA, 0, $DPT ) > 0 || 0; 
+      $ret_val .= 'write: "' . $plugin_info{ $this_state } . '" -> "' . $v . '";';
+      $plugin_info{ $this_state } = $v;
+    }
+  }
+}
+
+if( $show_debug ) { return $ret_val; }
+return;
