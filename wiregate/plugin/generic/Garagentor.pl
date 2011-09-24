@@ -1,4 +1,4 @@
-# Plugin um komfortabel Befehle über den IRTrans auszulösen
+# Plugin um ein Garagentor über einen Schaltaktor-Kanal und 2 Reed Kontakten zu bedienen
 # Version 0.1 24.11.2011
 # Copyright: vlamers (http://knx-user-forum.de/members/vlamers.html)
 # License: GPL (v2)
