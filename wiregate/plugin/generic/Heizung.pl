@@ -1,15 +1,23 @@
-# Heizungsregelung
-# Plugin hört auf GA des Auf/Ab-Befehles und schickt neuen Sollwert
-# V0.1 2011-05-18
-# by Jan N. Klug
+# Plugin zum Erfassen des Gesamt-Fenster-Status
+# Version 0.1 / 18.05.2011
+# Copyright: JNK (http://knx-user-forum.de/members/jnk.html)
+# License: GPL (v2)
+#
 
-### Definitionen 
+####################
+###Einstellungen:###
+####################
+
 my $schritt_ga = '4/1/3';  # Gruppenadresse Sollwert Auf = 1 / Ab = 0
 my $sollwert_ga  = '4/2/3';   # Gruppenadresse Sollwert
 my $sollwert = 15;
 my $sollwertmin = 10; # Sollwert Minimum
 my $sollwertmax = 25; # Sollwert Maximum
-### Ende Definitionen
+
+
+######################
+##ENDE Einstellungen##
+######################
 
 # Eigenen Aufruf-Zyklus auf 1x stündlich setzen, hört ja auf GA
 $plugin_info{$plugname.'_cycle'} = 3600;
@@ -40,10 +48,7 @@ if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $schritt_ga && define
 
 #Sollwert vom Bus lesen, wenn von dort gesendet
 if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $sollwert_ga ) {
-#   if (!defined $msg{'value'}) { 
-      # falls GA/DPT nicht importiert
       $msg{'value'} = decode_dpt9($msg{'data'}); 
-#   } 
    $plugin_info{$plugname.'_sollwert'} = $msg{'value'};
    return 2;
 }
