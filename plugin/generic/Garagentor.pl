@@ -1,8 +1,13 @@
-##########################################################
+# Plugin um komfortabel Befehle über den IRTrans auszulösen
+# Version 0.1 24.11.2011
+# Copyright: vlamers (http://knx-user-forum.de/members/vlamers.html)
+# License: GPL (v2)
+# Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
 
-#################################################################
-# do not change anything below, all config stays above
-#################################################################
+
+####################
+###Einstellungen:###
+####################
 ## GA´s
 my $Garage_zu ='14/0/1';
 my $Garage_zu_rueck = '14/0/4';
@@ -10,6 +15,10 @@ my $Garage_auf = '14/0/0';
 my $Garage_auf_rueck = '14/0/3';
 my $Garage_schalten = '14/0/6';
 
+
+######################
+##ENDE Einstellungen##
+######################
 
 # subscribe plugin and call it only when necessary, script will be activated if telegrams to the deffined GA are send.
 $plugin_subscribe{$Garage_zu}{$plugname} = 1;
