@@ -126,11 +126,11 @@ if ($msg{'dst'} eq ($Partymodus) && ($msg{'apci'} eq 'A_GroupValue_Write'))
 { if ($msg{'data'} == 01) {
 	knx_write($kueche,00,1);
 	knx_write($wohnz,1,1);
-	 my $debug = `amixer -c $cardnum set $Speaker $Kanal $vol_party`;
+	 my $debug = `amixer -c $cardnum set $Speaker $Kanal2 $vol_party`;
     return "Party"; }
 
 if ($msg{'value'} == 00) {
-   my $debug = `amixer -c $cardnum set $Speaker $Kanal $volume_anfang`;
+   my $debug = `amixer -c $cardnum set $Speaker $Kanal2 $volume_anfang%`;
    knx_write($kueche,01,1);
     return "Party ende"; }
 else{
