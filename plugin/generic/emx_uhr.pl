@@ -14,6 +14,16 @@
 #  ##  who  yyyymmdd   bug#  description
 #  --  ---  --------  -----  ----------------------------------------
 #   .  ...  ........  .....  vorlage 
+#   4  edh  20111010  .....  - Null-Werte wurden falsch verarbeitet
+#                            - Zyklusberechnung konnte wg. Rundung 
+#                              in underruns (Minuten-Unterschreitung) 
+#                              resultieren, wird jetzt durch Addition 
+#                              eines Zusatzwertes vermieden. 
+#                              Allerdings sind tw. immer noch solche 
+#                              Underruns zu beobachten, die anscheinend
+#                              wg. unkorrektem timings von 'aussen' 
+#                              verursacht werden. Das Script fängt 
+#                              diese underruns allerdings ebenfalls ab.                              
 #   3  edh  20110910  .....  Zykluszeit wurde nicht korrekt verarbeitet,
 #                            Zyklus-Anpassung nun exakt in Sekunden,
 #                            -  dadurch keine 1-Sekunden leer-Zyklen mehr,
@@ -66,24 +76,40 @@ my $slotEnd = 1;
 my $version = 8;
 
 #-----------------------------------------------------------------------------
+# Numerischen string als Zahl zurückgeben
+# - blanks entfernen
+# - führende Nullen entfernen
+#-----------------------------------------------------------------------------
+sub toNumber
+{
+    my $value = shift;
+    (!defined $value) and return 0;
+
+    $value =~ s/\s+//g; # whitespace entfernen
+    $value =~ s/^0+(.)$/$1/g; # fuehrende Nullen entfernen
+    return $value;
+} # toNumber
+
+
+#-----------------------------------------------------------------------------
 # Auswertung von Bereichs und Listenvergleichen
 # Prueft, ob ein Wert zu einer Liste oder in einen Bereich passt
 #-----------------------------------------------------------------------------
 sub matches
 {
     my ($value, $def) = @_;  # Zu pruefender Wert, Bereichsdefinition
-    (!$def) and return 1;
+    (!defined $def)  and return 1;
+    $value = &toNumber($value);
 
     foreach (split(/,/, $def))
     {
-        s/\s+//g;
-        s/^0+//g; # fuehrende Nullen entfernen
+        $_ = &toNumber($_);
 	# Vergleich auf Alpha-Basis (vermeidet Laufzeit-Fehler)
         (/^$value$/) and return 1;
         (/^([\d]+)-(\d+)/) and return ($value >= $1 && $value <= $2);
     }
     return 0;
-}
+} # matches
 
 #-----------------------------------------------------------------------------
 # Zykluszeit setzen
@@ -94,7 +120,7 @@ sub setCycle
     my $curSec = $seconds%60;
     if ( $curSec >= $slotEnd)
     {
-	$plugin_info{$plugname.'_cycle'} = $cycleTime - $curSec - $uSec/1000000;
+	$plugin_info{$plugname.'_cycle'} = $cycleTime - $curSec - $uSec/1000000 + 0.1; # avoid rounding underruns
 	plugin_log($plugname, "cycle time set to $plugin_info{$plugname.'_cycle'} second");
     }
     else
@@ -102,7 +128,6 @@ sub setCycle
 	$plugin_info{$plugname.'_cycle'} = $cycleTime;
     }
 }
-
 
 #=============================================================================
 # main()
@@ -114,6 +139,7 @@ $curJahr += 1900;
 # kontrollierte Startkonditionen setzen
 if (!defined $plugin_info{"$plugname.$version.firstRun"})
 {
+    plugin_log($plugname, "Starting plugin version $version, will execute with first time-slot.");
     # obsolete Versionen von $plugin_info bereinigen
     foreach (keys %plugin_info)
     {
@@ -123,7 +149,6 @@ if (!defined $plugin_info{"$plugname.$version.firstRun"})
 	    plugin_log($plugname, "deleted plugin_info[$_]");
 	}
     }
-    plugin_log($plugname, "Started plugin version $version, will execute with first time-slot.");
     $plugin_info{"$plugname.$version.firstRun"} = 1;
     &setCycle();
 }
@@ -132,7 +157,11 @@ if (!defined $plugin_info{"$plugname.$version.firstRun"})
 ($curSec >= $slotEnd && $plugin_info{"$plugname.$version.firstRun"} == 1) and return;
 
 # pruefen, ob in dieser Minute bereits ausgefuehrt
-(defined $plugin_info{"$plugname.$version.lastMinute"} && $plugin_info{"$plugname.$version.lastMinute"} == $curMin) and return;
+if (defined $plugin_info{"$plugname.$version.lastMinute"} && $plugin_info{"$plugname.$version.lastMinute"} == $curMin)
+{
+    &setCycle();
+    return;
+}
 
 foreach my $Zeit (@Zeiten) 
 {
@@ -144,7 +173,7 @@ foreach my $Zeit (@Zeiten)
     (defined $Zeit->{Mon}  && !&matches($curMon,  $Zeit->{Mon}))  and next;
     (defined $Zeit->{WTag} && !&matches($curWTag, $Zeit->{WTag})) and next;
     (defined $Zeit->{Log}  && $Zeit->{Log} eq '1') and 
-        plugin_log($plugname, "Sending $Zeit->{Name}, GA[$Zeit->{GA}], Value[$Zeit->{Wert}]"); 
+        plugin_log($plugname, "Sending Value[$Zeit->{Wert}] to GA[$Zeit->{GA}], $Zeit->{Name}"); 
 
     knx_write($Zeit->{GA},$Zeit->{Wert}, $Zeit->{DPT});   
 }
