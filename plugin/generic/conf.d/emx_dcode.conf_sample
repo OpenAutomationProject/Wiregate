@@ -1,0 +1,41 @@
+#
+# $Id$
+#
+#-----------------------------------------------------------------------------
+# ACHTUNG: Variablen duerfen nur (und muessen) im Plugin 
+#          mit 'my' definiert werden,
+#          'my' hier nicht verwenden!
+#-----------------------------------------------------------------------------
+
+#------------------------
+# Konfigurierbare Werte
+#------------------------
+
+$pauseSec       = 1.0;  # Pausenzeit, nach der eine Ziffer komplett ist
+$completeAfter  = 4;    # Wartezeit in Sekunden, nach der der Code ausgewertet wird
+$maxFails       = 3;    # Anzahl Fehlversuche
+$blockPeriod    = 30;   # anfaengliche Blockadezeit in Sekunden.
+$maxBlockPeriod = 3600; # maximale Blockadezeit
+
+#-----------------------------------------------------------------------------
+# - Es koennen beliebig viele Eintraege fuer ein und den selben Code gemacht 
+#   werden, sie werden alle ausgefuehrt.
+# - Wird ein 'FromPA' Wert angegeben, wird der Code nur von dieser PA akzeptiert.
+# - 'FromGA' und 'ToGA' duerfen nicht identisch sein.
+# - Der Code darf nur aus Ziffern bestehen, muss aber in Hochkommas angegeben 
+#   werden. So gehen auch fuehrende Nullen. Zehn Tastendruecke sind eine Null.
+#-----------------------------------------------------------------------------
+@Codes =
+    (
+     { Active=>1, Code=>'123',FromGA=>'1/1/121', FromPA=>undef, Value=>'1', DPT=>'1', ToGA=>'1/1/123', Log=>'1' },
+     { Active=>1, Code=>'123',FromGA=>'1/1/121', FromPA=>undef, Value=>'1', DPT=>'1', ToGA=>'3/2/1',   Log=>'1' },
+     { Active=>1, Code=>'321',FromGA=>'1/1/121', FromPA=>undef, Value=>'0', DPT=>'1', ToGA=>'1/1/123', Log=>'1' },
+     { Active=>1, Code=>'456',FromGA=>'1/1/121', FromPA=>undef, Value=>'1', DPT=>'1', ToGA=>'1/1/121', Log=>'1' },
+    );
+
+1;
+
+# emacs setting
+# ;;; Local Variables: ***
+# ;;; mode:perl ***
+# ;;; End: ***

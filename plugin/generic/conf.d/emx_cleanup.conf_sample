@@ -1,0 +1,49 @@
+#
+# $Id$
+#
+#-----------------------------------------------------------------------------
+# Einstellungen: Alle zu loeschenden Schluessel aus %plugin_info
+# Vorsicht: man kann leicht alles loeschen, da es sich um regulaere Ausdruecke 
+#           handelt. Ein Punkt zum Beispiel entspricht einem beliebigen 
+#           Zeichen. Ohne die Zeichen '^' und '$' sind dabei auch Teilvergleiche
+#           gueltig:
+#
+#           'abc' loescht alles, was 'abc' _enthaelt_ !!
+#           '^abc' loescht alles, was mit 'abc' _beginnt_ !!
+#           'abc$' loescht alles, was mit 'abc' _endet_ !!
+#            
+#           Wer nicht sicher ist, sollte im Forum fragen, auf jeden Fall aber 
+#           die Variable $Loeschen erst mal nicht auf 'Y' setzen.
+# 
+#           Nur wenn $Loeschen auf 'Y' steht, wird auch wirklich geloescht, 
+#           ansonsten wird nur ein Logeintrag geschrieben: '... matches /$key/'
+#
+#           Wenn $Loeschen auf 'Y' gesetzt wird, loescht das Beispiel alle 
+#           Eintraege, die mit einem '#' beginnen oder eine Tilde enthalten. 
+#           Das sind die typischen Editor-Arbeitsdateien des 'emacs' Editors, 
+#           die bei der Aenderung eines Plugins entstehen und vom wiregated 
+#           wie Plugins behandelt werden, und dann im %plugin_info hash 
+#           auftauchen (und da natuerlich auch wieder raus sollten).
+#          
+#           Es empfiehlt sich, das Script nach der Bereinigung zu loeschen, 
+#           und nur bei Bedarf wieder einzustellen, da es natuerlich 
+#           Ressourcen verbraucht. 
+#
+#           Wer auf die Ausfuehrung nicht warten moechte, bis die naechste 
+#           Zykluszeit abgelaufen ist, kann die sofortige Ausfuehrung per 
+#           Kommandozeilen-Eingabe mit einem  'touch emx_cleanup.pl' erzwingen.
+#-----------------------------------------------------------------------------
+
+$cycleTime = 24*3600;
+$Loeschen  = 'N';
+@Keys      = ('^#', '~');
+
+#-----------------------------------------------------------------------------
+# ENDE Einstellungen
+#-----------------------------------------------------------------------------
+1;
+
+# emacs setting
+# ;;; Local Variables: ***
+# ;;; mode:perl ***
+# ;;; End: ***

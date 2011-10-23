@@ -1,0 +1,30 @@
+#
+# $Id$
+#
+#-----------------------------------------------------------------------------
+# ACHTUNG: Variablen duerfen nur im Plugin mit 'my' definiert werden,
+#          'my' hier nicht verwenden!
+#-----------------------------------------------------------------------------
+
+#------------------------
+# Konfigurierbare Werte
+#------------------------
+
+@Zeiten = 
+    ( 
+      # Aussenlicht und Aussensteckdosen zyklisch ausschalten
+      { Name=>'ELW_Terrassenlicht',      Aktiv=>'1', Min=>'0-59', Wert=>'0', DPT=>'1', GA=>'1/5/92', Log=>'1' }, 
+    );
+
+#-----------------------------------------------------------------
+# $slotEnd definiert die Sekunde, ab der neu synchronisiert wird   
+# ACHTUNG: Sollte nicht kleiner als 1 Sekunde sein.
+#-----------------------------------------------------------------
+$slotEnd = 3; 
+
+1;
+
+# emacs setting
+# ;;; Local Variables: ***
+# ;;; mode:perl ***
+# ;;; End: ***
