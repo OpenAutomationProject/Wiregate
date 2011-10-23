@@ -1,19 +1,20 @@
 # Plugin zum Zeitabhaengigen Schalten von GA's (Schaltuhr)
 # License: GPL (v2)
 # version von emax
-
-# Plugin zum Zeitabhaengigen Schalten von GA's (Schaltuhr)
-# License: GPL (v2)
-# version von emax
 #
 # $Id$
 #
-# Copyright: Edgar (emax) Hermanns, emax at berlios Punkt de
+# Copyright: Edgar (emax) Hermanns, forum at hermanns punkt net
 #--------------------------------------------------------------------
 #  CHANGE LOG:
 #  ##  who  yyyymmdd   bug#  description
 #  --  ---  --------  -----  ----------------------------------------
 #   .  ...  ........  .....  vorlage 
+#   5  edh  20111023  .....  conf.d Verzeichnis eingefuehrt. Alle 
+#                             Einstellungen werden kuenftig ueber
+#                             ueber eine entsprechende Konfigura-
+#                             tionsdatei conf.d/plugin.conf vorge-
+#                             nommen, Einzelheiten siehe dort.
 #   4  edh  20111010  .....  - Null-Werte wurden falsch verarbeitet
 #                            - Zyklusberechnung konnte wg. Rundung 
 #                              in underruns (Minuten-Unterschreitung) 
@@ -34,46 +35,28 @@
 #   1  edh  20110807  -----  wg. utf-8 Zirkus Umlaute in ae/ue/oe geaendert
 #   0  edh  20110708  -----  erste Version
 
-#-----------------------------------------------------------------------------
-# Einstellungen
-#-----------------------------------------------------------------------------
-
-
-my @Zeiten = 
-    (       
-      # Beispiele
-       { Name=>'Test',           Aktiv=>'0', Std=>undef, Min=>undef, MTag=>undef, Mon=>undef, WTag=>undef,   Wert=>'1', DPT=>'1', GA=>'1/1/30', Log=>'1' }, 
-       { Name=>'Bewaesserung',   Aktiv=>'0', Std=>'7',   Min=> '0',  MTag=>'3',   Mon=>'4-9', WTag=>'1-5',   Wert=>'1', DPT=>'1', GA=>'1/1/30' },
-       { Name=>'AussenlichtEin', Aktiv=>'0', Std=>'19',  Min=>'30',  MTag=>'4',   Mon=>undef, WTag=>'1,3,5', Wert=>'1', DPT=>'1', GA=>'1/2/40' }, 
-       { Name=>'AussenlichtAus', Aktiv=>'0', Std=>'7',   Min=> '0',  MTag=>undef, Mon=>undef, WTag=>'2,4,6', Wert=>'0', DPT=>'1', GA=>'1/2/40' }
-    );
-
-#-----------------------------------------------------------------------------
-# ENDE Einstellungen
-#-----------------------------------------------------------------------------
-
 use POSIX;
 
 #-----------------------------------------------------------------------------
-# Eigenen Aufruf-Zyklus setzen
+# konfigurierbare  Werte, siehe conf.d/emx_uhr.conf
+#-----------------------------------------------------------------------------
+my @Zeiten = ();
+my $slotEnd = 3; 
+
+#-----------------------------------------------------------------------------
+# Aufruf-Zyklus setzen
 # Das script verarbeitet keine Sekunden, weshalb die kleinste 
-# Granulaitaet ohne zusaetzlioche Statusverarbeitung eine Minute ist. 
+# Granularitaet ohne zusaetzlioche Statusverarbeitung eine Minute ist. 
 #-----------------------------------------------------------------------------
 my $cycleTime = 60;
 
 #-----------------------------------------------------------------------------
-# definiert die Sekunde, ab der neu synchronisiert wird   
-# ACHTUNG: Sollte nicht kleiner als 1 Sekunde sein.
-#-----------------------------------------------------------------------------
-my $slotEnd = 1; 
-
-#-----------------------------------------------------------------------------
 # Die Versionsnummer is Teil des plugin_info hashes und dient
-# dazu, dass das script definierte anfangskonditionen findet 
+# dazu, dass das script definierte Anfangskonditionen findet 
 # auch ohne den wiregated neu starten zu muessen. Die Nummer 
 # einfach nach einer Aenderung des scripts um eins erhoehen.
 #-----------------------------------------------------------------------------
-my $version = 8;
+my $version = 9;
 
 #-----------------------------------------------------------------------------
 # Numerischen string als Zahl zurückgeben
@@ -89,7 +72,6 @@ sub toNumber
     $value =~ s/^0+(.)$/$1/g; # fuehrende Nullen entfernen
     return $value;
 } # toNumber
-
 
 #-----------------------------------------------------------------------------
 # Auswertung von Bereichs und Listenvergleichen
@@ -112,13 +94,13 @@ sub matches
 } # matches
 
 #-----------------------------------------------------------------------------
-# Zykluszeit setzen
+# Zykluszeit berechnen und neu setzen
 #-----------------------------------------------------------------------------
 sub setCycle
 {
     my ($seconds,$uSec) = gettimeofday();
     my $curSec = $seconds%60;
-    if ( $curSec >= $slotEnd)
+    if ($curSec >= $slotEnd)
     {
 	$plugin_info{$plugname.'_cycle'} = $cycleTime - $curSec - $uSec/1000000 + 0.1; # avoid rounding underruns
 	plugin_log($plugname, "cycle time set to $plugin_info{$plugname.'_cycle'} second");
@@ -129,12 +111,37 @@ sub setCycle
     }
 }
 
+sub readConf
+{
+    my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
+    if (! -f $confFile)
+    {
+        plugin_log($plugname, " no conf file [$confFile] found."); 
+    }
+    else
+    {
+        plugin_log($plugname, " reading conf file [$confFile]."); 
+        open(CONF, $confFile);
+        my @lines = <CONF>;
+        close($confFile);
+        my $result = eval("@lines");
+        ($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+        if ($@) 
+        {
+            plugin_log($plugname, "conf file [$confFile] returned:");
+            my @parts = split(/\n/, $@);
+            plugin_log($plugname, "--> $_") foreach (@parts);
+        }
+    }
+} # readConf
+
 #=============================================================================
 # main()
 #=============================================================================
 
 my ($curSec,$curMin,$curStu,$curMTag,$curMon,$curJahr,$curWTag,$curJTag,$isdst) = localtime(time);
 $curJahr += 1900;
+&readConf();
 
 # kontrollierte Startkonditionen setzen
 if (!defined $plugin_info{"$plugname.$version.firstRun"})
@@ -148,12 +155,12 @@ if (!defined $plugin_info{"$plugname.$version.firstRun"})
 	    delete $plugin_info{$_};
 	    plugin_log($plugname, "deleted plugin_info[$_]");
 	}
-    }
+    }    
     $plugin_info{"$plugname.$version.firstRun"} = 1;
     &setCycle();
 }
 
-# beim ersten mal nur ausfuehren, wenn inmnerhalb des slots
+# beim ersten Mal nur ausfuehren, wenn innerhalb des slots
 ($curSec >= $slotEnd && $plugin_info{"$plugname.$version.firstRun"} == 1) and return;
 
 # pruefen, ob in dieser Minute bereits ausgefuehrt
@@ -165,23 +172,20 @@ if (defined $plugin_info{"$plugname.$version.lastMinute"} && $plugin_info{"$plug
 
 foreach my $Zeit (@Zeiten) 
 {
-    (defined $Zeit->{Aktiv} && !$Zeit->{Aktiv}) and next;
-
-    (defined $Zeit->{Min}  && !&matches($curMin,  $Zeit->{Min}))  and next;
-    (defined $Zeit->{Std}  && !&matches($curStu,  $Zeit->{Std}))  and next;
-    (defined $Zeit->{MTag} && !&matches($curMTag, $Zeit->{MTag})) and next;
-    (defined $Zeit->{Mon}  && !&matches($curMon,  $Zeit->{Mon}))  and next;
-    (defined $Zeit->{WTag} && !&matches($curWTag, $Zeit->{WTag})) and next;
-    (defined $Zeit->{Log}  && $Zeit->{Log} eq '1') and 
+    (defined $Zeit->{Aktiv} && !$Zeit->{Aktiv})                    and next;
+    (defined $Zeit->{Min}   && !&matches($curMin,  $Zeit->{Min}))  and next;
+    (defined $Zeit->{Std}   && !&matches($curStu,  $Zeit->{Std}))  and next;
+    (defined $Zeit->{MTag}  && !&matches($curMTag, $Zeit->{MTag})) and next;
+    (defined $Zeit->{Mon}   && !&matches($curMon,  $Zeit->{Mon}))  and next;
+    (defined $Zeit->{WTag}  && !&matches($curWTag, $Zeit->{WTag})) and next;
+    (defined $Zeit->{Log}   && $Zeit->{Log} eq '1') and 
         plugin_log($plugname, "Sending Value[$Zeit->{Wert}] to GA[$Zeit->{GA}], $Zeit->{Name}"); 
 
     knx_write($Zeit->{GA},$Zeit->{Wert}, $Zeit->{DPT});   
-}
+} # foreach (@Zeiten)
 
 $plugin_info{"$plugname.$version.lastMinute"} = $curMin;
 
 # ggf. Zykluszeit korrigieren
 &setCycle();
 $plugin_info{"$plugname.$version.firstRun"} = 0;
-
-
