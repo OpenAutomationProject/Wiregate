@@ -1,6 +1,6 @@
 #############################################################################
 # Plugin: Multi RTR
-# V0.5 2011-09-18
+# V0.6 2011-09-18
 # Copyright: Christian Mayer (mail at ChristianMayer.de)
 # License: GPL (v3)
 #
@@ -40,7 +40,7 @@ my %controllers = (
 my %default = (
   'SetPointDPT'   => 9.001,
   'SensorDPT'     => 9.001,
-  'ActuratorDPT'  => 5,
+  'ActuatorDPT'   => 5,
   'DisableDPT'    => 1,
   'SetPointInit'  => 21.0,
   'SetPointLFlag' => 1, # true
