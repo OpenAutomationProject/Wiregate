@@ -17,31 +17,40 @@ my $Kanal2 = "Rear";	# Channel of the second speaker pair
 my $volkanal2 = "40%";	# The volume of the 2nd Speaker
 my $cardnum = "1";		# Hardware Number of the Sound card
 my $Speaker = "Speaker,1";	# Name of the output ( My soundcard is defined as following: Speaker,1 Front; Speaker,1 Rear
+
 ## mpd 
 my $mpdname = "mpd2";		# the name of the mpd instance
 my $IP = "192.168.178.33";    # The IP where the mpd Instanz is running
 my $Port = "6601";        # Port of the mpd Instanz
 my $volume_anfang = "35";     # This Volume will be set for mpd
+
 # Aus wenn Fernseher an
 my $Fernseher = '3/0/0';	# Fernseher
+
 # Verstaerker
 my $verstaerker = '13/1/2';	# Verstaerker on/off GA
+
 #Radio GA
 my $knx_addr_player2 = '13/1/0';# mpd Player on/off GA
+
 #Volume
 ## Vol Receive
 my $Vol_addr = '13/1/7'; # knx_address for volume up/down (receive)
 my $volumestep = "3";    # The stepsize for volume
 my $vol_up_data = "9";	# Data that ETS Busmonitor shows when you send a telegram from a switch to this GA
 my $vol_down_data = "1";
+
 #Vol send (brightness-value / helligkeitswert)
 my $knx_addr_vol = '13/1/22'; # The Volume will be send here from the plugin
 my $laut_GA = '13/1/23';    #the volume can be send here as brightness-value
+
 # GA for recorded message
 my $info_wz = '3/1/2';        # Info Switch wz
+
 # Partymodus
 my $Partymodus = '13/1/21';	# GA for Partymodus
 my $vol_party = "100%"; 	# With % Symbol
+
 # Quellen
 my $kueche = '13/1/5';		# küche enable/disable	
 my $kueche_nr = "1";		# mpd output number
@@ -49,8 +58,10 @@ my $wohnz = '13/1/8';		# Wohnzimmer enable/disable
 my $wohnz_nr = "3";	# number of mpd output
 my $Bad = '13/1/15';		# enable/disable bathroom output
 my $Bad_nr = "2";		# mpd output number
+
 # Prev / next
 my $addr_pn= '13/1/14';	# Prev / Next
+
 # Playlist
 my $playlist = '13/1/24';	# the playlist number will be send here (value 1 - 255)
 my $playlist1 = "Antenne";
@@ -92,7 +103,7 @@ if ($msg{'dst'} eq ($knx_addr_player2))
 	my $debug = `/etc/init.d/$mpdname restart`;
         my $debug = `amixer -c $cardnum set $Speaker $Kanal $vol_alsa && amixer -c $cardnum set $Speaker $Kanal2 $volkanal2`;
         knx_write($playlist,1,1);
-        knx_write($knx_addr_vol ,$volume_anfang,5);
+        knx_write($laut_GA ,$volume_anfang,5);
         return "Player 2 läuft";
 }
 if ($msg{'value'} == 00) {
