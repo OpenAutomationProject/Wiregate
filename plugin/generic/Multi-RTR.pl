@@ -45,6 +45,7 @@ my %default = (
   'SetPointInit'  => 21.0,
   'SetPointLFlag' => 1, # true
   'ActuatorLFlag' => 1, # true
+  'MinUpdateRate' => 5 * 60, # 5 minutes
 );
 
 my $GlobalDisableGA = '14/5/50';
@@ -211,9 +212,11 @@ if( !$busActive or $SetPointChange ) # only at init, cycle or set point change
     #$plugin_info{ $prefix . '_Actuator' } = round( $plugin_info{ $prefix . '_Actuator' } );
     
     # If a GA is defined, send the new actuator value
-    if( defined $this_controller{ 'ActuatorGA' } and ($old ne $plugin_info{ $prefix . '_Actuator' }) )
+    if( defined $this_controller{ 'ActuatorGA' } and (
+        ($old ne $plugin_info{ $prefix . '_Actuator' }) or (time() - $plugin_info{ $prefix . '_lastSent' } > $this_controller{'MinUpdateRate'} )) )
     {
       knx_write( $this_controller{ 'ActuatorGA' }, $plugin_info{ $prefix . '_Actuator' }, $this_controller{ 'ActuatorDPT' } );
+      $plugin_info{ $prefix . '_lastSent' } = time();
     }
     
     if( defined $this_controller{ 'SetPointRRD' } )
@@ -236,8 +239,11 @@ return;
 # Version history:
 # ================
 #
+# 0.6:
+# * Bug fix for setups where the WireGate didn't know the ActuatorGA
+# * Force sending of actuator after x seconds/minutes so that the watchdog in 
+#   the actuator doesn't time out
 # 0.5:
-# ------
 # * initial release
 #
 #############################################################################
@@ -245,8 +251,8 @@ return;
 # =====
 # * Limit bus traffic by sending actuator values after a change that is bigger 
 #   than x%
-# * Force sending of actuator after x seconds/minutes so that the watchdog in 
-#   the actuator doesn't time out
 # * Add GA for sending delta values for the setpoint
 # * External Config
+# * Actuator overwrite ("Zwangsstellung")
+# * Hard temperature limit (min, max)
 #############################################################################
