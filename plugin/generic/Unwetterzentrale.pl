@@ -1,7 +1,7 @@
 # Plugin zum Auslesen der Unwettermeldungen
-# Version 0.1 29.09.2011
+# Version 0.2 14.11.2011
 # Copyright: JNK (http://knx-user-forum.de/members/jnk.html)
-# In Anlehnung an HS/FS Logigbaustein 19909 by Michael Grosalski
+# In Anlehnung an HS/FS Logikbaustein 19909 by Michael Grosalski
 # License: GPL (v2)
 # Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
 
@@ -9,6 +9,8 @@
 ####################
 ###Einstellungen:###
 ####################
+
+# fuer alle Adressen gilt: wenn = '', dann kein senden an diese Adresse
 
 my $unwetter_txt_GA = '0/1/1'; # sendet Textmeldung DPT 16
 my $unwetter_max_stufe_GA  = '0/1/2'; # sendet höchste Warnstufe als DPT 5.005
@@ -20,6 +22,7 @@ my $baseurl = 'http://www.unwetterzentrale.de/uwz/getwarning_de.php?plz='; # Bas
 my $country = 'DE'; # Land
 my $lang = 'de';  # deutsch
 
+my $udp_addr = '192.168.0.51:50018'; # udp Adresse fuer Textmeldung (z.B. an PROWL Plugin)
 
 ######################
 ##ENDE Einstellungen##
@@ -28,10 +31,10 @@ my $lang = 'de';  # deutsch
 use LWP::Simple;
 
 my %warnstufen = ( gelb => 1, orange => 2, rot => 3, violett => 4 );
-my %warntyp = ( gewitter => 1, glatteisregen => 2, regen => 3, schnee => 4, sturm => 5, temperatur => 6 );
+my %warntyp = ( gewitter => 1, glatteisregen => 2, regen => 3, schnee => 4, sturm => 5, temperatur => 6, strassenglaette => 7);
 
 my @warnstufen_txt = ( 'keine Meldung', 'Vorwarn.', '', 'stark. ', 'extr. ' );
-my @warntyp_txt = ( '', 'Gewitter', 'Glatteis', 'Regen', 'Schnee', 'Sturm', 'Temperatur' );
+my @warntyp_txt = ( '', 'Gewitter', 'Glatteis', 'Regen', 'Schnee', 'Sturm', 'Temperatur', 'Glaette' );
 
 $plugin_info{$plugname.'_cycle'} = 900;
 
@@ -87,7 +90,16 @@ if ($plugin_info{$plugname.'_allstr'} == $all_str) {
   if ($unwetter_max_neu_GA) {
     knx_write($unwetter_max_neu_GA, 1, 1);
   }
+  if ($udp_addr) {
+    my $sock = IO::Socket::INET->new(
+      Proto    => 'udp',
+      PeerAddr => $udp_addr,
+    );
+    my $meldung = $warnstufen_txt[$high_stufe].' '.$warntyp_txt[$high_typ];
+    $sock->send("0;Unwetterwarnung;Unwetterwarnung;$meldung\n");
+  }
   $plugin_info{$plugname.'_allstr'} = $all_str;
+ 
 }
 
 return $all_str;
