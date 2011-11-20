@@ -1,0 +1,45 @@
+#-----------------------------------------------------------------------------
+# ACHTUNG: Variablen duerfen nur im Plugin mit 'my' definiert werden,
+#          'my' hier nicht verwenden!
+#-----------------------------------------------------------------------------
+
+#############################################################################
+# Configuration:
+%controllers = (
+  '130_Hobby1_HK'   => {
+    'SetPointGA' => '3/3/130', 'SetPointRRD' => '130_Hobby1_HK_Sollwert', 
+    'SensorGA'   => '4/0/130', 
+    'ActuatorGA' => '3/0/130', 'ActuatorRRD' => '130_Hobby1_HK_Regelung', 
+    'ProportionalGain' => 5, 'IntegralTime' => 150 
+  },
+  '140_Hobby2_HK'   => { 
+    'SetPointGA' => '3/3/140', 'SetPointRRD' => '140_Hobby2_HK_Sollwert', 
+    'SensorGA'   => '4/0/140', 
+    'ActuatorGA' => '3/0/140', 'ActuatorRRD' => '140_Hobby2_HK_Regelung', 
+    'ProportionalGain' => 5, 'IntegralTime' => 240 
+  },
+);
+%default = (
+  'SetPointDPT'   => 9.001,
+  'SensorDPT'     => 9.001,
+  'ActuatorDPT'   => 5,
+  'DisableDPT'    => 1,
+  'SetPointInit'  => 21.0,
+  'SetPointLFlag' => 1, # true
+  'ActuatorLFlag' => 1, # true
+  'MinUpdateRate' => 5 * 60, # 5 minutes
+);
+
+$GlobalDisableGA = '14/5/50';
+
+$reset      = 0; # set to 1 to reset the states, run script and change to 0 again
+$show_debug = 1; # switches debug information that will be shown in the log
+
+#############################################################################
+1;
+
+# emacs setting
+# ;;; Local Variables: ***
+# ;;; mode:perl ***
+# ;;; End: ***
+# vim: set filetype=perl expandtab tabstop=8 shiftwidth=2 autoindent smartindent:
