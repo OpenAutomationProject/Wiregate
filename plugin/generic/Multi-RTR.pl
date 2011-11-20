@@ -1,6 +1,6 @@
 #############################################################################
 # Plugin: Multi RTR
-# V0.6 2011-09-18
+# V0.7 2011-11-20
 # Copyright: Christian Mayer (mail at ChristianMayer.de)
 # License: GPL (v3)
 #
@@ -23,38 +23,47 @@
 
 #############################################################################
 # Configuration:
-my %controllers = (
-  '130_Hobby1_HK'   => {
-    'SetPointGA' => '3/3/130', 'SetPointRRD' => '130_Hobby1_HK_Sollwert', 
-    'SensorGA'   => '4/0/130', 
-    'ActuatorGA' => '3/0/130', 'ActuatorRRD' => '130_Hobby1_HK_Regelung', 
-    'ProportionalGain' => 5, 'IntegralTime' => 150 
-  },
-  '140_Hobby2_HK'   => { 
-    'SetPointGA' => '3/3/140', 'SetPointRRD' => '140_Hobby2_HK_Sollwert', 
-    'SensorGA'   => '4/0/140', 
-    'ActuatorGA' => '3/0/140', 'ActuatorRRD' => '140_Hobby2_HK_Regelung', 
-    'ProportionalGain' => 5, 'IntegralTime' => 240 
-  },
-);
-my %default = (
-  'SetPointDPT'   => 9.001,
-  'SensorDPT'     => 9.001,
-  'ActuatorDPT'   => 5,
-  'DisableDPT'    => 1,
-  'SetPointInit'  => 21.0,
-  'SetPointLFlag' => 1, # true
-  'ActuatorLFlag' => 1, # true
-  'MinUpdateRate' => 5 * 60, # 5 minutes
-);
+# --> change values in the conf.d directory!
+my %controllers = ();
+my %default = ();
 
 my $GlobalDisableGA = '14/5/50';
 
 my $reset      = 0; # set to 1 to reset the states, run script and change to 0 again
-my $show_debug = 1; # switches debug information that will be shown in the log
+my $show_debug = 0; # switches debug information that will be shown in the log
 
 #############################################################################
 # Do NOT change anything below!
+#############################################################################
+my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
+if (! -f $confFile)
+{
+  plugin_log($plugname, " no conf file [$confFile] found."); 
+}
+else
+{
+  plugin_log($plugname, " reading conf file [$confFile].") if( $show_debug > 1); 
+  open(CONF, $confFile);
+  my @lines = <CONF>;
+  close($confFile);
+  my $result = eval("@lines");
+  if( $show_debug > 1 )
+  {
+    ($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+  }
+  if ($@) 
+  {
+    plugin_log($plugname, "conf file [$confFile] returned:") if( $show_debug > 1 );
+    my @parts = split(/\n/, $@);
+    if( $show_debug > 1 )
+    {
+      plugin_log($plugname, "--> $_") foreach (@parts);
+    }
+  }
+}
+
+#############################################################################
+# main()
 #############################################################################
 my $busActive = !(!keys %msg); # true if script was called due to bus traffic
 
@@ -174,7 +183,7 @@ if( !$busActive or $SetPointChange ) # only at init, cycle or set point change
 {
   my $dt = time() - $plugin_info{ $plugname . '_tlast' };
   $plugin_info{ $plugname . '_tlast' } = time();
-  $ret_val .= 'dt: ' . $dt . '; ';
+  $ret_val .= sprintf( ' dt: %.3f; ', $dt );
   
   for my $this_controller_name ( keys %controllers ) 
   {
@@ -239,6 +248,8 @@ return;
 # Version history:
 # ================
 #
+# 0.7:
+# * change to external config (-> conf.d)
 # 0.6:
 # * Bug fix for setups where the WireGate didn't know the ActuatorGA
 # * Force sending of actuator after x seconds/minutes so that the watchdog in 
