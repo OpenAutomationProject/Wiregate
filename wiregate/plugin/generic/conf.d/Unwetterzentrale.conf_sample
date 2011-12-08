@@ -1,0 +1,67 @@
+#############################################################################
+# Konfiguration
+#############################################################################
+
+#############################################################################
+# Adress-Optionen
+#############################################################################
+#
+# $unwetter_txt_GA = '0/1/1'; 
+# 	=> sendet Textmeldung DPT 16 auf die angebene GA
+#
+# $unwetter_max_stufe_GA  = '0/1/2'; 
+# 	=> sendet höchste Warnstufe als DPT 5.005
+#
+# $unwetter_max_typ_GA = '0/1/3'; 
+# 	=> sendet höchsten Warntyp als DPT 5.005
+#
+# $unwetter_max_neu_GA = '0/1/4'; 
+# 	=> sendet 1=neue Meldungen, 0=alte Meldungen, DPT 1
+#
+# $udp_addr = '192.168.0.51:50018'; 
+# 	=> UDP Adresse fuer Textmeldung (z.B. an PROWL Plugin)
+#
+# fuer alle Adressen gilt: wenn NICHT definiert => Funktion unbenutzt
+#		           wenn definiert: Funktion benutzt
+#
+
+$unwetter_txt_GA = '0/1/1';
+$unwetter_max_stufe_GA  = '0/1/2';
+$unwetter_max_typ_GA = '0/1/3'; 
+$unwetter_max_neu_GA = '0/1/4';
+$udp_addr = '192.168.0.51:50018';
+
+#############################################################################
+# Orts-Optionen
+#############################################################################
+#
+# $plz = '45886';
+# 	=> PLZ des Warnortes, wird unbedingt benoetigt
+#
+# $baseurl = 'http://www.unwetterzentrale.de/uwz/getwarning_de.php?plz='; 
+# 	=> Basis-URL der Unwetterzentrale, Voreinstellung: Deutschland
+#	   fuer Deutschland: 'http://www.unwetterzentrale.de/uwz/getwarning_de.php?plz=';
+#	   fuer die Schweiz: 'http://alarm.meteocentrale.ch/getwarning_de.php?plz='
+#
+# $country = 'DE'; 
+# 	=> Laenderkuerzel, Voreinstellung: DE
+#
+# $lang = 'de';  
+# 	=> Mitteilungssprache, Voreinstellung: deutsch
+#
+# $hoehe = 430; 
+# 	=> Hoehe des Ortes in m, wenn nicht definiert: alle Meldungen werden bearbeitet
+#
+
+$plz = '45886'; # Gelsenkirchen-Ueckendorf
+
+
+#############################################################################
+
+#############################################################################
+
+# emacs setting
+# ;;; Local Variables: ***
+# ;;; mode:perl ***
+# ;;; End: ***
+# vim: set filetype=perl expandtab tabstop=8 shiftwidth=2 autoindent smartindent:
