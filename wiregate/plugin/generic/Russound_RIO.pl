@@ -22,10 +22,38 @@ my $KNX_Start_Address;
 
 my $reset     ; # set to 1 to reset the states, run script and change to 0 again
 my $show_debug; # switches debug information that will be shown in the log
-
 #############################################################################
 # Do NOT change anything below!
 #############################################################################
+
+#############################################################################
+# Read config file in conf.d
+my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
+if (! -f $confFile)
+{
+  plugin_log($plugname, " no conf file [$confFile] found."); 
+}
+else
+{
+  plugin_log($plugname, " reading conf file [$confFile].") if( $show_debug > 1); 
+  open(CONF, $confFile);
+  my @lines = <CONF>;
+  close($confFile);
+  my $result = eval("@lines");
+  if( $show_debug > 1 )
+  {
+    ($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+  }
+  if ($@) 
+  {
+    plugin_log($plugname, "conf file [$confFile] returned:") if( $show_debug > 1 );
+    my @parts = split(/\n/, $@);
+    if( $show_debug > 1 )
+    {
+      plugin_log($plugname, "--> $_") foreach (@parts);
+    }
+  }
+}
 
 #############################################################################
 # External libraries:
