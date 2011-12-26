@@ -1,0 +1,22 @@
+#-----------------------------------------------------------------------------
+# ACHTUNG: Variablen duerfen nur im Plugin mit 'my' definiert werden,
+#          'my' hier nicht verwenden!
+#-----------------------------------------------------------------------------
+
+#############################################################################
+# Configuration:
+$IP_of_Russound = '192.168.0.118';
+$MAC_of_Russound = '00:21:xx:xx:xx:xx';
+$numzones = 6;
+$KNX_Start_Address = '10/1/0';
+
+$reset      = 0; # set to 1 to reset the states, run script and change to 0 again
+$show_debug = 1; # switches debug information that will be shown in the log
+#############################################################################
+1;
+
+# emacs setting
+# ;;; Local Variables: ***
+# ;;; mode:perl ***
+# ;;; End: ***
+# vim: set filetype=perl expandtab tabstop=8 shiftwidth=2 autoindent smartindent:
