@@ -70,15 +70,15 @@ if (%msg) {
     if (! -e '/etc/openvpn/connect.sh' or ! -e '/etc/openvpn/disconnect.sh') {
       open(OUT, ">/etc/openvpn/connect.sh");
       print OUT "#!/bin/bash\n\nif [ -e /etc/openvpn/servers/\$common_name.disabled ]; then\n";
-      print OUT "\tlogger -t VPN 'refused disabled VPN-user \$common_name from \$trusted_ip'\n";
+      print OUT "\tlogger -t VPN \"refused disabled VPN-user \$common_name from \$trusted_ip\"\n";
       print OUT "\texit 1\nelse \n";
-      print OUT "\tlogger -t VPN '\$common_name logged in from \$trusted_ip (\$ifconfig_pool_remote_ip)'\n";
+      print OUT "\tlogger -t VPN \"\$common_name logged in from \$trusted_ip (\$ifconfig_pool_remote_ip)\"\n";
       print OUT "\tVPNGA=`grep \"^\$common_name=\" /etc/openvpn/servers/VPNGA_MAP | cut -d'=' -f 2`\n";
       print OUT "\tgroupswrite local:/tmp/eib \$VPNGA 1\nfi\nexit 0\n";
       close(OUT);
       open(OUT, ">/etc/openvpn/disconnect.sh");
       print OUT "#!/bin/bash\n\n";
-      print OUT "logger -t VPN '\$common_name logged out from \$trusted_ip (\$ifconfig_pool_remote_ip) T: \$time_duration S: \$bytes_sent R: \$bytes_received'\n";
+      print OUT "logger -t VPN \"\$common_name logged out from \$trusted_ip (\$ifconfig_pool_remote_ip) T: \$time_duration S: \$bytes_sent R: \$bytes_received\"\n";
       print OUT "VPNGA=`grep \"^\$common_name\" /etc/openvpn/servers/VPNGA_MAP | cut -d'=' -f 2`\n";
       print OUT "groupswrite local:/tmp/eib \$VPNGA 0\n";
       close(OUT);
