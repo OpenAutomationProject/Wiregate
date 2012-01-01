@@ -1,17 +1,30 @@
-# Demo-Plugin zum prüfen auf Timeout-Fehler und eMail-Versand
-use Net::SMTP;
+# Demo-Plugin zum prüfen auf Plugin Timeout-Fehler 
+# und eMail-Versand
 
-my $Empfaenger = 'meine@keine.de';
-my $Absender = 'WireGate <wiregate102@elabnet.de>';
-my $Betreff = "Plugin-Alarm!";
-my $mailserver='mail-out.elabnet.de'; # SMTP-Relay: das muss natuerlich angepasst werden!
-# Das kann tricky sein mit GMX&co..
-# Fix-me: besser waere den lokale Exim-Mailserver zu verwenden
-# Dieser muesste jedoch erst mit einem entspr. Relay konfiguriert werden
+my $hostname = `hostname`;
 
+##################
+### DEFINITION ###
+##################
+
+my $Empfaenger = 'meine@domain.de'; # Anpassen, mehrere mit ,
+my $Absender = 'WireGate <abc@gmx.de>'; # unbedingt anpassen, die Absenderadresse sollte gültig sein um Probleme zu vermeiden
+my $Betreff = "Plugin-Alarm von $hostname !";
+my $username = 'abc@gmx.de'; #Anpassen! Username fuer SMTP-Server
+my $password = "meinpasswort"; #Anpassen! Passwort fuer SMTP-Server
+my $mailserver='mail.gmx.net'; # SMTP-Relay: das muss natuerlich angepasst werden!
 $plugin_info{$plugname.'_cycle'} = 300;
 
-my $ret;
+#######################
+### ENDE DEFINITION ###
+#######################
+
+use Net::SMTP;
+use MIME::Base64;
+# FIXME: require Authen/SASL ?
+
+my ($ret,$err);
+
 foreach (@plugins) {
 my $plugname2 = basename($_);
 if ($plugin_info{$plugname2.'_timeout_err'} >= $plugin_max_errors) {
@@ -19,18 +32,31 @@ if ($plugin_info{$plugname2.'_timeout_err'} >= $plugin_max_errors) {
       # Alert
       if (!$plugin_info{$plugname2.'_timeout_alarm'}) {
             # sende Warn-eMail
-            my $smtp = Net::SMTP->new($mailserver, Timeout => 5);
-            $smtp->mail($Absender);
-            $smtp->to($Empfaenger); 
-            $smtp->data();
-            $smtp->datasend("To: $Empfaenger\n"); # Empfänger (Header)
-            $smtp->datasend("Subject: $Betreff\n"); # Betreff
-            $smtp->datasend("\n");
-            $smtp->datasend("$ret\n");
-            $smtp->dataend();
-            $smtp->quit;
-        }
-        $plugin_info{$plugname2.'_timeout_alarm'} = 1;
+            my $smtp = Net::SMTP->new($mailserver, Timeout => 20, Debug =>1) or return "Fehler beim verbinden zu $mailserver $!; $@";
+            $smtp->auth($username,$password);
+            $smtp->status() < 5
+            or do {
+                    #Die smtp->auth Methode schlaegt fehl, also dann so
+                    $smtp->datasend("AUTH LOGIN\n") or return 'auth login problem $!';
+                    $smtp->response();
+                    $smtp->datasend(encode_base64( $username ) ) or return "username $username cannot be encoded or wrong $!";
+                    $smtp->response();
+                    $smtp->datasend(encode_base64( $password ) ) or return "password $password cannot be encoded or wrong $!";
+                    $smtp->response();
+            };
+            $smtp->status() < 5 or return "Auth failed: $! ". $smtp->status();
+            $smtp->mail($Absender) or return "Absender $Absender abgelehnt $!";
+            $smtp->to($Empfaenger) or return "Empfaenger $Empfaenger abgelehnt $!"; 
+            $smtp->data() or return "Data failed $!";
+            $smtp->datasend("To: $Empfaenger\n") or return "Empfanger $Empfaenger (Header-To) abgelehnt $!";
+            $smtp->datasend("Subject: $Betreff\n") or return "Subject $Betreff abgelehnt $!";
+            $smtp->datasend("\n") or return "Data failed $!";
+            $smtp->datasend("$ret\n") or return "Data failed $!";
+            $smtp->dataend() or return "Data failed $!";
+            $smtp->quit or return "Quit failed $!";
+            $plugin_info{$plugname2.'_timeout_alarm'} = 1;
+            return "eMail gesendet: $ret";
+    }
     } else {
       # Reset Merker
       $plugin_info{$plugname2.'_timeout_alarm'} = 0;
@@ -38,5 +64,5 @@ if ($plugin_info{$plugname2.'_timeout_err'} >= $plugin_max_errors) {
     #$ret .= "$plugname2 Timeouts: $plugin_info{$plugname2.'_timeout_err'}";
 }
 
-return $ret;
+return; #alles ok oder eMail bereits gesendet
 
