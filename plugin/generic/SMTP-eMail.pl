@@ -11,7 +11,6 @@ my $hostname = `hostname`;
 ##################
 
 my $Empfaenger = 'meine@domain.de'; # Anpassen, mehrere mit ,
-
 my $Absender = 'WireGate <abc@gmx.de>'; # unbedingt anpassen, die Absenderadresse sollte gültig sein um Probleme zu vermeiden
 my $Betreff = "eMail von $hostname";
 my $text = "email-Body";
@@ -27,29 +26,29 @@ $plugin_info{$plugname.'_cycle'} = 3600;
 use Net::SMTP;
 use MIME::Base64;
 
-my $smtp = Net::SMTP->new($mailserver, Timeout => 5, Debug =>1) or return "Fehler beim verbinden zu $mailserver $!";
-my $ret .= ' auth:'. $smtp->auth($username,$password);
+my $smtp = Net::SMTP->new($mailserver, Timeout => 20, Debug =>1) or return "Fehler beim verbinden zu $mailserver $!; $@";
+$smtp->auth($username,$password);
 $smtp->status() < 5
 or do {
-        #        Die smtp->auth Methode schlaegt fehl, also dann so
-        $smtp->datasend("AUTH LOGIN\n") or return 'auth login problem';
+        #Die smtp->auth Methode schlaegt fehl, also dann so
+        $smtp->datasend("AUTH LOGIN\n") or return 'auth login problem $!';
         $smtp->response();
-        $smtp->datasend(encode_base64( $username ) ) or return "username $username cannot be encoded or wrong";
+        $smtp->datasend(encode_base64( $username ) ) or return "username $username cannot be encoded or wrong $!";
         $smtp->response();
-        $smtp->datasend(encode_base64( $password ) ) or return "password $password cannot be encoded or wrong";
+        $smtp->datasend(encode_base64( $password ) ) or return "password $password cannot be encoded or wrong $!";
         $smtp->response();
 };
-$ret .= 'status:' . $smtp->status();
-$ret .= ' send:'. $smtp->mail($Absender);
-$ret .= ' rcpt:'. $smtp->to($Empfaenger); 
-$ret .= $smtp->data();
-$ret .= $smtp->datasend("To: $Empfaenger\n"); # EmpfÃ¤nger (Header)
-$ret .= $smtp->datasend("Subject: $Betreff\n"); # Betreff
-$ret .= $smtp->datasend("\n");
-$ret .= $smtp->datasend("$text\n");
-$ret .= $smtp->dataend();
-$ret .= $smtp->quit;
+$smtp->status() < 5 or return "Auth failed: $! ". $smtp->status();
+$smtp->mail($Absender) or return "Absender $Absender abgelehnt $!";
+$smtp->to($Empfaenger) or return "Empfaenger $Empfaenger abgelehnt $!"; 
+$smtp->data() or return "Data failed $!";
+$smtp->datasend("To: $Empfaenger\n") or return "Empfanger $Empfaenger (Header-To) abgelehnt $!";
+$smtp->datasend("Subject: $Betreff\n") or return "Subject $Betreff abgelehnt $!";
+$smtp->datasend("\n") or return "Data failed $!";
+$smtp->datasend("$text\n") or return "Data failed $!";
+$smtp->dataend() or return "Data failed $!";
+$smtp->quit or return "Quit failed $!";
 
-# FIXME: check if we succeeded
-return;		
+return;	# keine Logausgabe
+return "eMail von $Absender an $Empfaenger Betreff $Betreff gesendet: $text";
 
