@@ -1,6 +1,8 @@
 # Demo-Plugin zum eMail-Versand - einfache Version mit Text-only
 # das macht nichts sinnvolles, sendet jede Stunde ein eMail,
 # soll nur als Vorlage dienen
+# - mit SSL (alte Version ohne SSL sieh SVN rev 622)
+# - benoetigt Paket libnet-smtp-ssl-perl
 
 # Aufbau moeglichst so, dass man unterhalb der Definitionen nichts aendern muss!
 
@@ -16,29 +18,20 @@ my $Betreff = "eMail von $hostname";
 my $text = "email-Body";
 my $username = 'abc@gmx.de'; #Anpassen! Username fuer SMTP-Server
 my $password = "meinpasswort"; #Anpassen! Passwort fuer SMTP-Server
-my $mailserver='mail.gmx.net'; # SMTP-Relay: das muss natuerlich angepasst werden!
+my $mailserver='mail.gmx.net:465'; # SMTP-Relay mit SSL: das muss natuerlich angepasst werden!
+# oder z.B. smtp.gmail.com:465 fuer Gmail; 
 $plugin_info{$plugname.'_cycle'} = 3600;
 
 #######################
 ### ENDE DEFINITION ###
 #######################
 
-use Net::SMTP;
+use Net::SMTP::SSL;
 use MIME::Base64;
 
-my $smtp = Net::SMTP->new($mailserver, Timeout => 20, Debug =>1) or return "Fehler beim verbinden zu $mailserver $!; $@";
-$smtp->auth($username,$password);
-$smtp->status() < 5
-or do {
-        #Die smtp->auth Methode schlaegt fehl, also dann so
-        $smtp->datasend("AUTH LOGIN\n") or return 'auth login problem $!';
-        $smtp->response();
-        $smtp->datasend(encode_base64( $username ) ) or return "username $username cannot be encoded or wrong $!";
-        $smtp->response();
-        $smtp->datasend(encode_base64( $password ) ) or return "password $password cannot be encoded or wrong $!";
-        $smtp->response();
-};
-$smtp->status() < 5 or return "Auth failed: $! ". $smtp->status();
+my $smtp = Net::SMTP::SSL->new($mailserver, Timeout => 10) or return "Fehler beim verbinden zu $mailserver $!; $@";
+$smtp->auth($username,$password) or return "SASL Auth failed $!;$@"; # try SASL
+$smtp->status() < 5 or return "Auth failed: $!; $@ ". $smtp->status();
 $smtp->mail($Absender) or return "Absender $Absender abgelehnt $!";
 $smtp->to($Empfaenger) or return "Empfaenger $Empfaenger abgelehnt $!"; 
 $smtp->data() or return "Data failed $!";
