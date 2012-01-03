@@ -10,6 +10,8 @@ $MAC_of_Russound = '00:21:xx:xx:xx:xx';
 $numzones = 6;
 $KNX_Start_Address = '10/1/0';
 
+$socknum = 4711; # unique number of the Socket
+
 $reset      = 0; # set to 1 to reset the states, run script and change to 0 again
 $show_debug = 1; # switches debug information that will be shown in the log
 #############################################################################
