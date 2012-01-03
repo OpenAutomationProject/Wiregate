@@ -44,7 +44,7 @@ foreach my $element (@actionGA) {
 	$smtp->auth($username,$password) or return "SASL Auth failed $!;$@"; # try SASL
 	$smtp->status() < 5 or return "Auth failed: $!; $@ ". $smtp->status();
 	$smtp->mail($Absender) or return "Absender $Absender abgelehnt $!";
-	$smtp->to($email_adress) or return "Empfaenger $email_adress abgelehnt $!"; 
+	$smtp->to(split(',',$email_adress)) or return "Empfaenger $email_adress abgelehnt $!"; 
 	$smtp->data() or return "Data failed $!";
 	$smtp->datasend("To: $email_adress\n") or return "Empfanger $email_adress (Header-To) abgelehnt $!";
 	$smtp->datasend("Subject: $email_subject\n") or return "Subject $email_subject abgelehnt $!";
