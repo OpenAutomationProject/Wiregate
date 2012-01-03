@@ -1,7 +1,8 @@
 # Demo-Plugin zum prüfen auf Plugin Timeout-Fehler 
 # und eMail-Versand 
 # - mit SSL (alte Version ohne SSL sieh SVN rev 622)
-# - benoetigt Paket libnet-smtp-ssl-perl
+# - benoetigt Paket libnet-smtp-ssl-perl libauthen-sasl-perl
+# (Updates->Pakete installieren oder apt-get install ..)
 
 my $hostname = `hostname`;
 
@@ -13,7 +14,7 @@ my $Empfaenger = 'meine@domain.de'; # Anpassen, mehrere mit ,
 my $Absender = 'WireGate <abc@gmx.de>'; # unbedingt anpassen, die Absenderadresse sollte gültig sein um Probleme zu vermeiden
 my $Betreff = "Plugin-Alarm von $hostname !";
 my $username = 'abc@gmx.de'; #Anpassen! Username fuer SMTP-Server
-my $password = "meinpasswort"; #Anpassen! Passwort fuer SMTP-Server
+my $password = 'meinpasswort'; #Anpassen! Passwort fuer SMTP-Server
 my $mailserver='mail.gmx.net:465'; # SMTP-Relay mit SSL: das muss natuerlich angepasst werden!
 # oder z.B. smtp.gmail.com:465 fuer Gmail; 
 $plugin_info{$plugname.'_cycle'} = 300;
@@ -38,7 +39,7 @@ if ($plugin_info{$plugname2.'_timeout_err'} >= $plugin_max_errors) {
             $smtp->auth($username,$password) or return "SASL Auth failed $!;$@"; # try SASL
             $smtp->status() < 5 or return "Auth failed: $! ". $smtp->status();
             $smtp->mail($Absender) or return "Absender $Absender abgelehnt $!";
-            $smtp->to($Empfaenger) or return "Empfaenger $Empfaenger abgelehnt $!"; 
+            $smtp->to(split(',',$Empfaenger)) or return "Empfaenger $Empfaenger abgelehnt $!";
             $smtp->data() or return "Data failed $!";
             $smtp->datasend("To: $Empfaenger\n") or return "Empfanger $Empfaenger (Header-To) abgelehnt $!";
             $smtp->datasend("Subject: $Betreff\n") or return "Subject $Betreff abgelehnt $!";
