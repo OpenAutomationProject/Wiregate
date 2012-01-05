@@ -1,4 +1,8 @@
 # Plugin zur Taupunktberechnung
+# *** ACHTUNG *** 
+# Dieses Plugin ist im Prinzip obsolet, da Taupunkt seit PL29 direkter Bestandteil ist 
+# *** ACHTUNG *** 
+# 
 # Details zur Näherungsformel unter http://www.wettermail.de/wetter/feuchte.html
 # Das Plugin geht davon aus, das Temperatur&Luftfeuchte zyklisch 
 # auf den Bus geschrieben werden und/oder lesbar sind (Lese-Flag gesetzt)

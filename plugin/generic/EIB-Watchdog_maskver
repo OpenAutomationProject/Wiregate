@@ -1,0 +1,21 @@
+### Variante maskver
+# Watchdog für KNX-Schnittstelle
+# relevant nur bei USB und evtl. FT1.2 !
+
+### Config physikalische Adresse - maskver muss lesbar sein!
+my $check_pa = "1.1.211";
+my $check_time = 120;
+### ENDE config
+
+# Eigenen Aufruf-Zyklus setzen
+$plugin_info{$plugname.'_cycle'} = $check_time;
+
+my $result=system("maskver local:/tmp/eib $check_pa");
+if ($result != 0) {
+	my $dummy = `/etc/init.d/eibd restart`;
+	return "EIB-Lesefehler!";
+} 
+
+return 0;
+
+
