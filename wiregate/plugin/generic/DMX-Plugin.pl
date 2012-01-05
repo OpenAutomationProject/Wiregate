@@ -1,5 +1,5 @@
 # Plugin DMX-Gateway
-# Version: 0.3 2011-05-28
+# Version: 0.4 2012-01-05
 # Benötigt DMX USB-Interface
 
 ##################
@@ -44,12 +44,6 @@ my @dimcurve = (  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 
 # Hauptverarbeitung
 if (!$socket[$socknum]) { # socket erstellen
-    if (defined $socket[$socknum]) { #debug
-        if ($socket[$socknum]->opened) { $socket[$socknum]->close(); }
-        undef $socket[$socknum];
-    }  #debug      my $dgram = sprintf("C%03dL%03d\r\n",$dmxchan,hex($msg{'data'}));
-
-    $socksel->remove($socket[$socknum]);
     $socket[$socknum] = IO::Socket::INET->new(LocalPort => $dmx_recv_port,
                               Proto => "udp",
                               LocalAddr => $dmx_recv_ip,

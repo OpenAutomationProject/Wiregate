@@ -1,5 +1,5 @@
 # Plugin R.S-Systems RFID-Reader to KNX
-# Version: 0.2 2010-10-02
+# Version: 0.21 2012-01-05
 # Benötigt 
 # - RSS RFID-Reader an einem USB-Seriell-Wandler
 # - Eintrag unter Socketverbindungen (socat)
@@ -27,11 +27,6 @@ my $interval = 30;       # Sendeintervall für RFIDs in Reichweite in Sekunden
 # Hauptverarbeitung
 # or ($fh and eof($socket[$socknum]))
 if (!$socket[$socknum]) { # socket erstellen
-    if (defined $socket[$socknum]) { #debug
-        if ($socket[$socknum]->opened) { $socket[$socknum]->close(); }
-        undef $socket[$socknum];
-    }  #debug
-    $socksel->remove($socket[$socknum]);
     $socket[$socknum] = IO::Socket::INET->new(LocalPort => $recv_port,
                               Proto => "udp",
                               LocalAddr => $recv_ip
