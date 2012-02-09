@@ -1,6 +1,7 @@
 # Plugin um Nachrichten an Prowl zu senden
-# Version: 0.1 2010-10-14
-# Benötigt einen Prowl-Account sowie API-Key
+# Version: 0.2 2012-01-09
+# Mit Wertabhaengigkeit, low/high-Filter
+# BenÃ¶tigt einen Prowl-Account sowie API-Key
 
 ##################
 ### DEFINITION ###
@@ -8,19 +9,29 @@
 
 my $socknum = 8;                # Eindeutige Nummer des Sockets
 
-# Eigenen Aufruf-Zyklus setzen (Initialisierung/zyklisches prüfen)
+# Eigenen Aufruf-Zyklus setzen (Initialisierung/zyklisches prÃ¼fen)
 $plugin_info{$plugname.'_cycle'} = 300;
 
 my %options = ();
 $options{'apikey'} = "xyzxyz";
 
 
-# Zwei Möglichkeiten zur Nutzung:
+# Zwei MÃ¶glichkeiten zur Nutzung:
 # VARIANTE 1: Bitwert auf GA sendet fixes Nachricht:
 my %prowl_ga; # Eintrag darf nicht auskommentiert werden, solange nachfolgend keine GA definiert erfolgt kein Versand!
 $prowl_ga{'14/5/208'} = '0;Event;Description Hallo;Application'; # Priority,Event,Description,Application - ggfs. NUR DIESE Zeile auskommentieren!
 
-# VARIANTE 2: Plugin horcht auf UDP-Port und empfängt Format PRIO;Event;Description;Application\n
+# VARIANTE 1a: Wert im Text mit ausgeben, printf-Syntax - DPT der GA muss konfiuriert sein!
+$prowl_ga{'14/5/208'} = '0;Event;Wert %.2f;Application'; # Priority,Event,Description,Application - ggfs. NUR DIESE Zeile auskommentieren!
+$prowl_ga{'5/0/1'}[0] = '0;ausgeschaltet;Description Hallo;Buero Beleuchtung'; # Priority,Event,Description,Application - ggfs. NUR DIESE Zeile auskommentieren!
+$prowl_ga{'5/0/1'}[1] = '0;eingeschaltet;Description Hallo;Buero Beleuchtung'; # Priority,Event,Description,Application - ggfs. NUR DIESE Zeile auskommentieren!
+$prowl_ga{'4/0/0'} = '0;eingeschaltet;Description Hallo;Temperatur %.2f'; # Priority,Event,Description,Application - ggfs. NUR DIESE Zeile auskommentieren!
+my %prowl_ga_limit_high;
+my %prowl_ga_limit_low;
+$prowl_ga_limit_high{'4/0/0'} = 28;
+$prowl_ga_limit_low{'4/0/0'} = 25;
+
+# VARIANTE 2: Plugin horcht auf UDP-Port und empfï¿½ngt Format PRIO;Event;Description;Application\n
 my $recv_ip = "0.0.0.0"; # Empfangs-IP
 my $recv_port = "50018"; # Empfangsport 
 
@@ -40,20 +51,34 @@ if (!$socket[$socknum]) { # socket erstellen
                               LocalAddr => $recv_ip,
                               ReuseAddr => 1
                                )
-	     or return ("open of $recv_ip : $recv_port failed: $!");
+         or return ("open of $recv_ip : $recv_port failed: $!");
     $socksel->add($socket[$socknum]); # add socket to select
     $plugin_socket_subscribe{$socket[$socknum]} = $plugname; # subscribe plugin
     # subscribe GA's
- 		while( my ($k, $v) = each(%prowl_ga) ) {
+         while( my ($k, $v) = each(%prowl_ga) ) {
       # Plugin an Gruppenadresse "anmelden"
       $plugin_subscribe{$k}{$plugname} = 1;
- 		}
+         }
     return "opened UDP-Socket $socknum";
 } 
 
 if (%msg) { # telegramm vom KNX
   if ($msg{'apci'} eq "A_GroupValue_Write" and $prowl_ga{$msg{'dst'}}) {
-        return sendProwl($prowl_ga{$msg{'dst'}});
+    if ($msg{'data'} eq "00") {
+        return sendProwl($prowl_ga{$msg{'dst'}}[0]);
+        }
+    elsif ($msg{'data'} eq "01") {
+        return sendProwl($prowl_ga{$msg{'dst'}}[1]);
+        }
+    elsif (defined $prowl_ga_limit_high{$msg{'dst'}} && $msg{'value'} > $prowl_ga_limit_high{$msg{'dst'}}) {
+        return sendProwl(sprintf($prowl_ga{$msg{'dst'}},$msg{'value'}));
+        }
+    elsif (defined $prowl_ga_limit_high{$msg{'dst'}} && $msg{'value'} < $prowl_ga_limit_low{$msg{'dst'}}) {
+        return sendProwl(sprintf($prowl_ga{$msg{'dst'}},$msg{'value'}));
+    }
+    else {
+        return sendProwl(sprintf($prowl_ga{$msg{'dst'}},$msg{'value'}));
+    }
   }
 } elsif ($fh) { # UDP-Packet
         my $buf = <$fh>;
@@ -62,10 +87,10 @@ if (%msg) { # telegramm vom KNX
 } else {
     # cyclic/init/change
     # subscribe GA's
- 		while( my ($k, $v) = each(%prowl_ga) ) {
+         while( my ($k, $v) = each(%prowl_ga) ) {
       # Plugin an Gruppenadresse "anmelden"
       $plugin_subscribe{$k}{$plugname} = 1;
- 		}
+         }
     return; # ("return dunno");
 }
 
@@ -84,11 +109,11 @@ sub sendProwl {
   $userAgent->agent("WireGatePlugin/1.0");
   
   $requestURL = sprintf("https://prowl.weks.net/publicapi/add?apikey=%s&application=%s&event=%s&description=%s&priority=%d",
-  				$options{'apikey'},
-  				$options{'application'},
-  				$options{'event'},
-  				$options{'notification'},
-  				$options{'priority'});
+                  $options{'apikey'},
+                  $options{'application'},
+                  $options{'event'},
+                  $options{'notification'},
+                  $options{'priority'});
   
   $request = HTTP::Request->new(GET => $requestURL);
   #$request->timeout(5);
@@ -96,13 +121,12 @@ sub sendProwl {
   $response = $userAgent->request($request);
   
   if ($response->is_success) {
-  	return "Notification successfully posted: $options{'priority'},$options{'event'},$options{'description'},$options{'application'}";
+      return "Notification successfully posted: $options{'priority'},$options{'event'},$options{'description'},$options{'application'}";
   } elsif ($response->code == 401) {
-  	return "Notification not posted: incorrect API key.";
+      return "Notification not posted: incorrect API key.";
   } else {
-  	return "Notification not posted: " . $response->content;
+      return "Notification not posted: " . $response->content;
   }
 
 }
 
-return;
