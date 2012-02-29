@@ -1,20 +1,36 @@
-# Plugin zum Zeit abhängigem schaten von GA's (Schaltuhr)
-# Version 0.5 BETA 03.07.2011
+# Plugin zum Zeit abhängigem schalten von GA's (Schaltuhr)
+# Version 0.6 BETA 29.02.2012
 # Copyright: swiss (http://knx-user-forum.de/members/swiss.html)
 # License: GPL (v2)
 # Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
+# -Erweitert um Sonnenauf / - untergang von ZeitlerW (http://knx-user-forum.de/members/zeitlerw.html)
+# -Inspiriert von kleinklausi's Rolladen - Plugin
 
 
 ####################
 ###Einstellungen:###
 ####################
+
+# Die Standortdaten 
+# Die Koordinaten des Hauses. Sehr einfach über http://www.getlatlon.com/ zu ermitteln.
+my ($lat, $lon) = (
+    50.27816466477597, # Breitengrad in Grad
+    11.64325475692749  # Längengrad in Grad
+    );
+
+#Winkel für Beginn der Dämmerung
+# siehe auch: http://search.cpan.org/~rkhill/Astro-Sunrise-0.91/Sunrise.pm#DESCRIPTION 
+my $winkel=-3;
 my @Schaltzeiten;
 
+
 #Pro Schaltpunkt einfach den unten stehenden Eintrag kopieren und anpassen.
+#Sollen Schaltzeiten astronomisch geschaltet werden, so muß bei Astro 'a' für Sonnenaufgang
+#und 'u' für Sonnenuntergang eingetragen werden. Der Stunden und Minutenwert wird dann ignoriert.
 
-push @Schaltzeiten, { name => "bewässerung_ein", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 1, Stunden => 21, Minuten => 02, Wert => 1, DPT => 1, ga => '2/0/0', KW => '', Monat => '' };
+push @Schaltzeiten, { name => "weckzeit", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 0, Stunden => 05, Minuten => 45, Wert => 1, DPT => 1, ga => '1/5/4', KW => '', Monat => '', Astro => '' };
 
-push @Schaltzeiten, { name => "bewässerung_aus", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 1, Stunden => 21, Minuten => 03, Wert => 0, DPT => 1, ga => '2/0/0', KW => '', Monat => '' };
+
 
 ######################
 ##ENDE Einstellungen##
@@ -22,6 +38,8 @@ push @Schaltzeiten, { name => "bewässerung_aus", montag => 1, dienstag => 1, mit
 
 use POSIX;
 use Time::Local;
+# Wir brauchen auch Sonnenstandsberechnung
+use Astro::Sunrise;
 
 # Eigenen Aufruf-Zyklus auf 20sek. setzen
 $plugin_info{$plugname.'_cycle'} = 20;
@@ -47,6 +65,15 @@ my $kw = getWeekNumber($year, $mon, $mday);
 
 foreach my $element (@Schaltzeiten) {
 	if (knx_read($element->{ga},0,$element->{DPT}) ne $element->{Wert}) {
+	        if ($element->{Astro} ne '') {
+	            if ($element->{Astro} eq 'a') {
+	                $element->{Stunden}=$sunrise[0];
+	                $element->{Minuten}=$sunrise[1];
+	            } elsif ($element->{Astro} eq 'u') {
+	                                $element->{Stunden}=$sunset[0];
+	                                $element->{Minuten}=$sunset[1];
+	            }
+		}
 		if ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} ne '') {
 			if ($element->{KW} == $kw) {
 				knx_write($element->{ga},$element->{Wert},$element->{DPT});
