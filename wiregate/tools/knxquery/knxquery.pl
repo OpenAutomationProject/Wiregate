@@ -25,7 +25,6 @@
 
 use strict;
 use Getopt::Long;
-use Config::Std { def_sep => '=', read_config => 'my_read_cfg' };
 use Switch;
 use EIBConnection;
 
@@ -34,6 +33,8 @@ use EIBConnection;
 my $debug=0;
 my %eibgaconf;
 my $eib_url = "local:/tmp/eib";
+my @gas = ();
+my $eibgafile = '/etc/wiregate/eibga.conf';
 
 my ($dump_arg, $read_arg, $ga_arg, $age_arg, $dpt_arg, $help);
 
@@ -49,12 +50,20 @@ sub dumpGa
     # koennte man mit dem Dumper machen ... 
     #    print Dumper(%eibgaconf), "\n";
     # ... soll aber schoener aussehen:
+
+    my ($dptid, $dptsubid, $dptname, $gaName) = ('','','');
+
     &printGaInfo($_) foreach (sort keys %eibgaconf);
 } # dumpGa
 
 sub printGaInfo
 {
     my $ga = shift || die "\n\n fehlender GA-paramater in printGaInfo()\n\n";
+
+    # koennte man mit dem Dumper machen ... 
+    #    print Dumper(%eibgaconf), "\n";
+    # ... soll aber schoener aussehen:
+
     my ($dptid, $dptsubid, $dptname, $gaName) = ('','','');
 
     if (!exists $eibgaconf{$ga})
@@ -280,6 +289,23 @@ sub knx_read {
     } 
 }
 
+sub readCfg()
+{
+    my $file = shift or die "\n\nFEHLER: Dateiname für readCfg() fehlt\n\n";
+    open (IN, "< $file") or  die "\n\nFEHLER: Kann Datei [$file] nicht öffnen: $!\n\n";
+    my $section;
+
+    while(<IN>)
+    {
+        chomp;
+        /^\s*$/ and next;
+        
+        /^\s*\[\s*([\S]+)\]/ and $section = $1 and next;
+        $eibgaconf{$section}{$1} = $2     if ($section && /^\s*(\S+)\s*=\s*(.*)/);
+    }
+    close IN;
+} # readCfg
+
 # ------------- main
 
 usage() if ( ! GetOptions  ('help|h|?' => \$help, 
@@ -291,53 +317,70 @@ usage() if ( ! GetOptions  ('help|h|?' => \$help,
 	     )
 	     or defined $help );
 
-if (-e '/etc/wiregate/eibga.conf') 
+
+
+if (-r  $eibgafile) 
 { 
-    my_read_cfg '/etc/wiregate/eibga.conf' => %eibgaconf;
+    &readCfg($eibgafile);
+#    my_read_cfg '/etc/wiregate/eibga.conf' => %eibgaconf;
 } 
 else 
 {
-    print "WARNUNG: unable to read config[/etc/wiregate/eibga.conf]\n";
+    print "WARNUNG: unable to read [$eibgafile]\n";
 }
 
+
+!defined $ga_arg and $ga_arg='';
 
 if ($dump_arg)
 {   
     if ($ga_arg) {
-	printGaInfo($ga_arg);
+	printGaInfo($_) foreach (@gas);
     } else {
-	dumpGa($ga_arg);
+	dumpGa();
     }
 
     exit;
 }
 
+@gas = split(/,/, $ga_arg);
+
 if ($read_arg)
 {
     if (!defined $ga_arg)
     {
-	print "FEHLER: Fuer READ bitte die Gruppenadresse angeben (EINGABETASTE druecken ...).";
+	print "FEHLER: Fuer READ bitte die Gruppenadresse(n) angeben (EINGABETASTE druecken ...) ";
 	getc(STDIN);
 	exit;
     }
 
-    if (!defined $dpt_arg && !exists $eibgaconf{$ga_arg})
+    if (!defined $dpt_arg)
     {
-	print "FEHLER: Unbekannte Gruppenadresse, bitte Datentyp angegeben (EINGABETASTE druecken ...).";
-	getc(STDIN);
-	exit;
+	foreach (@gas)
+	{
+	    if (!exists $eibgaconf{$_})
+	    {
+		print "FEHLER: Unbekannte GA[$_], bitte Datentyp angeben (EINGABETASTE druecken ...) ";
+		getc(STDIN);
+		exit;
+	    }
+	}
     }
-
+    
     (!$age_arg) and $age_arg = 1;
 
-    my $res = knx_read($ga_arg, $age_arg, $dpt_arg);
-    if ($res)
+    my ($res, $ga);
+    foreach $ga (@gas)
     {
-	print "GELESEN:ga[$ga_arg], res[$res]\n";
-    }
-    else
-    {
-	print "FEHLER: READ ga[$ga_arg]\n";
+	$res = knx_read($ga, $age_arg, $dpt_arg);
+	if (defined $res)
+	{
+	    print "GELESEN:ga[$ga_arg], res[$res]\n";
+	}
+	else
+	{
+	    print "FEHLER: READ ga[$ga_arg]\n";
+	}
     }
     exit;
 }
@@ -354,7 +397,7 @@ B<knxquery.pl> -- Einen Wert vom KNX-Bus lesen
 
 B<knxquery.pl> -h 
 
-B<knxquery.pl> -r -g GA [-a AGE] [-t DPT]
+B<knxquery.pl> -r -g GA[,GA ...] [-a AGE] [-t DPT]
 
 B<knxquery.pl> -d [-g GA]
 
@@ -369,32 +412,35 @@ B<knxquery.pl> liest einen Wert vom  KNX-Bus und gibt diesen auf stdout aus.
 
 =item B<-h | --help>  Anzeige dieser Hilfe.
 
-=item B<-r | --read>  Liest einen Wert vom KNX-Bus. Die Gruppenandresse B<GA> 
-muss angegeben werden. Wenn die Gruppenadresse nicht in der Konfiguration 
-hinterlegt ist, muss ausserdem der datentyp B<DPT> angegeben werden.
+=item B<-r | --read>  Liest einen Wert vom KNX-Bus. Der Parameter B-g <GA> fuer
+eine odere mehrere Gruppenandresse(n) muss/muessen angegeben werden. Wenn eine
+Gruppenadresse nicht in der Konfiguration hinterlegt ist, muss ausserdem der 
+Datentyp Parameter B<-t DPT> angegeben werden. 
 
-=item B<-d | --dump>  Gibt Informationen zu einer oder zu allen Gruppenadressen
-aus.  Wird eine B<GA> angegeben, werden Informationen nur zu dieser Adresse
-ausgegeben. Wird keine Gruppenadresse angegeben, werden Informationen zu allen
-konfigurierten Adressen ausgegeben. 
+=item B<-d | --dump>  Gibt Informationen zu einer, zu mehreren oder zu allen
+Gruppenadressen aus. Wird keine Gruppenadresse angegeben, werden Informationen
+zu allen konfigurierten Adressen ausgegeben, ansonsten nur zu den im B<-g GA>
+Parameter angegeben Adressen.
 
 =item B<-g | --ga> Angabe der Gruppenadresse B<GA> deren Wert zu lesen ist  
 oder zu der Informationen ausgegeben werden sollen. Die Adresse muss im 
 Format B<H/M/U>, angegeben werden, wobei B<H> die Hauptgruppe, B<M> die 
-Mittelgruppe und B<U> die Untergruppe ist.
+Mittelgruppe und B<U> die Untergruppe ist. Es koennen auch mehrere B<GA> 
+angegeben werden. Diese muessen durch Kommata, ohne Leerzeichen, voneinander
+getrennt werden, z.B: B<-ga 1/20/130,4/50/160>.
 
-=item B<-a | --age> Maximales Cache-Alter B<AGE> des zu lesenden Wertes in Sekunden. 
+=item B<-a | --age> Maximales Cache-Alter B<AGE> der zu lesenden Werte in Sekunden. 
 Unterlassungswert ist 1 Sekunde.
 
 =item B<-t | --dpt>   Angabe des Datentyps B<DPT>. Dieser Wert muss nur 
 angegeben werden, wenn die Gruppenadresse nicht in der Konfiguration 
-erfasst ist. Es reicht der Haupttyp, also z.B. B<1, 2, 3> ... usw.
+erfasst ist. Es reicht der Haupttyp, also z.B. B<1, 2, 3> ... usw. 
 
 =back
 
 =head1 VORAUSSETZUNGEN
 
-Das Script wurde f�r das B<Wiregate> Gateway geschrieben, und erwartet eine 
+Das Script wurde fuer das B<Wiregate> Gateway geschrieben, und erwartet eine 
 diesem Gateway entsprechende Konfiguration. Der Rechner muss an einen KNX-Bus
 angeschlossen sein, und Zugriff auf diesen Bus haben, z.B. per EIB-TPUART. 
 
