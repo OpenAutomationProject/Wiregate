@@ -6,10 +6,75 @@
 #          'my' hier nicht verwenden!
 #-----------------------------------------------------------------------------
 
+#----------------------------------------------------
+# Hinweis zu den Eintraegen in der '@Zeiten' Tabelle
+# (Bitte auch die nachfolgenden Anmerkungen beachten):
+#----------------------------------------------------
+# Folgende Eintraege werden verarbeitet:
+#  #
+# - Name     Ein beliebiger Text. Ich habe nicht getestst, ob diser Leerstellen 
+#            enthalten darf. Statt dessen besser Unterstriche nehmen oder 
+#            ausprobieren. Dieser Text erscheint im Logfile sofern aktiviert.
+#            Zwingende Angabe.
+# - Aktiv    Wenn null, wird der Eintrag nicht ausgefuehrt.
+#            Wenn nicht definiert, wird 'true' angenommen (Eintrag wird 
+#              ausgefuehrt).
+#            Wahlweise Angabe.
+# - Min  *)  Minute, gueltige Werte 0-59.
+#            Wenn definiert, wird der Eintrag zur angegeben Minute gueltig.
+#            Wenn nicht definiert, ist jede Minute gueltig.
+#            Wahlweise Angabe.#            
+# - Std  *)  Stunde, gueltige Werte 0-23.
+#            Wenn definiert, ist der Eintrag zur angegeben Stunde gueltig.
+#            Wenn nicht definiert, ist jede Stunde gueltig.
+#            Wahlweise Angabe.
+# - MTag *)  Tag des Monats, gueltige Werte 1-31 (abhaengig vom Monat 
+#              natuerlich). 
+#            Wenn definiert, ist der Eintrag am angegegebenen Tag des Monats
+#              gueltig.
+#            Wenn nicht definiert, ist jeder Tag des Monats gueltig.
+#            Wahlweise Angabe.
+# - Mon  *)  Monat, gueltige Werte 1-11.
+#            Wenn definiert, ist der Eintrag im angegegebenen (Monat+1) gueltig.
+#            Wenn nicht definiert, ist jeder Monat gueltig.
+#            Wahlweise Angabe.
+# - WTag *)  Wochentag, gueltige Werte 0-6. 0=Sonntag ... 6=Samstag.
+#            Wenn definiert, ist der Eintragam angegebenen Wochentag gueltig.
+#            Wenn nicht definiert, ist jeder Wochentag gueltig.
+#            Wahlweise Angabe.
+# - Wert     Auf den Bus zu schreibender Wert.
+#            Zwingende Angabe.
+# - DPT      EIB Datentyp.
+#            Zwingende Angabe.
+# - GA       Gruppenadresse in gueltigem Format.
+#            Zwingende Angabe.
+# - Log      Log schreiben. Gueltige Werte: 0 oder 1.
+#            Wenn definiert und ungleich null, wird ein Logeintrag geschrieben
+#              sofern das Telegramm gesendet wurde.
+#            Wenn nicht definiert, wird kein Logeintrag geschrieben.
+#            Wahlweise Angabe.
+#
+# Anmerkungen:
+#
+# - Die Schluesselworte 'Name', 'Aktiv', 'WTag' etc. muessen in exakter 
+#   Gross/Kleinschreibung angegeben werden!
+# - Die Verarbeitung ist auf Werte in einfachen Hochkommata ausgelegt.
+# - Statt fester Werte koennen auch Code-Referenzen angegeben werden.
+#   Ein Beipiel dazu findet sich im knx-user-forum.de unter 
+#   http://knx-user-forum.de/wiregate/14892-zeitschaltuhr-plugin-8.html
+#   Beitrag #76: http://knx-user-forum.de/183739-post76.html
+#
+# *) Es koennen Mehrfachwerte in gemischter Form von Listen und Bereichen 
+#    angegeben werden. z.B: 
+#         Min  => '15,45'           ist fuer Minute 15 und 45 gueltig.
+#         Std  => '0-18,20,23,24'   ist in den Stunden 0 bis 18, 20, 23 und 24 
+#                                     gueltig.
+#         WTag => '1-3,5,6'         ist an den Wochentagen Mo, Di, Mi, Fr und 
+#                                     Sa gueltig.
+
 #------------------------
 # Konfigurierbare Werte
 #------------------------
-
 @Zeiten = 
     ( 
       # Aussenlicht und Aussensteckdosen zyklisch ausschalten
