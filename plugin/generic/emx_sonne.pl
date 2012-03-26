@@ -24,14 +24,25 @@
 #  ##  who  yyyymmdd   bug#  description
 #  --  ---  --------  -----  ----------------------------------------
 #   .  ...  ........  .....  vorlage 
+#   1  edh  20120326  .....  Berechnungszeitpunkt auf 3:xx Uhr verlegt,
+#                             weil die Zeiten sonst vor der 
+#                             Umstellungsuhrzeit errechnet werden, und
+#                             das am Umstellungstag Winter->Sommer zu 
+#                             zu Fehlern führt: An diesem Tag wären
+#                             dann die Sommerzeit noch nicht berück-
+#                             sichtigt.                            
 #   0  edh  20111023  -----  erste Version
 
 use Math::Trig;
 use POSIX;
 
 # Default: Berlin
-my $Breite = 52.5167;
-my $Laenge = 13.4;
+my $Breite     = 52.5167;
+my $Laenge     = 13.4;
+
+# updateUhrzeit 3:11:13, ungerade Zeit um Rechenstaus zu vermeiden
+my $updateZeit = 11473; #  HH*3600 + MM*60 + SS = 3*3600 + 11*60 + 13 = 11473;
+my $einTag     = 86400; # 24*3600;
 
 sub calculateSun()
 {
@@ -94,5 +105,5 @@ my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$timezone) = localtime(time);
  $plugin_info{"$plugname.laenge"} != $Laenge ||
  $plugin_info{"$plugname.breite"} != $Breite) and &calculateSun($yday, $timezone);
 
-# bis 1:00:27 Uhr warten, dann neu rechnen (ungerade Zeit zur Vermeidung von Plugin-Staus)
-$plugin_info{$plugname.'_cycle'} = (25-$hour) * 3600 - $min*60 - $sec + 27;
+# bis updateZeit warten, dann neu rechnen
+$plugin_info{$plugname.'_cycle'} = $einTag - ($hour*3600 + $min*60 + $sec) + $updateZeit;
