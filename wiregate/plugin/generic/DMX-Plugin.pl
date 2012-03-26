@@ -1,5 +1,5 @@
 # Plugin DMX-Gateway
-# Version: 0.4 2012-01-05
+# Version: 0.41 2012-03-26
 # Benötigt DMX USB-Interface
 
 ##################
@@ -45,33 +45,36 @@ my @dimcurve = (  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 # Hauptverarbeitung
 if (!$socket[$socknum]) { # socket erstellen
     $socket[$socknum] = IO::Socket::INET->new(LocalPort => $dmx_recv_port,
-                              Proto => "udp",
-                              LocalAddr => $dmx_recv_ip,
-                              PeerPort  => $dmx_send_port,
-                              PeerAddr  => $dmx_send_ip,
-                              ReuseAddr => 1
-                               )
-	     or return ("open of $dmx_recv_ip : $dmx_recv_port failed: $!");
+                            Proto => "udp",
+                            LocalAddr => $dmx_recv_ip,
+                            PeerPort  => $dmx_send_port,
+                            PeerAddr  => $dmx_send_ip,
+                            ReuseAddr => 1
+                        )
+        or return ("open of $dmx_recv_ip : $dmx_recv_port failed: $!");
     $socksel->add($socket[$socknum]); # add socket to select
     $plugin_socket_subscribe{$socket[$socknum]} = $plugname; # subscribe plugin
     for (my $i=0; $i<$dmx_channels;$i++) {
-    	$plugin_subscribe{$knx_startGA}{$plugname} = 1;
-    	$knx_startGA = addr2str(str2addr($knx_startGA)+1,1);
+        $plugin_subscribe{$knx_startGA}{$plugname} = 1;
+	    $knx_startGA = addr2str(str2addr($knx_startGA)+1,1);
     }
     return "opened UDP-Socket $socknum";
 } 
 if (%msg) { # telegramm vom KNX
-	my $destN = str2addr($msg{'dst'});
-	my $startN = str2addr($knx_startGA);
-	my $dmxchan = $destN - $startN;
-  if ($msg{'apci'} eq "A_GroupValue_Write" and $destN >= $startN and $destN <= $startN+$dmx_channels) {
-    	# send $dmxchan -> UDP as CaaaLvvv
+    my $destN = str2addr($msg{'dst'});
+    my $startN = str2addr($knx_startGA);
+    my $dmxchan = $destN - $startN;
+    if ($msg{'apci'} eq "A_GroupValue_Write" and $destN >= $startN and $destN <= $startN+$dmx_channels) {
+        # send $dmxchan -> UDP as CaaaLvvv
         my $dgram = sprintf("C%03dL%03d\r\n",$dmxchan,$dimcurve[hex($msg{'data'})]);
-    	$socket[$socknum]->send($dgram) or return "send failed: $!";
-      # debug chop($dgram);chop($dgram); # debug
-      # debug return "sent $msg{'dst'} $msg{'value'} $dgram to DMX $dmxchan"; # debug
-      return;
- 	}
+        $socket[$socknum]->send($dgram) or return "send failed: $!";
+        return;
+    }
+    elsif ($msg{'apci'} eq "A_GroupValue_Read" and $destN >= $startN and $destN <= $startN+$dmx_channels) {
+        # send response to KNX from eibd-cache
+        knx_write($msg{'dst'},knx_read($msg{'dst'},86400,5),5,1);
+        return "read $destN";
+    }
 } elsif ($fh) {
     my $buf;
     recv($fh,$buf,255,0);
