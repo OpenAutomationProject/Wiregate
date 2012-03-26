@@ -1,10 +1,10 @@
 # Plugin zum Zeit abhängigem schalten von GA's (Schaltuhr)
-# Version 0.6 BETA 25.03.2012
+# Version 0.6 BETA 29.02.2012
 # Copyright: swiss (http://knx-user-forum.de/members/swiss.html)
 # License: GPL (v2)
 # Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
-# Erweitert um Sonnenauf / - untergang von ZeitlerW (http://knx-user-forum.de/members/zeitlerw.html)
-# Inspiriert von kleinklausi's Rolladen - Plugin
+# -Erweitert um Sonnenauf / - untergang von ZeitlerW (http://knx-user-forum.de/members/zeitlerw.html)
+# -Inspiriert von kleinklausi's Rolladen - Plugin
 
 
 ####################
@@ -12,29 +12,26 @@
 ####################
 
 # Die Standortdaten 
-# Die Koordinaten des Hauses. Sehr einfach über http://www.getlatlon.com/ zu ermitteln.
+# Die Koordinaten des Hauses. Sehr einfach ?ber http://www.getlatlon.com/ zu ermitteln.
 my ($lat, $lon) = (
     50.27816466477597, # Breitengrad in Grad
-    11.64325475692749  # Längengrad in Grad
+    11.64325475692749  # L?ngengrad in Grad
     );
 
 #Winkel für Beginn der Dämmerung
 # siehe auch: http://search.cpan.org/~rkhill/Astro-Sunrise-0.91/Sunrise.pm#DESCRIPTION 
 my $winkel=-3;
-
 my @Schaltzeiten;
+
+
 #Pro Schaltpunkt einfach den unten stehenden Eintrag kopieren und anpassen.
-#Sollen Schaltzeiten astronomisch geschaltet werden, so muß bei Astro 'a' für Sonnenaufgang
+#Sollen Schaltzeiten astronomisch geschaltet werden, so muss bei Astro 'a' für Sonnenaufgang
 #und 'u' für Sonnenuntergang eingetragen werden. Der Stunden und Minutenwert wird dann ignoriert.
 
-push @Schaltzeiten, { name => "Stern_Wohnzimmer", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 1, sonntag => 1, Stunden => 16, Minuten => 00, Wert => 1, DPT => 1, ga => '0/0/34', KW => '', Monat => '', Astro => 'u' };
-push @Schaltzeiten, { name => "Stern_Wohnzimmer", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 1, sonntag => 1, Stunden => 23, Minuten => 00, Wert => 0, DPT => 1, ga => '0/0/34', KW => '', Monat => '', Astro => '' };
-push @Schaltzeiten, { name => "Stern_Wohnzimmer", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 1, sonntag => 1, Stunden => 06, Minuten => 00, Wert => 1, DPT => 1, ga => '0/0/34', KW => '', Monat => '', Astro => '' };
-push @Schaltzeiten, { name => "Stern_Wohnzimmer", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 1, sonntag => 1, Stunden => 8, Minuten => 30, Wert => 0, DPT => 1, ga => '0/0/34', KW => '', Monat => '', Astro => 'a' };
-push @Schaltzeiten, { name => "Glasvase_Wohnzimmer", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 1, sonntag => 1, Stunden => 16, Minuten => 00, Wert => 1, DPT => 1, ga => '0/0/35', KW => '', Monat => '', Astro => 'u' };
-push @Schaltzeiten, { name => "Glasvase_Wohnzimmer", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 1, sonntag => 1, Stunden => 23, Minuten => 00, Wert => 0, DPT => 1, ga => '0/0/35', KW => '', Monat => '', Astro => '' };
-push @Schaltzeiten, { name => "Glasvase_Wohnzimmer", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 1, sonntag => 1, Stunden => 06, Minuten => 00, Wert => 1, DPT => 1, ga => '0/0/35', KW => '', Monat => '', Astro => '' };
-push @Schaltzeiten, { name => "Glasvase_Wohnzimmer", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 1, sonntag => 1, Stunden => 8, Minuten => 30, Wert => 0, DPT => 1, ga => '0/0/35', KW => '', Monat => '', Astro => 'a' };
+push @Schaltzeiten, { name => "weckzeit", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 0, Stunden => 05, Minuten => 45, Wert => 1, DPT => 1, ga => '1/5/4', KW => '', Monat => '', Astro => '' };
+
+
+
 ######################
 ##ENDE Einstellungen##
 ######################
@@ -44,15 +41,12 @@ use Time::Local;
 # Wir brauchen auch Sonnenstandsberechnung
 use Astro::Sunrise;
 
-
 # Eigenen Aufruf-Zyklus auf 20sek. setzen
 $plugin_info{$plugname.'_cycle'} = 20;
 
 #Hier wird ein Array angelegt, um die Wochentagsnummer von localtime zu übersetzen
 my @Wochentag = ('sonntag', 'montag', 'dienstag', 'mittwoch', 'donnerstag', 'freitag', 'samstag');
 
-my @sunrise=split(/:/,sun_rise($lon,$lat,$winkel));
-my @sunset=split(/:/,sun_set($lon,$lat,$winkel));
 my $sec; #Sekunde
 my $min; # Minute
 my $hour; #Stunde
@@ -70,44 +64,35 @@ $mon += 1;
 my $kw = getWeekNumber($year, $mon, $mday);
 
 foreach my $element (@Schaltzeiten) {
-    if (knx_read($element->{ga},0,$element->{DPT}) ne $element->{Wert}) {
-                if ($element->{Astro} ne '') {
-                        if ($element->{Astro} eq 'a') {
-                                if ($isdst) {
-                                        $element->{Stunden}=$sunrise[0]+1;
-                                } else {
-                                        $element->{Stunden}=$sunrise[0];
-                                        }
-                                $element->{Minuten}=$sunrise[1];
-                        } elsif ($element->{Astro} eq 'u') {
-                                if ($isdst) {
-                                        $element->{Stunden}=$sunset[0]+1;
-                                } else {
-                                        $element->{Stunden}=$sunset[0];
-                                        }
-                                $element->{Minuten}=$sunset[1];
-                        }
-                }
-
-  if ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} ne '') {
-            if ($element->{KW} == $kw) {
-                knx_write($element->{ga},$element->{Wert},$element->{DPT});
-                next;
-            } else {
-                next;
-            }
-        } elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{Monat} ne '') {
-            if ($element->{Monat} == $mon) {
-                knx_write($element->{ga},$element->{Wert},$element->{DPT});
-                next;
-            } else {
-                next;
-            }
-        } elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} eq '' && $element->{Monat} eq '') {
-            knx_write($element->{ga},$element->{Wert},$element->{DPT});
-            next;
-        }
-    }    
+	if (knx_read($element->{ga},0,$element->{DPT}) ne $element->{Wert}) {
+	        if ($element->{Astro} ne '') {
+	            if ($element->{Astro} eq 'a') {
+	                $element->{Stunden}=$sunrise[0];
+	                $element->{Minuten}=$sunrise[1];
+	            } elsif ($element->{Astro} eq 'u') {
+	                                $element->{Stunden}=$sunset[0];
+	                                $element->{Minuten}=$sunset[1];
+	            }
+		}
+		if ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} ne '') {
+			if ($element->{KW} == $kw) {
+				knx_write($element->{ga},$element->{Wert},$element->{DPT});
+				next;
+			} else {
+				next;
+			}
+		} elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{Monat} ne '') {
+			if ($element->{Monat} == $mon) {
+				knx_write($element->{ga},$element->{Wert},$element->{DPT});
+				next;
+			} else {
+				next;
+			}
+		} elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} eq '' && $element->{Monat} eq '') {
+			knx_write($element->{ga},$element->{Wert},$element->{DPT});
+			next;
+		}
+	}	
 next;
 }
 
@@ -122,7 +107,7 @@ if ($weekNumber eq 0)
 # Wochennummer des letzten Woche des letzten Jahres suchen
 $weekNumber = checkWeekNumber(($year - 1), 12, 31);
 
-# wenn die Wochennummer größer als 52 ist
+# wenn die Wochennummer gr??er als 52 ist
 # dann prüfen ob diese Wochennummer korrekt ist oder
 # sie bereits die erste Woche des aktuellen Jahres ist
 if ($weekNumber gt 52)
@@ -136,7 +121,7 @@ $weekNumber = 53;
 }
 }
 }
-# wenn die Wochennummer größer als 52 ist
+# wenn die Wochennummer grösser als 52 ist
 # dann prüfen ob diese Wochennummer korrekt ist oder
 # sie bereits die erste Woche des nächsten Jahres ist
 elsif ($weekNumber gt 52)
