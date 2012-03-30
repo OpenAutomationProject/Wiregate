@@ -24,7 +24,7 @@
 # 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
 use strict;
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case bundling);
 use Switch;
 use EIBConnection;
 
@@ -36,7 +36,8 @@ my $eib_url = "local:/tmp/eib";
 my @gas = ();
 my $eibgafile = '/etc/wiregate/eibga.conf';
 
-my ($dump_arg, $read_arg, $ga_arg, $age_arg, $dpt_arg, $help);
+my ($dump_arg, $read_arg, $isearch_arg, $search_arg, 
+    $hgroup_arg, $mgroup_arg, $group_arg, $ga_arg, $age_arg, $dpt_arg, $help);
 
 sub usage
 {
@@ -85,6 +86,25 @@ sub printGaInfo
     "DPTName[$dptname]",
     "$gaName";
 } # printGaInfo
+
+sub doSearch()
+{
+    # prints all ga containing text and/or hgroup and/or mgroup and/or group
+
+    foreach my $ga (sort keys %eibgaconf)
+    {
+        ($search_arg && $eibgaconf{$ga}{name} !~ /$search_arg/) and next;
+        ($isearch_arg && $eibgaconf{$ga}{name} !~ /$isearch_arg/i) and next;
+
+        my ($hg, $mg, $g);
+        ($ga =~ /(\d+)\/(\d+)\/(\d+)/) and ($hg, $mg, $g) = ($1, $2, $3);
+
+        ($hgroup_arg && $hgroup_arg ne $hg) and next;
+        ($mgroup_arg && $mgroup_arg ne $mg) and next;
+        ($group_arg &&  $group_arg ne $g) and next;
+        &printGaInfo($ga) 
+    }
+} # doSearch
 
 
 # sub addr2str {
@@ -298,8 +318,7 @@ sub readCfg()
     while(<IN>)
     {
         chomp;
-        /^\s*$/ and next;
-        
+        /^\s*$/ and next;        
         /^\s*\[\s*([\S]+)\]/ and $section = $1 and next;
         $eibgaconf{$section}{$1} = $2     if ($section && /^\s*(\S+)\s*=\s*(.*)/);
     }
@@ -308,15 +327,19 @@ sub readCfg()
 
 # ------------- main
 
-usage() if ( ! GetOptions  ('help|h|?' => \$help, 
-			    'd|dump'   => \$dump_arg,
-			    'r|read'   => \$read_arg,
-                            'ga|g=s'   => \$ga_arg,
-                            'age|a=i'  => \$age_arg,
-                            'dpt|t=s'  => \$dpt_arg
+usage() if ( ! GetOptions  ('help|h|?'   => \$help, 
+			    'd|dump'     => \$dump_arg,
+			    's|search=s' => \$isearch_arg,
+			    'S|Search=s' => \$search_arg,
+			    'H|hgroup=s' => \$hgroup_arg,
+			    'M|mgroup=s' => \$mgroup_arg,
+			    'G|group=s'  => \$group_arg,
+			    'r|read'     => \$read_arg,
+                            'ga|g=s'     => \$ga_arg,
+                            'age|a=i'    => \$age_arg,
+                            'dpt|t=s'    => \$dpt_arg
 	     )
 	     or defined $help );
-
 
 
 if (-r  $eibgafile) 
@@ -341,6 +364,12 @@ if ($dump_arg)
     }
 
     exit;
+}
+
+if ($isearch_arg || $search_arg || $hgroup_arg || $mgroup_arg || $group_arg)
+{
+        &doSearch();
+        exit;
 }
 
 @gas = split(/,/, $ga_arg);
@@ -401,48 +430,48 @@ B<knxquery.pl> -r -g GA[,GA ...] [-a AGE] [-t DPT]
 
 B<knxquery.pl> -d [-g GA]
 
+B<knxquery.pl> [-[sS] SEARCHARG] [-H HGROUP] [-M MGROUP] [-G GROUP]
+
  
 =head1 BESCHREIBUNG
 
-B<knxquery.pl> liest einen Wert vom  KNX-Bus und gibt diesen auf stdout aus.
+B<knxquery.pl> liest einen Wert vom  KNX-Bus und gibt diesen auf stdout aus, erstellt eine Liste aller Gruppenadressen, macht eine Textsuche ueber alle Gruppenadressen oder listet Gruppenadressen nach Haupt-, Mittel- und Untergruppen auf.
 
 =head1 OPTIONEN
 
 =over
 
-=item B<-h | --help>  Anzeige dieser Hilfe.
+=item * B<-h | --help>  Anzeige dieser Hilfe.
 
-=item B<-r | --read>  Liest einen Wert vom KNX-Bus. Der Parameter B-g <GA> fuer
-eine odere mehrere Gruppenandresse(n) muss/muessen angegeben werden. Wenn eine
-Gruppenadresse nicht in der Konfiguration hinterlegt ist, muss ausserdem der 
-Datentyp Parameter B<-t DPT> angegeben werden. 
+=item * B<-d | --dump>  Gibt Informationen zu einer, zu mehreren oder zu allen Gruppenadressen aus. Wird keine Gruppenadresse angegeben, werden Informationen zu allen konfigurierten Adressen ausgegeben, ansonsten nur zu den im B<-g GA> Parameter angegeben Adressen.
 
-=item B<-d | --dump>  Gibt Informationen zu einer, zu mehreren oder zu allen
-Gruppenadressen aus. Wird keine Gruppenadresse angegeben, werden Informationen
-zu allen konfigurierten Adressen ausgegeben, ansonsten nur zu den im B<-g GA>
-Parameter angegeben Adressen.
+=item * B<-s | --search>  Listet alle Gruppenadressen auf, deren Beschreibung B<SEARCHARG> enthaelt. Die Suche unterscheidet nicht nach Gross- und Kleinschreibung.
 
-=item B<-g | --ga> Angabe der Gruppenadresse B<GA> deren Wert zu lesen ist  
-oder zu der Informationen ausgegeben werden sollen. Die Adresse muss im 
-Format B<H/M/U>, angegeben werden, wobei B<H> die Hauptgruppe, B<M> die 
-Mittelgruppe und B<U> die Untergruppe ist. Es koennen auch mehrere B<GA> 
-angegeben werden. Diese muessen durch Kommata, ohne Leerzeichen, voneinander
-getrennt werden, z.B: B<-ga 1/20/130,4/50/160>.
+=item * B<-S | --Search>  Listet alle Gruppenadressen auf, deren Beschreibung B<SEARCHARG> enthaelt. Die Suche unterscheidet nach Gross- und Kleinschreibung.
 
-=item B<-a | --age> Maximales Cache-Alter B<AGE> der zu lesenden Werte in Sekunden. 
-Unterlassungswert ist 1 Sekunde.
+=item * B<-H | --hgroup>  Listet alle Gruppenadressen auf, die Teil der Hauptgruppe B<HGROUP> sind. 
 
-=item B<-t | --dpt>   Angabe des Datentyps B<DPT>. Dieser Wert muss nur 
-angegeben werden, wenn die Gruppenadresse nicht in der Konfiguration 
-erfasst ist. Es reicht der Haupttyp, also z.B. B<1, 2, 3> ... usw. 
+=item * B<-M | --mgroup>  Listet alle Gruppenadressen auf, deren Mittelgruppe B<MGROUP> ist, auch wenn sie aus unterschiedlichen Hauptgruppen sind.
+
+=item * B<-G | --group>  Listet alle Gruppenadressen auf, deren Gruppe B<GROUP> ist, auch wenn sie aus unterschiedlichen Haupt- oder Mittelgruppen sind.
+
+=item * B<-r | --read>  Liest einen Wert vom KNX-Bus. Der Parameter B-g <GA> fuer eine odere mehrere Gruppenandresse(n) muss/muessen angegeben werden. Wenn eine Gruppenadresse nicht in der Konfiguration hinterlegt ist, muss ausserdem der Datentyp Parameter B<-t DPT> angegeben werden. 
+
+=item * B<-g | --ga> Angabe der Gruppenadresse B<GA> deren Wert zu lesen ist oder zu der Informationen ausgegeben werden sollen. Die Adresse muss im Format B<H/M/U>, angegeben werden, wobei B<H> die Hauptgruppe, B<M> die Mittelgruppe und B<U> die Untergruppe ist. Es koennen auch mehrere B<GA> angegeben werden. Diese muessen durch Kommata, ohne Leerzeichen, voneinander getrennt werden, z.B: B<-ga 1/20/130,4/50/160>.
+
+=item * B<-a | --age> Maximales Cache-Alter B<AGE> der zu lesenden Werte in Sekunden. Unterlassungswert ist 1 Sekunde.
+
+=item * B<-t | --dpt>   Angabe des Datentyps B<DPT>. Dieser Wert muss nur angegeben werden, wenn die Gruppenadresse nicht in der Konfiguration erfasst ist. Es reicht der Haupttyp, also z.B. B<1, 2, 3> ... usw. 
 
 =back
 
+=head1 ANMERKUNG
+
+Die Suchargumente -[sS], -H, -M und -G sind UND-Argumente. D.h.: Eine Gruppenadresse wird nur dann gelistet, wenn alle Suchkriterien zutreffen.
+
 =head1 VORAUSSETZUNGEN
 
-Das Script wurde fuer das B<Wiregate> Gateway geschrieben, und erwartet eine 
-diesem Gateway entsprechende Konfiguration. Der Rechner muss an einen KNX-Bus
-angeschlossen sein, und Zugriff auf diesen Bus haben, z.B. per EIB-TPUART. 
+Das Script wurde fuer das B<Wiregate> Gateway geschrieben, und erwartet eine diesem Gateway entsprechende Konfiguration. Der Rechner muss an einen KNX-Bus angeschlossen sein, und Zugriff auf diesen Bus haben, z.B. per EIB-TPUART. 
 
 =head1 MITWIRKENDE
 
@@ -450,6 +479,6 @@ Teile des Scripts sind Copyright Michael Markstaller
 
 =head1 COPYRIGHT
 
-Copyright (c) 2011 Edgar <emax> Hermanns, <emax at berlios punkt de>
+Copyright (c) 2011 Edgar <emax> Hermanns, <emax at launchpad dot net>
 
 =cut
