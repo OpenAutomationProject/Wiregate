@@ -1,0 +1,491 @@
+###########
+# Ansagen #
+###########
+# Wiregate-Plugin
+# (c) 2012 Fry under the GNU Public License version 2 or later
+
+# $plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
+
+use POSIX qw(floor);
+
+# Voraussetzungen:
+
+# 1. Im Verzeichnis $speechdir/Zahlen muessen folgende Dateien vorhanden sein:
+
+# 1.1. Kardinalzahlen ("Null", "Eins"): 
+# c0.wav...c19.wav, c20.wav...c90.wav, c100.wav, c1000.wav
+
+# 1.2. Ordinalzahlen ("Erster", "Zweiter"): 
+# o0.wav...o19.wav, o20.wav...o90.wav, o100.wav, o1000.wav
+
+# 1.3. Zahlteile mit "und" wie "...undzwanzig", "...unddreissigster":
+# uc20.wav...uc90.wav, uo20.wav...uo90.wav
+
+# 1.4. Ziffern zur Zahlbildung ("ein"):
+# u1.wav...u9.wav (u1.wav="ein" als Bestandteil von "einunzwanzig",
+# u2.wav...u9.wav koennen identisch mit c2.wav...c9.wav sein)
+
+# 1.7. Spezielle Woerter:
+# minus.wav, Komma.wav, Grad.wav, Prozent.wav
+# auf.wav, zu.wav, hoch.wav, runter.wav, an.wav, aus.wav
+
+# 2. Im Verzeichnis $speechdir/Monate muessen die Namen der Monate liegen:
+# Januar.wav ... Dezember.wav
+
+# 3. Im Verzeichnis $speechdir/Wochentage muessen die Wochentagsnamen liegen:
+# Mo.wav ... So.wav 
+
+# 4. Ein Piepton $speechdir/beep.wav mit Pieptoenen, die vor der Sprachausgabe
+# gesendet werden (weckt bei mir den Russound-Paging-Kanal auf, der sonst die
+# ersten Silben verschluckt). Bei mir ist das wiederum ein ganzes Verzeichnis 
+# Beep mit Dateien 01.wav ... 32.wav in aufsteigender Dauer sortiert
+
+# 5. Im Verzeichnis $speechdir ausserdem: 
+# Alle Woerter bzw. ganze Saetze, die vorgelesen werden sollen,
+# wobei zB ein Satz "Willkommen Fry" in der Datei $speechdir/Willkommen/Fry.wav
+# liegen darf
+
+# alle diese Audiodateien kann man sich online generieren, zB bei SVOX.
+
+# Plugin-Konfiguration ################################################
+
+# Ausgabekanal:
+# Die ALSA-Kanalunterscheidung wird durch die Namensgebung der GA 
+# in eibga.conf getroffen. Das Muster ffuer dieKanalunterscheidung
+# steht in %channels.
+
+# Textteil: Der Rest des GA-Namens wird als Text "vorgelesen".
+# Das Plugin sucht dabei zunaechst nach einem "exact match" einer Datei
+# im Sprachverzeichnis. Wenn dieser Match nicht existieren sollte, werden 
+# die Woerter getrennt und jedes einzeln gesucht.
+
+# Datenteil:
+# Am Ende des Textteils wird der Telegramminhalt aufgesagt, 
+# wobei folgende Datentypen erlaubt sind:
+# 1.017: (keine Daten, nur den GA-Namen vorlesen)
+# 1.001: "An/Aus"
+# 1.008: "Hoch/Runter"
+# 1.009: "Auf/Zu"
+# 5.010 / 7.001: Ordinalzahl ("Einundzwanzigster")
+# 6.010 / 8.001: Kardinalzahl ("Einundzwanzig")
+# 6.001 / 5.001: Prozentwert ("dreiundfuenfzig Prozent")
+# 9.001: Temperatur ("minus drei komma fuenf Grad")
+# 11.001: # Datum ("elfter April")
+# 10.001: # Wochentag+Uhrzeit ("Montag elf Uhr fuenfzehn")
+
+# Hier meine Konfiguration als Beispiel:
+
+# ANsagen gehen auf ALSA-Kanal 'welcome' und kommen ueber einen eigenen 
+# kleinen Verstaerker im Eingangsflur raus
+
+# DURCHsagen gehen auf ALSA-Kanal 'paging' und gehen ueber die Russound an 
+# alle Lautsprecher im Haus. Dort muss ein Beep vorweggesendet werden
+
+my $logfile='/var/log/Ansagen.log';
+my $speechdir='/var/lib/Ansagen/Sprache/';
+my %channels=(
+    '^WA_'=>'welcome', # zB "WA_Die Aussentemperatur betraegt" 
+    '^WD_'=>'paging',  # zB "WD_Folgende Fenster sind geoeffnet"
+    'default'=>'welcome' # die GAs in additional_subscriptions
+);
+my $beepchannel='paging';
+my $beep = sprintf "Beep/%02d.wav", 3; # int(rand(32))+1 fuer Zufallsbeep
+#my @additional_subscriptions=qw(0/7/245 0/7/246 6/2/186);
+my @additional_subscriptions=();
+
+############### Ende der Konfiguration #########################
+
+# Aufrufgrund ermitteln
+my $event=undef;
+if (!$plugin_initflag) 
+{ $event='restart'; } # Restart des daemons / Reboot
+elsif ((stat('/etc/wiregate/plugin/generic/' . $plugname))[9] > time()-10) 
+# ab PL30:
+# elsif ($plugin_info{$plugname.'_lastsaved'} > $plugin_info{$plugname.'_last'})
+{ $event='modified'; } # Plugin modifiziert
+elsif (%msg) { $event='bus'; } # Bustraffic
+#elsif ($fh) { $event='socket'; } # Netzwerktraffic
+else { $event='cycle'; } # Zyklus
+
+chdir $speechdir;
+
+if($event=~/restart|modified/)
+{
+    my %gas=();
+
+    # Erstaufruf - an GAs anmelden, auf die die Muster in %channels zutreffen
+    for my $ga (keys %eibgaconf)
+    {
+	my $name=$eibgaconf{$ga}{'name'};
+	next unless defined $name;
+
+	for my $pat (keys %channels)
+	{
+	    next if $pat eq 'default';
+
+	    if($name=~/$pat/)
+	    {
+		$plugin_subscribe{$ga}{$plugname}=1;
+		$gas{$channels{$pat}}++;
+	    }
+	}
+    }
+
+    for my $ga (@additional_subscriptions)
+    {
+	$plugin_subscribe{$ga}{$plugname}=1;
+	$gas{$channels{default}}++;
+    }
+
+    $plugin_info{$plugname.'_cycle'}=0;
+    
+    return join ' ', map $_.'->'.$gas{$_}, keys %gas; 
+}
+elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
+{
+    my $ga=$msg{'dst'};
+    my $dpt=$eibgaconf{$ga}{'DPTSubId'};
+    $dpt=1.017 unless defined $dpt; # = Trigger, bedeutet Textansage ohne Daten
+    
+    my $name=$eibgaconf{$ga}{'name'};   
+    my $channel=$channels{default};
+    my $pattern=$name;
+
+    for my $pat (keys %channels)
+    {
+	if($pattern=~s/$pat//)
+	{
+	    $channel=$channels{$pat};
+	    last;
+	}
+    }
+
+    # Hole alle verfuegbaren Durchsagedateien 
+    my $find=checkexec('find');
+    my @speech=split /\n/, `$find . -name "*.wav"`;
+    
+    return 'no speech files found' unless @speech;
+    
+    my @statement=();
+    
+    # Textteil (Gruppenadresse ausgesprochen)
+    if(defined $pattern)
+    {
+	push(@statement, words(\@speech, $pattern));
+    }
+    
+    # Informationsteil (Inhalt des Telegramms)
+    if($dpt == 1.017) 
+    {
+	# kein Datenzusatz
+    }
+    elsif($dpt == 1.001) # An/Aus
+    {
+	push(@statement, 'Zahlen/'.($msg{'value'}?'an':'aus').'.wav');
+    }
+    elsif($dpt == 1.008) # Hoch/Runter
+    {
+	push(@statement, 'Zahlen/'.($msg{'value'}?'hoch':'runter').'.wav');
+    }
+    elsif($dpt == 1.009) # Auf/Zu
+    {
+	push(@statement, 'Zahlen/'.($msg{'value'}?'auf':'zu').'.wav');
+    }
+    elsif($dpt == 5.010 || $dpt == 7.001) # Ordinalzahl
+    {
+	push(@statement, number(\@speech, $msg{'value'}, -1));
+    }
+    elsif($dpt == 6.010 || $dpt == 8.001) # Kardinalzahl
+    {
+	push(@statement, number(\@speech, $msg{'value'}));
+    }
+    elsif($dpt == 6.001 || $dpt == 5.001) # Prozent
+    {
+	push(@statement, number(\@speech, $msg{'value'}));
+	push(@statement, 'Zahlen/Prozent.wav');
+    }
+    elsif($dpt == 9.001) # Temperatur
+    {
+	push(@statement, number(\@speech, $msg{'value'}, 1));
+	push(@statement, 'Zahlen/Grad.wav');
+    }
+    elsif($dpt == 11.001) # Datum
+    {
+	if($msg{'value'}=~/^([0-9][0-9][0-9][0-9])-([0-9][0-9])-([0-9][0-9])/)
+	{
+	    my @monat=qw(Januar Februar Maerz April Mai Juni Juli August September Oktober November Dezember);
+	    push(@statement, number(\@speech, $3, -1));
+	    push(@statement, 'Monate/'.$monat[$2-1].'.wav') if defined $2 && $2>0 && $2<13;
+	}
+	else
+	{
+	    return "Unbekanntes Datumsformat $msg{value}";
+	}
+    }
+    elsif($dpt == 10.001) # Uhrzeit
+    {
+	if($msg{'value'}=~/^(Mo|Di|Mi|Do|Fr|Sa|So)\s+([0-9][0-9])\:([0-9][0-9])/)
+	{
+	    push(@statement, "Wochentage/$1.wav");
+	    push(@statement, number(\@speech, $2));
+	    push(@statement, "Zeiten/Uhr.wav");
+	    push(@statement, number(\@speech, $3));
+	}
+	elsif($msg{'value'}=~/^([0-9][0-9])\:([0-9][0-9])}\:([0-9][0-9])/)
+	{
+	    push(@statement, number(\@speech, $2));
+	    push(@statement, "Zeiten/Uhr.wav");
+	    push(@statement, number(\@speech, $3));
+	}
+	else
+	{
+	    return "Unbekanntes Uhrzeitformat $msg{value}";
+	}
+    }
+    else
+    {
+	return "Datentyp $dpt nicht implementiert";
+    }
+    
+    # Das komplette Statement in die Ausgabe geben
+    speak($channel, $name, @statement);
+    
+    return $name.' '.$msg{value};
+}
+
+return; 
+
+sub checkexec
+{
+    my @path = split /:/, $ENV{PATH};
+    map s|(.)/$|$1|, @path;
+    for (@path)
+    {
+        my $full="$_/$_[0]";
+        if(-x $full)
+        {
+            return "$_/$_[0]";
+        }
+    }
+    die "$_[0] must be in your PATH and executable.\n";
+}
+
+
+sub words
+{
+    my $speech=shift;
+    my $pattern=shift;
+
+    # Konstruiere die abzuspielenden File(s) aus dem GA-Kuerzel
+    # erster Versuch: eine Datei passt komplett auf das Muster im Kuerzel
+    my $pat1=$pattern;
+    $pat1=~s/[_\s]+/.*?/g; # allgemeine Fassung
+#    $pat1=~s/\s+.*$//; # meine spezielle GA-Struktur
+#    $pat1=~s/_+/.*?/g; # meine spezielle GA-Struktur
+    $pat1='.*'.$pat1.'.*\.wav$';
+    
+    my @hits=();
+    my $hit=bestmatch($speech,$pat1);
+    push(@hits, $hit) if $hit; # gefunden
+
+    unless(@hits)
+    {
+	$pattern='_'.$pattern;
+	$pattern=~s/\s+/_/g; # allgemeine Fassung
+#	$pattern=~s/\s+.*$//; # meine spezielle GA-Struktur
+
+	# zweiter Versuch: aus Kuerzeln die Bausteine zusammenbauen
+	while($pattern=~s/^_([^_]+)//)
+	{
+	    my $pat2=$1.'\.wav$'; 
+	    $hit=bestmatch($speech,$pat2);
+	    push(@hits, $hit) if $hit; # gefunden
+	}	
+
+	if($pattern)
+	{
+	    $pattern=~s/_/.*/g; # Restnachricht
+	    $pattern.='.*\.wav$';
+	    $pattern='.*'.$pattern;
+	
+	    $hit=bestmatch($speech,$pattern);
+	    push(@hits, $hit) if $hit; # gefunden
+	}
+    }
+
+    return @hits;
+}
+
+
+sub number
+{
+    my $speech=shift;
+    my $x=shift; $x=~s/,/./; 
+    my $digits=0;  
+    $digits=shift if @_; # max. Anzahl Nachkommastellen, -1 fuer Ordinalzahlen
+
+    my @hits=();
+
+    if($x<0) 
+    {
+	push(@hits, 'Zahlen/minus.wav');
+	$x=-$x;
+	$digits=0 if $digits<0; # keine negativen Ordinalzahlen
+    }
+
+    my $t=$digits<0?'o':'c';
+    my $n=floor($x);
+    my $m=$x-$n;
+
+    # Manche Zahlen existieren direkt als WAV
+    # von 0-12, sowie die runden 10er und 100 sowie 1000 
+    # MUESSEN existieren, und zwar als Kardinalzahlen (c4.wav),
+    # Ordinalzahlen (o6.wav), die Zehner ausserdem mit vorangestelltem 'und'
+    # (u30.wav, uo30.wav)
+
+    if(-f 'Zahlen/'.$t.$n.'.wav') 
+    {
+	push(@hits, 'Zahlen/'.$t.$n.'.wav');
+    }
+    else
+    {
+	return if($n>=1000000); # Zahlen ueber eine Million nicht implementiert
+
+	if($n>=1000)
+	{
+	    $digits=0 if $digits>0; # waere Pseudo-genauigkeit und zu langer Text
+	    
+	    if($n==1000)
+	    {
+		push(@hits, 'Zahlen/'.$t.'1000.wav');
+		$n = 0;
+	    }
+	    else
+	    {
+		my $m=floor($n/1000);
+		@hits=number($speech,$m,0) if $m>1;
+		$n %= 1000;
+		if($n)
+		{
+		    push(@hits, 'Zahlen/c1000.wav');
+		}
+		else
+		{
+		    push(@hits, 'Zahlen/'.$t.'1000.wav');
+		}	
+	    }
+	    
+	    if($n>=100 && $n<200)
+	    {
+		push(@hits, 'Zahlen/u1.wav');
+	    }
+	}
+
+	if(-f 'Zahlen/'.$t.$n.'.wav') 
+	{
+	    push(@hits, 'Zahlen/'.$t.$n.'.wav');
+	}
+	elsif($n>100)
+	{
+	    $digits=0 if $digits>0; # waere Pseudo-genauigkeit und zu langer Text
+	    my $h = int($n/100);
+	    $n %= 100;
+	    push(@hits, 'Zahlen/u'.$h.'.wav') if $h>1;
+	    if($n)
+	    {
+		push(@hits, 'Zahlen/c100.wav');
+	    }
+	    else
+	    {
+		push(@hits, 'Zahlen/'.$t.'100.wav');
+	    }	
+	}
+	
+	my $d = $n % 10;
+	
+	if(-f 'Zahlen/'.$t.$n.'.wav') 
+	{
+	    push(@hits, 'Zahlen/'.$t.$n.'.wav');
+	}
+	else
+	{
+	    my $z = $n-$d;
+	    
+	    push(@hits, 'Zahlen/u'.$d.'.wav');
+	    push(@hits, 'Zahlen/u'.$t.$z.'.wav');
+	}
+    }
+	
+    if($digits>0) 
+    {
+	$m = sprintf "%.$digits"."f", $m;
+	
+	if($m>0) 
+	{
+	    push(@hits, 'Zahlen/Komma.wav');
+	    for (1..$digits)
+	    {
+		$m*=10.; my $d=floor($m); $m-=$d;
+		push(@hits, "Zahlen/c$d.wav");
+	    }
+	}
+    }
+
+    return @hits;
+}
+
+sub bestmatch
+{
+    my $speech=shift;
+    my $pattern=shift;
+
+    my @hits=sort { length($a) cmp length($b) } grep /$pattern/i, @{$speech};
+    
+    return @hits ? (shift @hits) : undef;
+}
+
+
+sub speak
+{
+    my $channel=shift; # ALSA-Channel
+    my $name=shift; # Name der Ansage (aus eibga.conf) - fuers Log
+
+    open LOG, ">>$logfile";
+    my $date=checkexec('date');
+    my $datetime=`$date +"%F %X"`;
+    $datetime=~s/\s*$//s; 
+	
+    if(@_)
+    {
+	my $aplay=checkexec('aplay');
+	my $mpc=checkexec('mpc');
+	system $mpc, 'pause';
+	
+	# Nur fuer Russound-Paging: Star Trek 'Beep' vorweg weckt Russound auf
+	if($channel=~/$beepchannel/)
+	{
+	    my $lastbeep=$plugin_info{$plugname.'_lastbeep'};
+
+	    # max ein Beep pro Minute
+	    if(!defined $lastbeep || time()>$lastbeep+60)
+	    {
+		unshift(@_, $beep);
+		$plugin_info{$plugname.'_lastbeep'}=time();
+	    }
+	}
+
+	system $aplay, '-c2', "-D$channel", @_;
+
+#	map s!^.*/(.*?)\.wav!$1!, @_;
+	print LOG $datetime.' '.$channel.':'.(join ' ', @_)."\n";
+
+	system $mpc, 'toggle';
+    }
+    else
+    {
+	print LOG "$datetime $name - keine akustische Ansage moeglich\n";
+    }
+
+    close LOG;
+}
+
