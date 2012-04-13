@@ -8,92 +8,21 @@
 
 use POSIX qw(floor);
 
-# Voraussetzungen:
-
-# 1. Im Verzeichnis $speechdir/Zahlen muessen folgende Dateien vorhanden sein:
-
-# 1.1. Kardinalzahlen ("Null", "Eins"): 
-# c0.wav...c19.wav, c20.wav...c90.wav, c100.wav, c1000.wav
-
-# 1.2. Ordinalzahlen ("Erster", "Zweiter"): 
-# o0.wav...o19.wav, o20.wav...o90.wav, o100.wav, o1000.wav
-
-# 1.3. Zahlteile mit "und" wie "...undzwanzig", "...unddreissigster":
-# uc20.wav...uc90.wav, uo20.wav...uo90.wav
-
-# 1.4. Ziffern zur Zahlbildung ("ein"):
-# u1.wav...u9.wav (u1.wav="ein" als Bestandteil von "einunzwanzig",
-# u2.wav...u9.wav koennen identisch mit c2.wav...c9.wav sein)
-
-# 1.7. Spezielle Woerter:
-# minus.wav, Komma.wav, Grad.wav, Prozent.wav
-# auf.wav, zu.wav, hoch.wav, runter.wav, an.wav, aus.wav
-
-# 2. Im Verzeichnis $speechdir/Monate muessen die Namen der Monate liegen:
-# Januar.wav ... Dezember.wav
-
-# 3. Im Verzeichnis $speechdir/Wochentage muessen die Wochentagsnamen liegen:
-# Mo.wav ... So.wav 
-
-# 4. Ein Piepton $speechdir/beep.wav mit Pieptoenen, die vor der Sprachausgabe
-# gesendet werden (weckt bei mir den Russound-Paging-Kanal auf, der sonst die
-# ersten Silben verschluckt). Bei mir ist das wiederum ein ganzes Verzeichnis 
-# Beep mit Dateien 01.wav ... 32.wav in aufsteigender Dauer sortiert
-
-# 5. Im Verzeichnis $speechdir ausserdem: 
-# Alle Woerter bzw. ganze Saetze, die vorgelesen werden sollen,
-# wobei zB ein Satz "Willkommen Fry" in der Datei $speechdir/Willkommen/Fry.wav
-# liegen darf
-
-# alle diese Audiodateien kann man sich online generieren, zB bei SVOX.
-
-# Plugin-Konfiguration ################################################
-
-# Ausgabekanal:
-# Die ALSA-Kanalunterscheidung wird durch die Namensgebung der GA 
-# in eibga.conf getroffen. Das Muster ffuer dieKanalunterscheidung
-# steht in %channels.
-
-# Textteil: Der Rest des GA-Namens wird als Text "vorgelesen".
-# Das Plugin sucht dabei zunaechst nach einem "exact match" einer Datei
-# im Sprachverzeichnis. Wenn dieser Match nicht existieren sollte, werden 
-# die Woerter getrennt und jedes einzeln gesucht.
-
-# Datenteil:
-# Am Ende des Textteils wird der Telegramminhalt aufgesagt, 
-# wobei folgende Datentypen erlaubt sind:
-# 1.017: (keine Daten, nur den GA-Namen vorlesen)
-# 1.001: "An/Aus"
-# 1.008: "Hoch/Runter"
-# 1.009: "Auf/Zu"
-# 5.010 / 7.001: Ordinalzahl ("Einundzwanzigster")
-# 6.010 / 8.001: Kardinalzahl ("Einundzwanzig")
-# 6.001 / 5.001: Prozentwert ("dreiundfuenfzig Prozent")
-# 9.001: Temperatur ("minus drei komma fuenf Grad")
-# 11.001: # Datum ("elfter April")
-# 10.001: # Wochentag+Uhrzeit ("Montag elf Uhr fuenfzehn")
-
-# Hier meine Konfiguration als Beispiel:
-
-# ANsagen gehen auf ALSA-Kanal 'welcome' und kommen ueber einen eigenen 
-# kleinen Verstaerker im Eingangsflur raus
-
-# DURCHsagen gehen auf ALSA-Kanal 'paging' und gehen ueber die Russound an 
-# alle Lautsprecher im Haus. Dort muss ein Beep vorweggesendet werden
-
+# Konfiguration vorbereiten und einlesen
 my $logfile='/var/log/Ansagen.log';
 my $speechdir='/var/lib/Ansagen/Sprache/';
-my %channels=(
-    '^WA_'=>'welcome', # zB "WA_Die Aussentemperatur betraegt" 
-    '^WD_'=>'paging',  # zB "WD_Folgende Fenster sind geoeffnet"
-    'default'=>'welcome' # die GAs in additional_subscriptions
-);
+my %channels=('default'=>'welcome');
 my $beepchannel='paging';
-my $beep = sprintf "Beep/%02d.wav", 3; # int(rand(32))+1 fuer Zufallsbeep
-#my @additional_subscriptions=qw(0/7/245 0/7/246 6/2/186);
+my $beep = "Beep/03d.wav"; 
 my @additional_subscriptions=();
 
-############### Ende der Konfiguration #########################
+# Konfigurationsfile einlesen
+my $conf=$plugname; $conf=~s/\.pl$/.conf/;
+open FILE, "</etc/wiregate/plugin/generic/conf.d/$conf" || return "no config found";
+my @lines = <FILE>;
+close FILE;
+eval("@lines");
+return "config error" if $@;
 
 # Aufrufgrund ermitteln
 my $event=undef;
