@@ -8,7 +8,7 @@
 
 use POSIX qw(floor);
 
-# Konfiguration vorbereiten und einlesen
+# Defaultkonfiguration
 my $logfile='/var/log/Ansagen.log';
 my $speechdir='/var/lib/Ansagen/Sprache/';
 my %channels=('default'=>'welcome');
