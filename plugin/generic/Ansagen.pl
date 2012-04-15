@@ -71,6 +71,7 @@ if($event=~/restart|modified/)
 elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
 {
     my $ga=$msg{'dst'};
+    my $val=$msg{'value'};
     my $dpt=$eibgaconf{$ga}{'DPTSubId'};
     $dpt=1.017 unless defined $dpt; # = Trigger, bedeutet Textansage ohne Daten
     
@@ -102,78 +103,64 @@ elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
     }
     
     # Informationsteil (Inhalt des Telegramms)
-    if($dpt == 1.017) 
+    given($dpt)
     {
-	# kein Datenzusatz
-    }
-    elsif($dpt == 1.001) # An/Aus
-    {
-	push(@statement, 'Zahlen/'.($msg{'value'}?'an':'aus').'.wav');
-    }
-    elsif($dpt == 1.008) # Hoch/Runter
-    {
-	push(@statement, 'Zahlen/'.($msg{'value'}?'hoch':'runter').'.wav');
-    }
-    elsif($dpt == 1.009) # Auf/Zu
-    {
-	push(@statement, 'Zahlen/'.($msg{'value'}?'auf':'zu').'.wav');
-    }
-    elsif($dpt == 5.010 || $dpt == 7.001) # Ordinalzahl
-    {
-	push(@statement, number(\@speech, $msg{'value'}, -1));
-    }
-    elsif($dpt == 6.010 || $dpt == 8.001) # Kardinalzahl
-    {
-	push(@statement, number(\@speech, $msg{'value'}));
-    }
-    elsif($dpt == 6.001 || $dpt == 5.001) # Prozent
-    {
-	push(@statement, number(\@speech, $msg{'value'}));
-	push(@statement, 'Zahlen/Prozent.wav');
-    }
-    elsif($dpt == 9.001) # Temperatur
-    {
-	push(@statement, number(\@speech, $msg{'value'}, 1));
-	push(@statement, 'Zahlen/Grad.wav');
-    }
-    elsif($dpt == 11.001) # Datum
-    {
-	if($msg{'value'}=~/^([0-9][0-9][0-9][0-9])-([0-9][0-9])-([0-9][0-9])/)
-	{
-	    my @monat=qw(Januar Februar Maerz April Mai Juni Juli August September Oktober November Dezember);
-	    push(@statement, number(\@speech, $3, -1));
-	    push(@statement, 'Monate/'.$monat[$2-1].'.wav') if defined $2 && $2>0 && $2<13;
+	when (1.001) # An/Aus
+	{ push(@statement, 'Zahlen/'.($val?'an':'aus').'.wav'); } 
+	when (1.008) # Hoch/Runter
+	{ push(@statement, 'Zahlen/'.($val?'hoch':'runter').'.wav'); }
+	when(1.009) # Auf/Zu
+	{ push(@statement, 'Zahlen/'.($val?'auf':'zu').'.wav'); }
+	when([5.010,7.001,12.001]) # Ordinalzahl
+	{ push(@statement, number(\@speech, $val, -1)); }
+	when([6.010,8.001,13.001]) # Kardinalzahl
+	{ push(@statement, number(\@speech, $val)); }
+	when([5.001,6.001]) # Prozent
+	{ 
+	    push(@statement, number(\@speech, $val));
+	    push(@statement, 'Zahlen/Prozent.wav'); 
 	}
-	else
+	when(9.001) # Temperatur
 	{
-	    return "Unbekanntes Datumsformat $msg{value}";
+	    push(@statement, number(\@speech, $val, 1));
+	    push(@statement, 'Zahlen/Grad.wav');
 	}
+	when(11.001) # Datum
+	{
+	    if($val=~/^([0-9][0-9][0-9][0-9])-([0-9][0-9])-([0-9][0-9])/)
+	    {
+		my @monat=qw(Januar Februar Maerz April Mai Juni Juli August September Oktober November Dezember);
+		push(@statement, number(\@speech, $3, -1));
+		push(@statement, 'Monate/'.$monat[$2-1].'.wav') if defined $2 && $2>0 && $2<13;
+	    }    
+	    else
+	    {
+		return "Unbekanntes Datumsformat $val";
+	    }
+	}
+	when(10.001) # Uhrzeit
+	{
+	    if($val=~/^(Mo|Di|Mi|Do|Fr|Sa|So)\s+([0-9][0-9])\:([0-9][0-9])/)
+	    {
+		push(@statement, "Wochentage/$1.wav");
+		push(@statement, number(\@speech, $2));
+		push(@statement, "Zeiten/Uhr.wav");
+		push(@statement, number(\@speech, $3));
+	    }
+	    elsif($val=~/^([0-9][0-9])\:([0-9][0-9])}\:([0-9][0-9])/)
+	    {
+		push(@statement, number(\@speech, $2));
+		push(@statement, "Zeiten/Uhr.wav");
+		push(@statement, number(\@speech, $3));
+	    }
+	    else
+	    {
+		return "Unbekanntes Uhrzeitformat $msg{value}";
+	    }
+	}
+	when(1.017) {}  # kein Datenzusatz  
+	default	{ return "Datentyp $dpt nicht implementiert"; }
     }
-    elsif($dpt == 10.001) # Uhrzeit
-    {
-	if($msg{'value'}=~/^(Mo|Di|Mi|Do|Fr|Sa|So)\s+([0-9][0-9])\:([0-9][0-9])/)
-	{
-	    push(@statement, "Wochentage/$1.wav");
-	    push(@statement, number(\@speech, $2));
-	    push(@statement, "Zeiten/Uhr.wav");
-	    push(@statement, number(\@speech, $3));
-	}
-	elsif($msg{'value'}=~/^([0-9][0-9])\:([0-9][0-9])}\:([0-9][0-9])/)
-	{
-	    push(@statement, number(\@speech, $2));
-	    push(@statement, "Zeiten/Uhr.wav");
-	    push(@statement, number(\@speech, $3));
-	}
-	else
-	{
-	    return "Unbekanntes Uhrzeitformat $msg{value}";
-	}
-    }
-    else
-    {
-	return "Datentyp $dpt nicht implementiert";
-    }
-    
     # Das komplette Statement in die Ausgabe geben
     speak($channel, $name, @statement);
     
