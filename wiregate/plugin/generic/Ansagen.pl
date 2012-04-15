@@ -138,6 +138,26 @@ elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
 		return "Unbekanntes Datumsformat $val";
 	    }
 	}
+	when(7.005) # Zeitdauer
+	{ 
+	    $val=-$val if $val<0;
+	    my $h=floor($val/3600);
+	    $val-=3600*$h;
+	    my $m=floor($val/60);
+	    $val-=60*$m;
+	    if($h)
+	    {
+		push(@statement, number(\@speech, $h)); 
+		push(@statement, 'Zeiten/Stunden.wav'); 
+	    }
+	    if($h || $m)
+	    {
+		push(@statement, number(\@speech, $m)); 
+		push(@statement, 'Zeiten/Minuten.wav'); 
+	    }
+	    push(@statement, number(\@speech, $val)); 
+	    push(@statement, 'Zeiten/Sekunden.wav'); 
+        }
 	when(10.001) # Uhrzeit
 	{
 	    if($val=~/^(Mo|Di|Mi|Do|Fr|Sa|So)\s+([0-9][0-9])\:([0-9][0-9])/)
@@ -158,8 +178,10 @@ elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
 		return "Unbekanntes Uhrzeitformat $msg{value}";
 	    }
 	}
-	when(1.017) {}  # kein Datenzusatz  
-	default	{ return "Datentyp $dpt nicht implementiert"; }
+	when(1.017) # Trigger, kein Datenzusatz
+	{}
+	default	 # kein Datenzusatz, aber mit Logeintrag
+	{ return "Datentyp $dpt nicht implementiert"; }  
     }
     # Das komplette Statement in die Ausgabe geben
     speak($channel, $name, @statement);
