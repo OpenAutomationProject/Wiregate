@@ -1,18 +1,27 @@
 # Watchdog fuer KNX-Schnittstelle
 # relevant nur bei USB und evtl. FT1.2 !
+# GA sollte von einem anderen Teilnehmer (via TP1!) 
+# zyklisch auf den Bus gesendet werden um Lesetelegramme
+# zu vermeiden, der Wert wird dann dem Cache entnommen
+# - oder sie muss vom KNX lesbar sein
+# und muss (irgendeinen) einen Wert > 0 liefern
+
 ### Config
+# Gruppenadresse
 my $check_ga = "5/7/5";
-my $check_time = 60;
+# Pruefzyklus / max Alter in Sekunden
+my $check_time = 120; 
 ### ENDE config
 
 
 # Eigenen Aufruf-Zyklus setzen
 $plugin_info{$plugname.'_cycle'} = $check_time;
 
-if (!knx_read($check_ga,$check_time)) {
-	my $dummy = `/etc/init.d/eibd restart`;
-	return "EIB-Lesefehler! res: $dummy";
-	}
+if (!knx_read($check_ga,$check_time*2)) {
+    my $dummy = `/etc/init.d/eibd restart`;
+    return "KNX-Lesefehler! Schnittstelle resettet";
+}
 
 #return "alles paletti";
 return 0;
+
