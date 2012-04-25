@@ -9,12 +9,14 @@
 use POSIX qw(floor);
 
 # Defaultkonfiguration
-my $logfile='/var/log/Ansagen.log';
-my $speechdir='/var/lib/Ansagen/Sprache/';
+my $speechdir='/var/lib/mpd/music/Ansagen';
+my $mpddir='/var/lib/mpd/music';
 my %channels=('default'=>'welcome');
 my $beepchannel='paging';
 my $beep = "Beep/03d.wav"; 
 my @additional_subscriptions=();
+my %mpdhost=('default'=>'127.0.0.1/6600');
+my $mode='mpd'; 
 
 # Konfigurationsfile einlesen
 my $conf=$plugname; $conf=~s/\.pl$/.conf/;
@@ -22,7 +24,11 @@ open FILE, "</etc/wiregate/plugin/generic/conf.d/$conf" || return "no config fou
 my @lines = <FILE>;
 close FILE;
 eval("@lines");
-return "config error" if $@;
+
+# speechdir muss im mpddir liegen!
+$speechdir=~s!/$!!;
+$mpddir=~s!/$!!;
+return "config error" if $@ || ($mode eq 'mpd' && $speechdir !~ /^$mpddir/);
 
 # Aufrufgrund ermitteln
 my $event=undef;
@@ -41,6 +47,11 @@ if($event=~/restart|modified/)
     my %gas=();
 
     # Erstaufruf - an GAs anmelden, auf die die Muster in %channels zutreffen
+    for my $k (grep /^$plugname\_/, keys %plugin_info)
+    {
+	delete $plugin_info{$k};
+    }
+
     for my $ga (keys %eibgaconf)
     {
 	my $name=$eibgaconf{$ga}{'name'};
@@ -90,8 +101,8 @@ elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
 
     # Hole alle verfuegbaren Durchsagedateien 
     my $find=checkexec('find');
-    my @speech=split /\n/, `$find . -name "*.wav"`;
-    
+    my @speech=split /\n/, `$find . -name '*.wav'`;
+    map s!^\./!!, @speech; # Pfade relativ zum speechdir
     return 'no speech files found' unless @speech;
     
     my @statement=();
@@ -171,7 +182,7 @@ elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
 	    {
 		push(@statement, number(\@speech, $2));
 		push(@statement, "Zeiten/Uhr.wav");
-		push(@statement, number(\@speech, $3));
+		push(@statement, number(\@speech, $3)) if $3;
 	    }
 	    else
 	    {
@@ -184,9 +195,7 @@ elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
 	{ return "Datentyp $dpt nicht implementiert"; }  
     }
     # Das komplette Statement in die Ausgabe geben
-    speak($channel, $name, @statement);
-    
-    return $name.' '.$msg{value};
+    return speak($channel, $name, @statement);
 }
 
 return; 
@@ -386,17 +395,13 @@ sub speak
     my $channel=shift; # ALSA-Channel
     my $name=shift; # Name der Ansage (aus eibga.conf) - fuers Log
 
-    open LOG, ">>$logfile";
+    my $retval='';
     my $date=checkexec('date');
     my $datetime=`$date +"%F %X"`;
     $datetime=~s/\s*$//s; 
 	
     if(@_)
     {
-	my $aplay=checkexec('aplay');
-	my $mpc=checkexec('mpc');
-	system $mpc, 'pause';
-	
 	# Nur fuer Russound-Paging: Star Trek 'Beep' vorweg weckt Russound auf
 	if($channel=~/$beepchannel/)
 	{
@@ -410,18 +415,54 @@ sub speak
 	    }
 	}
 
-	system $aplay, '-c2', "-D$channel", @_;
+	if($mode eq 'aplay')
+	{
+	    my $aplay=checkexec('aplay');
+	    system $aplay, '-c2', "-D$channel", @_;
 
-#	map s!^.*/(.*?)\.wav!$1!, @_;
-	print LOG $datetime.' '.$channel.':'.(join ' ', @_)."\n";
+	    map s!^.*/(.*?)\.wav!$1!, @_;
+	    $retval.=$channel.':'.(join ' ', @_);
+	}
+	elsif($mode eq 'mpd')
+	{
+	    push @_, "silence.wav"; # kurze Pause zwischen Ansagen
 
-	system $mpc, 'toggle';
+	    map s!^/*!$speechdir/!, @_; # alle Eintraege relativ zum speechdir
+	    map s!^$mpddir/!!, @_; # mpd braucht einen Pfadnamen relativ zum music-Dir
+	    map s!/+!/!, @_; # zur Sicherheit
+
+	    $mpdhost{$channel}=~m!^\s*(.*)\s*/\s*(.*)\s*$!;
+	    my $host=$1; my $port=$2;
+
+	    # aus irgendeinem Grund funktioniert %ENV im wiregate-Plugin nicht
+	    # also so:
+	    my $mpc=checkexec('mpc');
+	    $mpc="export MPD_HOST=$host; export MPD_PORT=$port; $mpc";
+	    system "$mpc update"; # Aktualisierung verfuegbarer Soundclips
+
+	    # wird momentan noch was gespielt?
+	    my $playing = grep /playing/, `$mpc`;
+
+	    system "$mpc clear" unless $playing; # aufraeumen
+	    system "$mpc add \"".(join "\" \"", @_)."\"";
+	    system "$mpc play" unless $playing; # nur dann noetig 
+
+#	    $playing=`$mpc; $mpc outputs`;
+#	    $playing=~s/\s+/ /sg;
+#	    plugin_log($plugname, $playing);
+	    map s!^.*/(.*?)\.wav!$1!, @_;
+	    $retval.=$channel.':'.(join ' ', @_);
+	}
+	else
+	{
+	    $retval.="$name - no output (mpd or aplay) defined";
+	}
     }
     else
     {
-	print LOG "$datetime $name - keine akustische Ansage moeglich\n";
+	$retval.="$name - no audio output possible (file not found)";
     }
-
-    close LOG;
+    
+    return $retval;
 }
 
