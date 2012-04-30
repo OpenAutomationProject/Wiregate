@@ -1,10 +1,4 @@
-#####
-# Autor: Shoko, knx-user-forum
-# Datum: 20120430
-# 
-# 
 
-my $globalstrahlung_ga="0/1/15";
 my $globalstrahlung_hysterese = 50;
 my $globalstrahlung_schwelle = 350;
 
@@ -24,7 +18,7 @@ my $fahrbefehl = 0;
 my $position = 100;
 my $winkel  = 10;
 
-my $time_hysterese_beschattung_an = 30;  # VerzÃ¶gerung der BefehlsausfÃ¼hrung, damit bei kurzzeitigen Ã„nderungen (Wolken etc.) nicht sofort reagiert wird
+my $time_hysterese_beschattung_an = 30;  # Verzögerung der Befehlsausführung, damit bei kurzzeitigen Änderungen (Wolken etc.) nicht sofort reagiert wird
 my $time_hysterese_beschattung_aus = 600;
 
 my $beschattung_status_ga = "0/5/5";
@@ -43,15 +37,15 @@ my $timestamp;
 my $lastorder;
 my $lastorderissued;
 my $timehysterese;
-
+ 
 my @raffstores;
 
 # Fuer Rolladen beim Winkel eine nicht vergebene GA angeben. Ist nicht schoen, aber einfacher zu handhaben
 
-push @raffstores, { name => "wohnzimmerfenster sÃ¼d", pos_ga => "2/3/22", winkel_ga => "2/4/6", azimuth_start => 0, azimuth_stop => 180};
-push @raffstores, { name => "wohnzimmer sÃ¼d", pos_ga => "2/3/21", winkel_ga => "2/4/5",azimuth_start => 0, azimuth_stop => 180};
-push @raffstores, { name => "schlafzimmer west", pos_ga => "2/3/13", winkel_ga => "2/3/250",azimuth_start => 110, azimuth_stop => 180};
-push @raffstores, { name => "kueche west", pos_ga => "2/3/2", winkel_ga => "2/3/250",azimuth_start => 110, azimuth_stop => 180};
+push @raffstores, { name => "wohnzimmerfenstersued", pos_ga => "2/3/22", winkel_ga => "2/4/6", azimuth_start => 0, azimuth_stop => 180, globalstrahlung_ga => "0/1/15"};
+push @raffstores, { name => "wohnzimmersued", pos_ga => "2/3/21", winkel_ga => "2/4/5",azimuth_start => 0, azimuth_stop => 180,globalstrahlung_ga => "0/1/15"};
+push @raffstores, { name => "schlafzimmerwest", pos_ga => "2/3/13", winkel_ga => "2/3/250",azimuth_start => 110, azimuth_stop => 180, globalstrahlung_ga => "0/1/16"};
+push @raffstores, { name => "kuechewest", pos_ga => "2/3/2", winkel_ga => "2/3/250",azimuth_start => 110, azimuth_stop => 180, globalstrahlung_ga => "0/1/15"};
 
 ################### ENDE DEFINITION ##################
 
@@ -60,34 +54,41 @@ push @raffstores, { name => "kueche west", pos_ga => "2/3/2", winkel_ga => "2/3/
 $plugin_info{$plugname.'_cycle'} = 120; 
 
 ### WERTE EINLESEN    ###
-
 $temperatur_innen = knx_read($temperatur_innen_ga,600,9);
 $temperatur_aussen = knx_read($temperatur_aussen_ga,600,9);
-$globalstrahlung = knx_read($globalstrahlung_ga,600,9);
 $daemmerung = knx_read($daemmerung_ga,86400,1);
 $beschattung_status = knx_read($beschattung_status_ga,86400,1);
 $azimuth = knx_read($azimuth_ga,600,8);
 
+plugin_log($plugname, 'Temperatur innen: '.$temperatur_innen);
+plugin_log($plugname, 'Temperatur aussen: '.$temperatur_aussen);
+plugin_log($plugname, 'Daemmerung: '.$daemmerung);
+plugin_log($plugname, 'Azimuth: '.$azimuth);
+
+
+foreach my $raffstore (@raffstores) { 
+ 
+my $global_ga = $raffstore->{globalstrahlung_ga};
+$globalstrahlung = knx_read($global_ga,600,9);
+
+plugin_log($plugname.' '.$raffstore->{name}, 'Globalstrahlung: '.$globalstrahlung);
+
+
 if($beschattung_status > 0) {
   $plugin_info{$plugname.'lastorderissued'} = -1;
-  plugin_log($plugname, 'Beschattung gesperrt');
+  #plugin_log($plugname.' '.$raffstore->{name}, 'Beschattung gesperrt');
   return;  
 }
 
 if($daemmerung > 0) {
-  $plugin_info{$plugname.'lastorderissued'} = -1; # Wenn der nÃ¤chste Tag anbricht, sollen evtl. Befehle neu gegeben werden
-  plugin_log($plugname, 'Daemmerung, mache nichts');  
+  $plugin_info{$plugname.'lastorderissued'} = -1; # Wenn der nächste Tag anbricht, sollen evtl. Befehle neu gegeben werden
+  #plugin_log($plugname.' '.$raffstore->{name}, 'Daemmerung, mache nichts');  
   return;
 }
   
 
-plugin_log($plugname, 'Temperatur innen: '.$temperatur_innen);
-plugin_log($plugname, 'Temperatur aussen: '.$temperatur_aussen);
-plugin_log($plugname, 'Globalstrahlung: '.$globalstrahlung);
-plugin_log($plugname, 'Daemmerung: '.$daemmerung);
-plugin_log($plugname, 'Azimuth: '.$azimuth);
 
-### Wenn alle Voraussetzungen erfÃ¼llt sind, verschatten ####
+### Wenn alle Voraussetzungen erfüllt sind, verschatten ####
  
 if($temperatur_aussen > ($temperatur_aussen_schwelle + $temperatur_aussen_hysterese)) {
   if($temperatur_innen > ($temperatur_innen_schwelle + $temperatur_innen_hysterese)) {
@@ -98,7 +99,7 @@ if($temperatur_aussen > ($temperatur_aussen_schwelle + $temperatur_aussen_hyster
   }
 } 
 
-### Wenn eine Voraussetzungen nicht erfÃ¼llt ist, hochfahren ####
+### Wenn eine Voraussetzungen nicht erfüllt ist, hochfahren ####
 
 if($temperatur_aussen < ($temperatur_aussen_schwelle - $temperatur_aussen_hysterese)) {
 	$fahrbefehl = 1;
@@ -114,7 +115,7 @@ if($globalstrahlung < ($globalstrahlung_schwelle - $globalstrahlung_hysterese)) 
 }
 
 if($fahrbefehl < 1) {
-  plugin_log($plugname,'Nichts zu tun. Over and out.');
+  $raffstore->{globalstrahlung_ga}($plugname.' '.$raffstore->{name},'Nichts zu tun. Over and out.');
   return;
 }
 
@@ -124,32 +125,31 @@ if($beschattung > 0) {
   $timehysterese = $time_hysterese_beschattung_aus;
 }
 
-$lastorder = $plugin_info{$plugname.'lastorder'};
+$lastorder = $plugin_info{$plugname.$raffstore->{name}.'lastorder'};
 $timestamp = time();
 if($lastorder != $beschattung) {
-  $plugin_info{$plugname.'timestamp'} = $timestamp;
+  $plugin_info{$plugname.$raffstore->{name}.'timestamp'} = $timestamp;
   $fahrbefehl = 0;
-  plugin_log($plugname,'Neuer Fahrbefehl, setze Wartezeit auf '.($timehysterese / 60).' Minuten');
+  plugin_log($plugname.' '.$raffstore->{name},'Neuer Fahrbefehl, setze Wartezeit auf '.($timehysterese / 60).' Minuten');
 } else {
-  if(($plugin_info{$plugname.'timestamp'} + $timehysterese) > $timestamp) {
+  if(($plugin_info{$plugname.$raffstore->{name}.'timestamp'} + $timehysterese) > $timestamp) {
     $fahrbefehl = 0;
-    plugin_log($plugname,'Noch '.(-1 * ($timestamp - ($plugin_info{$plugname.'timestamp'} + $timehysterese)) / 60).' Minuten bis zur Aufuehrung des neuen Fahrbefehls');
+    plugin_log($plugname.' '.$raffstore->{name},'Noch '.(-1 * ($timestamp - ($plugin_info{$plugname.$raffstore->{name}.'timestamp'} + $timehysterese)) / 60).' Minuten bis zur Aufuehrung des neuen Fahrbefehls');
   }
 }
 
-$plugin_info{$plugname.'lastorder'} = $beschattung;
+$plugin_info{$plugname.$raffstore->{name}.'lastorder'} = $beschattung;
 
 if($fahrbefehl) {
-  if($plugin_info{$plugname.'lastorderissued'} == $beschattung) {
+  if($plugin_info{$plugname.$raffstore->{name}.'lastorderissued'} == $beschattung) {
     $fahrbefehl = 0;
-    plugin_log($plugname,'Fahrbefehl wurde bereits ausgefuehrt.');
+    #plugin_log($plugname.' '.$raffstore->{name},'Fahrbefehl wurde bereits ausgefuehrt.');
   }
 }
-plugin_log($plugname,'Beschattung: '.$beschattung.' Fahrbefehl: '.$fahrbefehl);
+plugin_log($plugname.' '.$raffstore->{name},'Beschattung: '.$beschattung.' Fahrbefehl: '.$fahrbefehl);
  
 if($fahrbefehl) {
-
-  foreach my $raffstore (@raffstores) {    
+     
       if($beschattung and (($raffstore->{azimuth_start} <= $azimuth) or ($azimuth <= $raffstore->{azimuth_stop}))) {  
 	knx_write($raffstore->{pos_ga},$position,5);
 	knx_write($raffstore->{winkel_ga},$winkel,5);		
@@ -158,6 +158,7 @@ if($fahrbefehl) {
 	knx_write($raffstore->{pos_ga},0,5);  ### Jalousie fahren ganz hoch
 	knx_write($raffstore->{winkel_ga},0,5); 		
       }
+  $plugin_info{$plugname.$raffstore->{name}.'lastorderissued'} = $beschattung;  
   }
-  $plugin_info{$plugname.'lastorderissued'} = $beschattung;
+  
 }
