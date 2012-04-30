@@ -115,7 +115,7 @@ if($globalstrahlung < ($globalstrahlung_schwelle - $globalstrahlung_hysterese)) 
 }
 
 if($fahrbefehl < 1) {
-  $raffstore->{globalstrahlung_ga}($plugname.' '.$raffstore->{name},'Nichts zu tun. Over and out.');
+  plugin_log($plugname.' '.$raffstore->{name},'Nichts zu tun. Over and out.');
   return;
 }
 
