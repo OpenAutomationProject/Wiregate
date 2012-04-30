@@ -1,3 +1,10 @@
+#####
+# Autor: Shoko, knx-user-forum
+# Datum: 20120430
+# 
+# 
+
+
 ### Variablen ###
 
 my $globalstrahlung_ga="0/1/15";
