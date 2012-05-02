@@ -62,19 +62,19 @@ if($event=~/restart|modified/)
     my $count=0;
     my $scene_lookup='';
 
-    for my $room (keys %scene)
+    for my $sc (sort keys %scene)
     {
-	next if $room eq 'storage';
+	next if $sc eq 'storage';
 
-	my $store=$scene{$room}{store};
-	my $recall=$scene{$room}{recall};
+	my $store=$scene{$sc}{store};
+	my $recall=$scene{$sc}{recall};
 
-	$store=$scene{$room}{store}=$eibgaconf{$store}{ga} if $store!~/^[0-9\/]+$/ && defined $eibgaconf{$store};
-	$recall=$scene{$room}{recall}=$eibgaconf{$recall}{ga} if $recall!~/^[0-9\/]+$/ && defined $eibgaconf{$recall};
+	$store=$scene{$sc}{store}=$eibgaconf{$store}{ga} if $store!~/^[0-9\/]+$/ && defined $eibgaconf{$store};
+	$recall=$scene{$sc}{recall}=$eibgaconf{$recall}{ga} if $recall!~/^[0-9\/]+$/ && defined $eibgaconf{$recall};
 	
 	next unless defined $store && defined $recall;
 
-	$scene_lookup.="St($store)=>'$room', Rc($recall)=>'$room', ";
+	$scene_lookup.="St($store)=>'$sc', Rc($recall)=>'$sc', ";
 	
 	$plugin_subscribe{$store}{$plugname}=1;
 	$plugin_subscribe{$recall}{$plugname}=1;
@@ -105,7 +105,7 @@ if($event=~/bus/)
     }
 
     my $cmd=$1; chop $cmd;
-    my $room=$2;
+    my $sc=$2;
 
     if($eibgaconf{$ga}{DPTSubId} eq '1.017')
     {
@@ -113,7 +113,7 @@ if($event=~/bus/)
 	return unless $msg{src}=~/[0-9]+\.[0-9]+\.([0-9]+)/;
 	$n=$1;
     }
-    elsif($scene{$room}{store} eq $scene{$room}{recall})
+    elsif($scene{$sc}{store} eq $scene{$sc}{recall})
     {
         # Speichern oder Abrufen? Falls beides die gleiche GA, aus 7. Bit der Szenennummer ableiten
 	$cmd = ($n & 0x80)?'S':'R';
@@ -125,26 +125,18 @@ if($event=~/bus/)
     }
 
     # Szenencode
-    my $z="$room\__$n";
+    my $z="$sc\__$n";
 
-    # Debugging
-    
-    if($cmd eq 'S')
-    {
-	plugin_log($plugname, "Szene $z speichern: ".join(',', (keys %{$scene{$room}{gas}})));
-    }
-    else
-    {
-	plugin_log($plugname, "Szene $z abrufen: ".join(',', (values %{$scene{$room}{gas}})));
-    }
-	
     if($cmd eq 'S') # Szene speichern
     {
+	# Debugging   
+	plugin_log($plugname, "Szene $z speichern: ".join(',', (sort keys %{$scene{$sc}{gas}})));
+
 	delete $scene{$z};
 
-	for my $ga (keys %{$scene{$room}{gas}})
+	for my $ga (keys %{$scene{$sc}{gas}})
 	{
-	    my $wga=$scene{$room}{gas}{$ga}; # auf diese GA muss spaeter geschrieben werden
+	    my $wga=$scene{$sc}{gas}{$ga}; # auf diese GA muss spaeter geschrieben werden
 	    $wga=$eibgaconf{$wga}{short} if $wga=~/^[0-9\/]+$/ && $use_short_names && defined $eibgaconf{$wga}{short};    
 	    $ga=$eibgaconf{$ga}{ga} if $ga!~/^[0-9\/]+$/ && defined $eibgaconf{$ga};    
 	    $scene{$z}{$wga}=knx_read($ga,300);
@@ -162,6 +154,9 @@ if($event=~/bus/)
     }
     else # Szene abrufen
     {
+	# Debugging   
+	plugin_log($plugname, "Szene $z abrufen: ".join(',', (sort values %{$scene{$sc}{gas}})));
+
 	for my $v (keys %{$scene{$z}})
 	{
 	    my $ga=$v;
