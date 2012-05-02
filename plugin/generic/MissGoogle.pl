@@ -8,7 +8,7 @@ chdir "/var/lib/mpd/music/Ansagen";
 my %text=(
     "./Achtung, es wurde ein Einbruch detektiert. Die Polizei wird automatisch benachrichtigt.wav"=>"Achtung, es wurde ein Einbruch detektiert. Die Polizei wird automatisch benachrichtigt",
     "./AufWiedersehen.wav"=>"Auf Wiedersehen",
-    "./Tschuess.wav"=>"tschüss",
+    "./Tschuess.wav"=>"tschuess",
     "./Ciao.wav"=>"tschau",
     "./Bitte Schluesselbund ans Schluesselbrett haengen.wav"=>"Bitte Schluesselbund ans Schluesselbrett haengen",
     "./Der Trockner ist fertig.wav"=>"Der Trockner ist fertig",
