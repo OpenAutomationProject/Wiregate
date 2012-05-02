@@ -61,7 +61,7 @@ if($event=~/restart|modified/)
     my $count=0;
     my $rxtx_lookup='';
 
-    for my $t (keys %trans)
+    for my $t (sort keys %trans)
     {
 	my $receive=$trans{$t}{receive};
 	my $transmit=$trans{$t}{transmit};
