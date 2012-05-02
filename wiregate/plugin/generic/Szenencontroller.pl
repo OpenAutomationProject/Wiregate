@@ -1,3 +1,4 @@
+#!/usr/bin/perl -w
 ####################
 # Szenencontroller #
 ####################
@@ -127,7 +128,7 @@ if($event=~/bus/)
     my $z="$room\__$n";
 
     # Debugging
-#    plugin_log($plugname, "Szene $z ".($cmd eq 'S'?'speichern':'abrufen'));
+    plugin_log($plugname, "Szene $z ".($cmd eq 'S'?'speichern':'abrufen'));
 
     if($cmd eq 'S') # Szene speichern
     {
