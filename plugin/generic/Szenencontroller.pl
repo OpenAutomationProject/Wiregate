@@ -128,8 +128,16 @@ if($event=~/bus/)
     my $z="$room\__$n";
 
     # Debugging
-    plugin_log($plugname, "Szene $z ".($cmd eq 'S'?'speichern':'abrufen'));
-
+    
+    if($cmd eq 'S')
+    {
+	plugin_log($plugname, "Szene $z speichern: ".join(',', (keys %{$scene{$room}{gas}})));
+    }
+    else
+    {
+	plugin_log($plugname, "Szene $z abrufen: ".join(',', (values %{$scene{$room}{gas}})));
+    }
+	
     if($cmd eq 'S') # Szene speichern
     {
 	delete $scene{$z};

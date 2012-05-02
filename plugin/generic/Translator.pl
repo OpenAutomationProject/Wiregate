@@ -118,7 +118,14 @@ if($event=~/bus/)
     if($msg{apci} eq "A_GroupValue_Read")
     {
 	# Ein Read-Request auf einer Transmit-GA wird mit dem letzten Ergebnis beantwortet
-	knx_write($ga, $plugin_info{$plugname.'_'.$t.'_result'}) if $cmd eq 'T';
+	if($cmd eq 'T')
+	{
+	    my $transmit=$ga;
+	    $transmit=$eibgaconf{$ga}{short} if $use_short_names;
+	    my $result=$plugin_info{$plugname.'_'.$t.'_result'};
+	    plugin_log($plugname, "memory: $result ($transmit)");
+	    knx_write($ga, $result);
+	}
 	return;
     }
     elsif($msg{apci} eq "A_GroupValue_Write")
@@ -177,13 +184,15 @@ if($event=~/bus/)
 	my $receive=$trans{$t}{receive};
 	my $transmit=$trans{$t}{transmit};
 	
-	# Debugging
-	plugin_log($plugname, "$input ($receive) -> $result ($transmit)");
-
 	$receive=$eibgaconf{$receive}{ga} if $receive!~/^[0-9\/]+$/ && defined $eibgaconf{$receive};
 	$transmit=$eibgaconf{$transmit}{ga} if $transmit!~/^[0-9\/]+$/ && defined $eibgaconf{$transmit};
 
-	knx_write($transmit, $result) unless($transmit eq $receive);
+	# Debugging
+	unless($transmit eq $receive)
+	{
+	    plugin_log($plugname, "$input ($receive) -> $result ($transmit)");
+	    knx_write($transmit, $result);
+	}
     }
 }
 
