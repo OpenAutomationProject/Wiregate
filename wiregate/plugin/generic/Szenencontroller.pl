@@ -45,7 +45,7 @@ my $conf=$plugname; $conf=~s/\.pl$/.conf/;
 $conf="/etc/wiregate/plugin/generic/conf.d/$conf";
 my %scene=();
 my $err=read_from_config();
-return "config err" if $err;
+return $err if $err;
 
 # Dynamisch definierte Szenen aus plugin_info einlesen
 recall_from_plugin_info();
@@ -88,6 +88,8 @@ if($event=~/restart|modified/)
     return $count." initialisiert";
 }
 
+my $retval='';
+
 if($event=~/bus/)
 {
     # nur auf Write-Telegramme reagieren
@@ -129,18 +131,25 @@ if($event=~/bus/)
 
     if($cmd eq 'S') # Szene speichern
     {
-	# Debugging   
-	plugin_log($plugname, "Szene $z speichern: ".join(',', (sort keys %{$scene{$sc}{gas}})));
+	$retval.="Szene $z speichern: ";
 
 	delete $scene{$z};
 
-	for my $ga (keys %{$scene{$sc}{gas}})
+	for my $ga (sort keys %{$scene{$sc}{gas}})
 	{
 	    my $wga=$scene{$sc}{gas}{$ga}; # auf diese GA muss spaeter geschrieben werden
 	    $wga=$eibgaconf{$wga}{short} if $wga=~/^[0-9\/]+$/ && $use_short_names && defined $eibgaconf{$wga}{short};    
 	    $ga=$eibgaconf{$ga}{ga} if $ga!~/^[0-9\/]+$/ && defined $eibgaconf{$ga};    
 	    $scene{$z}{$wga}=knx_read($ga,300);
-	    delete $scene{$z}{$wga} unless defined $scene{$z}{$wga};
+
+	    if(defined $scene{$z}{$wga})
+	    {
+		$retval.=$wga.'->'.$scene{$z}{$wga}.' ';
+	    }
+	    else
+	    {
+		delete $scene{$z}{$wga};
+	    }
 	}
 
 	if($scene{storage} eq 'configfile')
@@ -154,19 +163,20 @@ if($event=~/bus/)
     }
     else # Szene abrufen
     {
-	# Debugging   
-	plugin_log($plugname, "Szene $z abrufen: ".join(',', (sort values %{$scene{$sc}{gas}})));
+	$retval.="Szene $z abrufen: ";
 
 	for my $v (keys %{$scene{$z}})
 	{
 	    my $ga=$v;
 	    $ga=$eibgaconf{$ga}{ga} if $ga!~/^[0-9\/]+$/ && defined $eibgaconf{$ga};
 	    knx_write($ga,$scene{$z}{$v});
+	    $retval.=$ga.'->'.$scene{$z}{$v}.' ';
 	}
     }    
 }
 
-return;
+return unless $retval;
+return $retval;
 
 ########## Datenpersistenz - Speichern und Einlesen ###############
 
@@ -176,7 +186,7 @@ sub read_from_config
     my @lines = <CONFIG>;
     close CONFIG;
     eval("@lines");
-    return "config error" if $@;
+    return "config error: $@" if $@;
 }
 
 sub store_to_config

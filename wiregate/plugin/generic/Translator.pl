@@ -78,7 +78,7 @@ if($event=~/restart|modified/)
 
 	$count++;
 
-	$plugin_info{$plugname.'_'.$t.'_result'}=undef;
+	delete $plugin_info{$plugname.'_'.$t.'_result'};
 
 	if(ref $trans{$t}{state})
 	{
@@ -123,8 +123,8 @@ if($event=~/bus/)
 	    my $transmit=$ga;
 	    $transmit=$eibgaconf{$ga}{short} if $use_short_names;
 	    my $result=$plugin_info{$plugname.'_'.$t.'_result'};
-	    plugin_log($plugname, "memory: $result ($transmit)");
 	    knx_write($ga, $result);
+	    return "Memory: $result ($transmit)";
 	}
 	return;
     }
@@ -136,7 +136,14 @@ if($event=~/bus/)
 	# Vorsicht! - das koennten wir selbst gewesen sein, also nicht antworten!
 	if($cmd eq 'T')
 	{
-	    $plugin_info{$plugname.'_'.$t.'_result'}=$input; # einfach Input ablegen
+	    if(defined $input)
+	    {
+		$plugin_info{$plugname.'_'.$t.'_result'}=$input; # einfach Input ablegen
+	    }
+	    else
+	    {
+		delete $plugin_info{$plugname.'_'.$t.'_result'};
+	    }
 	    return;
 	}
 
@@ -164,8 +171,14 @@ if($event=~/bus/)
 	    # erlauben wir nur vorhandene Eintraege
 	    for my $v (keys %{$state})
 	    {
-		next unless exists $plugin_info{$plugname.'_'.$t.'_'.$v};
-		$plugin_info{$plugname.'_'.$t.'_'.$v}=$state->{$v};
+		if(defined $state->{$v})
+		{
+		    $plugin_info{$plugname.'_'.$t.'_'.$v}=$state->{$v};
+		}
+		else
+		{
+		    delete $plugin_info{$plugname.'_'.$t.'_'.$v};
+		}
 	    }
 	}
 	else # Einfacher Fall - skalare state-Variable
@@ -178,7 +191,14 @@ if($event=~/bus/)
 	}
 
 	# Ergebnis des letzten Aufrufs zurueckschreiben
-	$plugin_info{$plugname.'_'.$t.'_result'}=$result;
+	if(defined $result)
+	{
+	    $plugin_info{$plugname.'_'.$t.'_result'}=$result;
+	}
+	else
+	{
+	    delete $plugin_info{$plugname.'_'.$t.'_result'};
+	}
 	
 	# Uebersetzung auf Bus schreiben, ausser im Sonderfall receive==transmit, dann nur auf Anfrage senden
 	my $receive=$trans{$t}{receive};
@@ -187,11 +207,10 @@ if($event=~/bus/)
 	$receive=$eibgaconf{$receive}{ga} if $receive!~/^[0-9\/]+$/ && defined $eibgaconf{$receive};
 	$transmit=$eibgaconf{$transmit}{ga} if $transmit!~/^[0-9\/]+$/ && defined $eibgaconf{$transmit};
 
-	# Debugging
 	unless($transmit eq $receive)
 	{
-	    plugin_log($plugname, "$input ($receive) -> $result ($transmit)");
 	    knx_write($transmit, $result);
+	    return "$input ($receive) -> $result ($transmit)";
 	}
     }
 }
