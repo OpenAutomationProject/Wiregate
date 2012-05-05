@@ -5,9 +5,9 @@
 # Wiregate-Plugin
 # (c) 2012 Fry under the GNU Public License
 
-# $plugin_info{$plugname.'_cycle'}=0; return "deaktiviert";
+#$plugin_info{$plugname.'_cycle'}=0; return "deaktiviert";
 
-my $use_short_names=0; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
+my $use_short_names=1; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
 
 # eibgaconf fixen falls nicht komplett indiziert
 if($use_short_names && !exists $eibgaconf{ZV_Uhrzeit})
@@ -41,17 +41,24 @@ elsif (%msg) { $event='bus'; } # Bustraffic
 else { $event='cycle'; } # Zyklus
 
 # Konfigurationsfile einlesen
-my $conf=$plugname; $conf=~s/\.pl$/.conf/;
-$conf="/etc/wiregate/plugin/generic/conf.d/$conf";
 my %scene=();
+my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; $conf=~s/\.pl$/.conf/;
 my $err=read_from_config();
 return $err if $err;
+
+# Konfigfile seit dem letzten Mal geaendert?
+my $config_modified = ($scene{storage} ne 'configfile' && (24*60*60*(-M $conf)-time()) > $plugin_info{$plugname.'_configtime'});
 
 # Dynamisch definierte Szenen aus plugin_info einlesen
 recall_from_plugin_info();
 
-if($event=~/restart|modified/)
+# Plugin-Code
+my $retval='';
+
+if($event=~/restart|modified/ || $config_modified)
 {
+    $plugin_info{$plugname.'_configtime'}=(24*60*60*(-M $conf)-time());
+
     # Cleanup aller Szenenvariablen in %plugin_info 
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
@@ -64,7 +71,7 @@ if($event=~/restart|modified/)
 
     for my $sc (sort keys %scene)
     {
-	next if $sc eq 'storage';
+	next if $sc=~/^(storage|debug)$/;
 
 	my $store=$scene{$sc}{store};
 	my $recall=$scene{$sc}{recall};
@@ -85,12 +92,9 @@ if($event=~/restart|modified/)
     $plugin_info{$plugname.'__SceneLookup'}=$scene_lookup;
     $plugin_info{$plugname.'_cycle'}=0; 
    
-    return $count." initialisiert";
+    $retval.=$count." initialisiert";
 }
-
-my $retval='';
-
-if($event=~/bus/)
+elsif($event=~/bus/)
 {
     # nur auf Write-Telegramme reagieren
     return if $msg{apci} ne 'A_GroupValue_Write'; 
@@ -127,11 +131,15 @@ if($event=~/bus/)
     }
 
     # Szenencode
-    my $z="$sc\__$n";
+    my $z="$sc\#$n";
 
     if($cmd eq 'S') # Szene speichern
     {
-	$retval.="Szene $z speichern: ";
+	$retval.="Szene $z speichern: " if $scene{debug};
+	
+	my $confirm_store=$scene{$sc}{confirm_store};
+	$confirm_store=$eibgaconf{$confirm_store}{ga} if $confirm_store!~/^[0-9\/]+$/ && defined $eibgaconf{$confirm_store};    
+	knx_write($confirm_store,1); # Translator feuert spaeter dann eine Null hinterher, um die LED auszuschalten
 
 	delete $scene{$z};
 
@@ -139,15 +147,18 @@ if($event=~/bus/)
 	{
 	    my $wga=$scene{$sc}{gas}{$ga}; # auf diese GA muss spaeter geschrieben werden
 	    $wga=$eibgaconf{$wga}{short} if $wga=~/^[0-9\/]+$/ && $use_short_names && defined $eibgaconf{$wga}{short};    
+	    
 	    $ga=$eibgaconf{$ga}{ga} if $ga!~/^[0-9\/]+$/ && defined $eibgaconf{$ga};    
-	    $scene{$z}{$wga}=knx_read($ga,300);
+
+	    $scene{$z}{$wga}=knx_read($ga,300);  # KOSTET ZEIT FALLS GERAETE NICHT ANTWORTEN!
 
 	    if(defined $scene{$z}{$wga})
 	    {
-		$retval.=$wga.'->'.$scene{$z}{$wga}.' ';
+		$retval.=$wga.'->'.$scene{$z}{$wga}.' ' if $scene{debug};
 	    }
 	    else
 	    {
+		$retval.=$wga.'? ' if $scene{debug};
 		delete $scene{$z}{$wga};
 	    }
 	}
@@ -163,14 +174,12 @@ if($event=~/bus/)
     }
     else # Szene abrufen
     {
-	$retval.="Szene $z abrufen: ";
+	$retval.="Szene $z abrufen: " if $scene{debug};
 
 	for my $v (keys %{$scene{$z}})
 	{
-	    my $ga=$v;
-	    $ga=$eibgaconf{$ga}{ga} if $ga!~/^[0-9\/]+$/ && defined $eibgaconf{$ga};
-	    knx_write($ga,$scene{$z}{$v});
-	    $retval.=$ga.'->'.$scene{$z}{$v}.' ';
+	    knx_write(groupaddress($v),$scene{$z}{$v});
+	    $retval.=$v.'->'.$scene{$z}{$v}.' ' if $scene{debug};
 	}
     }    
 }
@@ -226,9 +235,81 @@ sub recall_from_plugin_info
 {
     for my $k (grep /^$plugname\__/, keys %plugin_info)
     {
-	next unless($k=~/^$plugname\__([A-Z0-9 ]+__[0-9]+)__(.*)$/i);
+	next unless($k=~/^$plugname\__(.*\#.*)__(.*)$/);
 	my ($z,$v)=($1,$2); 
 	$scene{$z}{$v}=$plugin_info{$k};
+    }
+}
+
+# Umgang mit GA-Kurznamen und -Adressen
+sub groupaddress
+{
+    my $short=shift;
+
+    return unless defined $short;
+
+    if(ref $short)
+    {
+	my $ga=[];
+	for my $sh (@{$short})
+	{
+	    if($sh!~/^[0-9\/]+$/ && defined $eibgaconf{$sh}{ga})
+	    {
+		push @{$ga}, $eibgaconf{$sh}{ga};
+	    }
+	    else
+	    {
+		push @{$ga}, $sh;
+	    }
+	}
+        return $ga;
+    }
+    else
+    {
+	my $ga=$short;
+
+	if($short!~/^[0-9\/]+$/ && defined $eibgaconf{$short}{ga})
+	{
+	    $ga=$eibgaconf{$short}{ga};
+	}
+
+	return $ga;
+    }
+}
+
+sub shortname
+{
+    my $gas=shift;
+
+    return unless defined $gas;
+    return $gas unless $use_short_names;
+
+    if(ref $gas)
+    {
+	my $sh=[];
+	for my $ga (@{$gas})
+	{
+	    if($ga=~/^[0-9\/]+$/ && defined $eibgaconf{$ga}{short})
+	    {
+		push @{$sh}, $eibgaconf{$ga}{short};
+	    }
+	    else
+	    {
+		push @{$sh}, $ga;
+	    }
+	}
+	return $sh;
+    }
+    else
+    {
+	my $sh=$gas;
+
+	if($gas=~/^[0-9\/]+$/ && defined $eibgaconf{$gas}{short})
+	{
+	    $sh=$eibgaconf{$gas}{short};
+	}
+
+	return $sh;
     }
 }
 
