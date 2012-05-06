@@ -328,10 +328,10 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
     next unless defined $result;
     
     knx_write($transmit, $result);
-
-    # Timer fuer nachste Aktion setzen
-    set_timer();   
 }
+
+# Timer fuer nachste Aktion setzen
+set_timer();   
 
 return unless $retval;
 return $retval;
