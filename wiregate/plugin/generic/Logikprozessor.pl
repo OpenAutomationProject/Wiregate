@@ -7,7 +7,7 @@
 
 #$plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
-my $use_short_names=1; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
+my $use_short_names=0; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
 
 # eibgaconf fixen falls nicht komplett indiziert
 if($use_short_names && !exists $eibgaconf{ZV_Uhrzeit})
