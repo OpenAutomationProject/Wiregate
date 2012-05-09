@@ -7,7 +7,7 @@
 
 #$plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
-my $use_short_names=0; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
+my $use_short_names=1; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
 
 # eibgaconf fixen falls nicht komplett indiziert
 if($use_short_names && !exists $eibgaconf{ZV_Uhrzeit})
@@ -89,6 +89,9 @@ if($event=~/restart|modified/ || $config_modified)
 
     for my $t (keys %logic)
     {
+	# Debuggingflag gesetzt
+	my $debug = $logic{debug} || $logic{$t}{debug}; 
+
 	# Eintrag pruefen
 	if(defined $logic{$t}{receive} && ref $logic{$t}{receive} && ref $logic{$t}{receive} ne 'ARRAY')
 	{
@@ -116,14 +119,16 @@ if($event=~/restart|modified/ || $config_modified)
 	# transmit-Adresse abonnieren
 	my $transmit=groupaddress($logic{$t}{transmit});
 	$plugin_subscribe{$transmit}{$plugname}=1;
+	plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit abonniert") if $debug;
 
+	# Zaehlen und Logeintrag
 	$count++;
 
 	# Timer-Logiken reagieren nicht auf Bustraffic auf den receive-Adressen
 	# fuer Timer-Logiken: ersten Call berechnen
 	if($logic{$t}{timer})
 	{
-	    set_next_call($t);
+	    set_next_call($t, $debug);
 	    next;
 	}
 
@@ -135,6 +140,7 @@ if($event=~/restart|modified/ || $config_modified)
 	unless(ref $receive)
 	{ 
 	    $plugin_subscribe{$receive}{$plugname}=1; 
+	    plugin_log($plugname, "\$logic{$t}: Receive-GA $receive abonniert") if $debug;
 	}
 	else
 	{
@@ -142,6 +148,7 @@ if($event=~/restart|modified/ || $config_modified)
 	    {
 		$plugin_subscribe{$rec}{$plugname}=1;
 	    }
+	    plugin_log($plugname, "\$logic{$t}: Receive-GAs (".join(",",@{$receive}).") abonniert") if $debug;
 	}
     }
 
@@ -182,6 +189,9 @@ if($event=~/bus/)
 
 	$keep_subscription=1;
 
+	# Debuggingflag gesetzt
+	my $debug = $logic{debug} || $logic{$t}{debug}; 
+
 	# Sonderfall: Read- und Write-Telegramme auf der Transmit-Adresse?
     	if($transmit_ga)
 	{    
@@ -192,6 +202,7 @@ if($event=~/bus/)
 		my $result=$plugin_info{$plugname.'_'.$t.'_result'};
 		if(defined $result)
 		{
+		    plugin_log($plugname, "$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet") if $debug;
 		    knx_write($ga, $result);		    
 		}
 		next;
@@ -222,8 +233,11 @@ if($event=~/bus/)
 	my $result=execute_logic($t, $receive, $ga, $in);
 
 	# In bestimmten Sonderfaellen nichts schicken
-	next unless defined $result; # Resultat undef => nichts senden
-	next if $logic{$t}{transmit_only_on_request};
+	unless(defined $result) # Resultat undef => nichts senden
+	{
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden");
+	    next;
+	}
 
 	# Zirkelaufruf ausschliessen
 	if($sender_is_wiregate && $in eq $result)
@@ -235,14 +249,23 @@ if($event=~/bus/)
 	    next if ref $receive && grep /^$transmit$/, @{$receive};
 	}
 
+	if($logic{$t}{transmit_only_on_request})
+	{
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, wird erst auf spaeteres Lesetelegramm versendet")
+		if $debug;
+	    next;
+	}
+
 	# Falls delay spezifiziert, wird ein "Wecker" gestellt, um in einem spaeteren Aufruf den Wert zu senden
 	if($logic{$t}{delay})
 	{
 	    $plugin_info{$plugname.'__'.$t.'_timer'}=$systemtime+$logic{$t}{delay};
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, zu senden in ".$logic{$t}{delay}."s");
 	}
 	else
 	{
 	    knx_write($transmit, $result);
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet") if $debug;
 	}
     }
 
@@ -261,25 +284,36 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	# Relevanten Eintrag von %logic ermitteln
 	$timer=~/$plugname\__(.*)_timer/;
 	my $t=$1; 
+
+	# Debuggingflag gesetzt
+	my $debug = $logic{debug} || $logic{$t}{debug}; 
 	
-	# Timer loeschen bzw. neu setzen
-	set_next_call($t);
-
-	# zu sendendes Resultat = zuletzt berechnetes Ergebnis der Logik
-	my $result=$plugin_info{$plugname.'_'.$t.'_result'};
-
-	# ...es sei denn, es ist eine timer-Logik. Die muss jetzt ausgefuehrt werden
-	if($logic{$t}{timer})
-	{
-	    # Aufruf der Logik-Engine
-	    $result=execute_logic($t, groupaddress($logic{$t}{receive}), undef, undef);
-	}
-
 	# Transmit-GA
 	my $transmit=groupaddress($logic{$t}{transmit});
-	
+	my $toor=$logic{$t}{transmit_only_on_request};
+	my $result=undef;
+
+	unless($logic{$t}{timer})
+	{
+	    # zu sendendes Resultat = zuletzt berechnetes Ergebnis der Logik
+	    $result=$plugin_info{$plugname.'_'.$t.'_result'};
+	    plugin_log($plugname, "\$logic{$t} -> $transmit:".
+		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (delayed)") if $debug;
+	}
+	else
+	{
+	    # ...es sei denn, es ist eine timer-Logik. Die muss jetzt ausgefuehrt werden
+	    # Aufruf der Logik-Engine
+	    $result=execute_logic($t, groupaddress($logic{$t}{receive}), undef, undef);
+	    plugin_log($plugname, "\$logic{$t} -> $transmit:".
+		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer)") if $debug;
+	}
+
+	# Timer loeschen bzw. neu setzen
+	set_next_call($t, $debug);
+
 	next unless defined $result;
-	next if $logic{$t}{transmit_only_on_request};
+	next if $toor;
 	
 	knx_write($transmit, $result);
     }
@@ -292,13 +326,14 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 # Cycle auf naechsten Aufruf setzen
 unless(defined $nexttimer)
 {
-    $plugin_info{$plugname."_cycle"}=0; # kein Aufruf noetig
+    $plugin_info{$plugname."_cycle"}=0; # kein Aufruf noetig   
 }
 else
 {
     my $cycle=$nexttimer-time();
     $cycle=1 if $cycle<1;
     $plugin_info{$plugname."_cycle"}=$cycle;
+    plugin_log($plugname, "Cycle (Timer) gestellt auf ".$cycle."s") if $logic{debug};
 }
 
 return unless $retval;
@@ -347,7 +382,7 @@ sub schedule_matches_day
 
 sub set_next_call
 {
-    my $t=shift; # der relevante Eintrag in %logic
+    my ($t,$debug)=@_; # der relevante Eintrag in %logic, und das Debugflag
     my $nextcall=undef;
     my $days_until_nextcall=0;
 
@@ -431,7 +466,8 @@ sub set_next_call
 
     if(defined $nextcall)
     {
-	plugin_log($plugname, "Naechster Aufruf der Logik '$t' um $nextcall".($days_until_nextcall?" in $days_until_nextcall Tagen.":"."));
+	plugin_log($plugname, "Naechster Aufruf der Logik '$t' um $nextcall".($days_until_nextcall?" in $days_until_nextcall Tagen.":".")) 
+	    if $debug;
     
 	# Zeitdelta zu jetzt berechnen
 	my $seconds=3600*(substr($nextcall,0,2)-substr($time_of_day,0,2))
@@ -441,7 +477,8 @@ sub set_next_call
     }
     else
     {
-	plugin_log($plugname, "Logik '$t' wird nicht mehr aufgerufen (alle in time=>... festgelegten Termine sind verstrichen).");
+	plugin_log($plugname, "Logik '$t' wird nicht mehr aufgerufen (alle in time=>... festgelegten Termine sind verstrichen).") 
+	    if $debug && $logic{$t}{timer};
 
 	delete $plugin_info{$plugname.'__'.$t.'_timer'}; 
     }
