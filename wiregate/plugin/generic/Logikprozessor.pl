@@ -235,7 +235,7 @@ if($event=~/bus/)
 	# In bestimmten Sonderfaellen nichts schicken
 	unless(defined $result) # Resultat undef => nichts senden
 	{
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden");
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden") if $debug;
 	    next;
 	}
 
