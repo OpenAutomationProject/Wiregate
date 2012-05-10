@@ -48,6 +48,7 @@ my $night=!$day;
 my $systemtime=time();
 
 # Konfigurationsfile einlesen
+my $eibd_backend_address='1.1.254';
 my %logic=();
 my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
 $conf.='.conf' unless $conf=~s/\.pl$/.conf/;
@@ -90,10 +91,10 @@ if($event=~/restart|modified/ || $config_modified)
 
     for my $t (keys %logic)
     {
+	next if $t eq 'debug';
+
 	# Debuggingflag gesetzt
 	my $debug = $logic{debug} || $logic{$t}{debug}; 
-
-	next if $t eq 'debug';
 
 	# Eintrag pruefen
 	if(defined $logic{$t}{receive} && ref $logic{$t}{receive} && ref $logic{$t}{receive} ne 'ARRAY')
@@ -170,6 +171,8 @@ if($event=~/bus/)
     # welche translate-Logik ist aufgerufen?
     for my $t (keys %logic)
     {
+	next if $t eq 'debug';
+
 	my $transmit=groupaddress($logic{$t}{transmit});
 	my $transmit_ga = ($ga eq $transmit);
 
@@ -230,7 +233,7 @@ if($event=~/bus/)
         # (Logik antwortet auf sich selbst in einer Endlosschleife)
 
         # war Wiregate der Sender des Telegramms?
-	my $sender_is_wiregate=int($msg{src})==0; 
+	my $sender_is_wiregate = $msg{src} eq $eibd_backend_address; 
 
 	# Aufruf der Logik-Engine
 	my $result=execute_logic($t, $receive, $ga, $in);
@@ -263,12 +266,13 @@ if($event=~/bus/)
 	if($logic{$t}{delay})
 	{
 	    $plugin_info{$plugname.'__'.$t.'_timer'}=$systemtime+$logic{$t}{delay};
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, zu senden in ".$logic{$t}{delay}."s");
+	    plugin_log($plugname, "$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, zu senden in ".$logic{$t}{delay}."s")
+		if $debug;
 	}
 	else
 	{
 	    knx_write($transmit, $result);
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet") if $debug;
+	    plugin_log($plugname, "$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet") if $debug;
 	}
     }
 
