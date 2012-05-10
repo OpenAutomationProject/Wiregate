@@ -239,14 +239,7 @@ if($event=~/bus/)
 	my $result=execute_logic($t, $receive, $ga, $in);
 
 	# Zirkelaufruf ausschliessen
-	if($sender_is_wiregate && $in == $result)
-	{
-	    # kommt transmit-GA unter den receive-GAs vor? 
-	    # Wenn transmit_ga gesetzt ist, ist das schon mal der Fall
-	    next if $transmit_ga; 
-	    next if !ref $receive && ($transmit eq $receive);
-	    next if ref $receive && grep /^$transmit$/, @{$receive};
-	}
+	next if $sender_is_wiregate && $transmit_ga && $in == $result;
 
 	# In bestimmten Sonderfaellen nichts schicken
 	unless(defined $result) # Resultat undef => nichts senden
