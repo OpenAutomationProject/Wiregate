@@ -49,7 +49,8 @@ my $systemtime=time();
 
 # Konfigurationsfile einlesen
 my %logic=();
-my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; $conf=~s/\.pl$/.conf/;
+my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
+$conf.='.conf' unless $conf=~s/\.pl$/.conf/;
 open FILE, "<$conf" || return "no config found";
 $/=undef;
 my $lines = <FILE>;
@@ -91,6 +92,8 @@ if($event=~/restart|modified/ || $config_modified)
     {
 	# Debuggingflag gesetzt
 	my $debug = $logic{debug} || $logic{$t}{debug}; 
+
+	next if $t eq 'debug';
 
 	# Eintrag pruefen
 	if(defined $logic{$t}{receive} && ref $logic{$t}{receive} && ref $logic{$t}{receive} ne 'ARRAY')
