@@ -232,15 +232,8 @@ if($event=~/bus/)
 	# Aufruf der Logik-Engine
 	my $result=execute_logic($t, $receive, $ga, $in);
 
-	# In bestimmten Sonderfaellen nichts schicken
-	unless(defined $result) # Resultat undef => nichts senden
-	{
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden") if $debug;
-	    next;
-	}
-
 	# Zirkelaufruf ausschliessen
-	if($sender_is_wiregate && $in eq $result)
+	if($sender_is_wiregate && $in == $result)
 	{
 	    # kommt transmit-GA unter den receive-GAs vor? 
 	    # Wenn transmit_ga gesetzt ist, ist das schon mal der Fall
@@ -249,9 +242,16 @@ if($event=~/bus/)
 	    next if ref $receive && grep /^$transmit$/, @{$receive};
 	}
 
+	# In bestimmten Sonderfaellen nichts schicken
+	unless(defined $result) # Resultat undef => nichts senden
+	{
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden") if $debug;
+	    next;
+	}
+
 	if($logic{$t}{transmit_only_on_request})
 	{
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, wird erst auf spaeteres Lesetelegramm versendet")
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gespeichert")
 		if $debug;
 	    next;
 	}
@@ -312,10 +312,10 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	# Timer loeschen bzw. neu setzen
 	set_next_call($t, $debug);
 
-	next unless defined $result;
-	next if $toor;
-	
-	knx_write($transmit, $result);
+	if(defined $result && !$toor)
+	{
+	    knx_write($transmit, $result);
+	}
     }
     else # noch nicht faelliger Timer
     {
