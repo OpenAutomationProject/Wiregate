@@ -8,6 +8,7 @@
 #$plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
 my $use_short_names=1; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
+my $stime=time(); # Stoppuhr zum Nachverfolgen der Reaktionsgeschwindigkeit der Logikengine
 
 # eibgaconf fixen falls nicht komplett indiziert
 if($use_short_names && !exists $eibgaconf{ZV_Uhrzeit})
@@ -80,7 +81,7 @@ if($event=~/restart|modified/ || $config_modified)
 {
     $plugin_info{$plugname.'_configtime'}=(24*60*60*(-M $conf)-time());
 
-    # alle Variablen loeschen und neu initialisieren, alle GAs abonnieren
+    # alle Variablen loeschen
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
 	delete $plugin_info{$k};
@@ -92,6 +93,7 @@ if($event=~/restart|modified/ || $config_modified)
     for my $t (keys %logic)
     {
 	next if $t eq 'debug';
+	$t=~s/^_//g;
 
 	# Debuggingflag gesetzt
 	my $debug = $logic{debug} || $logic{$t}{debug}; 
@@ -172,6 +174,7 @@ if($event=~/bus/)
     for my $t (keys %logic)
     {
 	next if $t eq 'debug';
+	$t=~s/^_//g;
 
 	my $transmit=groupaddress($logic{$t}{transmit});
 	my $transmit_ga = ($ga eq $transmit);
@@ -208,7 +211,9 @@ if($event=~/bus/)
 		my $result=$plugin_info{$plugname.'_'.$t.'_result'};
 		if(defined $result)
 		{
-		    plugin_log($plugname, "$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet") if $debug;
+		    plugin_log($plugname, "$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet ("
+			       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+		    $stime=time();
 		    knx_write($ga, $result);		    
 		}
 		next;
@@ -232,26 +237,34 @@ if($event=~/bus/)
 	# Nebenbei berechnen wir noch zwei Flags, die Zirkelkommunikation verhindern sollen
         # (Logik antwortet auf sich selbst in einer Endlosschleife)
 
-        # war Wiregate der Sender des Telegramms?
-	my $sender_is_wiregate = $msg{src} eq $eibd_backend_address; 
+	# Cool-Periode definiert und noch nicht abgelaufen?
+	if(defined $plugin_info{$plugname.'__'.$t.'_cool'} && $plugin_info{$plugname.'__'.$t.'_cool'}>time())
+	{
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Cool)") if $debug;
+	    next;
+	}
 
 	# Aufruf der Logik-Engine
 	my $result=execute_logic($t, $receive, $ga, $in);
 
-	# Zirkelaufruf ausschliessen
+        # war Wiregate der Sender des Telegramms?
+        # Zirkelaufruf mit wiederholt gleichen Ergebnissen ausschliessen
+	my $sender_is_wiregate = $msg{src} eq $eibd_backend_address; 
 	next if $sender_is_wiregate && $transmit_ga && $in == $result;
 
 	# In bestimmten Sonderfaellen nichts schicken
 	unless(defined $result) # Resultat undef => nichts senden
 	{
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden") if $debug;
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden (".sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $stime=time();
 	    next;
 	}
 
 	if($logic{$t}{transmit_only_on_request})
 	{
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gespeichert")
+	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gespeichert (".sprintf("%0.1f",time()-$stime)."s)")
 		if $debug;
+	    $stime=time();
 	    next;
 	}
 
@@ -259,13 +272,20 @@ if($event=~/bus/)
 	if($logic{$t}{delay})
 	{
 	    $plugin_info{$plugname.'__'.$t.'_timer'}=$systemtime+$logic{$t}{delay};
-	    plugin_log($plugname, "$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, zu senden in ".$logic{$t}{delay}."s")
-		if $debug;
+	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{delay}+$logic{$t}{cool} if defined $logic{$t}{cool};
+	    plugin_log($plugname, "$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, zu senden in ".$logic{$t}{delay}."s ("
+		       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $stime=time();
 	}
 	else
 	{
 	    knx_write($transmit, $result);
-	    plugin_log($plugname, "$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet") if $debug;
+	    plugin_log($plugname, "$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet ("
+		       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $stime=time();
+
+	    # Cool-Periode starten
+	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{cool} if defined $logic{$t}{cool};
 	}
     }
 
@@ -298,7 +318,9 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	    # zu sendendes Resultat = zuletzt berechnetes Ergebnis der Logik
 	    $result=$plugin_info{$plugname.'_'.$t.'_result'};
 	    plugin_log($plugname, "\$logic{$t} -> $transmit:".
-		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (delayed)") if $debug;
+		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (delayed) ("
+		       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $stime=time();
 	}
 	else
 	{
@@ -306,7 +328,9 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	    # Aufruf der Logik-Engine
 	    $result=execute_logic($t, groupaddress($logic{$t}{receive}), undef, undef);
 	    plugin_log($plugname, "\$logic{$t} -> $transmit:".
-		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer)") if $debug;
+		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer) ("
+		       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $stime=time();
 	}
 
 	# Timer loeschen bzw. neu setzen
@@ -315,6 +339,9 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	if(defined $result && !$toor)
 	{
 	    knx_write($transmit, $result);
+
+	    # Cool-Periode starten
+	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{cool} if defined $logic{$t}{cool};
 	}
     }
     else # noch nicht faelliger Timer
@@ -400,7 +427,7 @@ sub set_next_call
     # Schedule-Form standardisieren (alle Eintraege in Listenform setzen und Wochentage durch Zahlen ersetzen)
     # dabei gleich schauen, ob HEUTE noch ein Termin ansteht
     $schedule=[$schedule] if ref $schedule eq 'HASH';
-    my %weekday=(Mo=>1,Di=>2,Mi=>3,Do=>4,Fr=>5,Sa=>6,So=>7);
+    my %weekday=(Mo=>1,Mo=>1,Mon=>1,Di=>2,Tu=>2,Tue=>2,Mi=>3,We=>3,Wed=>3,Do=>4,Th=>4,Thu=>4,Fr=>5,Fri=>5,Sa=>6,Sat=>6,So=>7,Su=>7,Sun=>7);
 
     for my $s (@{$schedule})
     {
