@@ -7,6 +7,7 @@
 # $plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
 use POSIX qw(floor);
+use feature "switch"; # aktiviert given...when-Struktur von Perl 5.10
 
 # Defaultkonfiguration
 my $speechdir='/var/lib/mpd/music/Ansagen';
@@ -52,9 +53,10 @@ if($event=~/restart|modified/)
 	delete $plugin_info{$k};
     }
 
-    for my $ga (keys %eibgaconf)
+    # Rueckwaertskompatible Behandlung von eibgaconf
+    for my $ga (grep /^[0-9\/]+$/, keys %eibgaconf)
     {
-	my $name=$eibgaconf{$ga}{'name'};
+	my $name=$eibgaconf{$ga}{name};
 	next unless defined $name;
 
 	for my $pat (keys %channels)
@@ -79,14 +81,14 @@ if($event=~/restart|modified/)
     
     return join ' ', map $_.'->'.$gas{$_}, keys %gas; 
 }
-elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
+elsif($event=~/bus/ && $msg{apci} eq 'A_GroupValue_Write')
 {
-    my $ga=$msg{'dst'};
-    my $val=$msg{'value'};
-    my $dpt=$eibgaconf{$ga}{'DPTSubId'};
+    my $ga=$msg{dst};
+    my $val=$msg{value};
+    my $dpt=$eibgaconf{$ga}{DPTSubId};
     $dpt=1.017 unless defined $dpt; # = Trigger, bedeutet Textansage ohne Daten
     
-    my $name=$eibgaconf{$ga}{'name'};   
+    my $name=$eibgaconf{$ga}{name};   
     my $channel=$channels{default};
     my $pattern=$name;
 
@@ -122,9 +124,11 @@ elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
 	{ push(@statement, 'Zahlen/'.($val?'hoch':'runter').'.wav'); }
 	when(1.009) # Auf/Zu
 	{ push(@statement, 'Zahlen/'.($val?'auf':'zu').'.wav'); }
+	when(2.007) # Auf/Ab/Stop
+	{ push(@statement, 'Zahlen/'.($val==1?'auf':($val==-1?'ab':'stop')).'.wav'); }
 	when([5.010,7.001,12.001]) # Ordinalzahl
 	{ push(@statement, number(\@speech, $val, -1)); }
-	when([6.010,8.001,13.001]) # Kardinalzahl
+	when([3.007,6.010,8.001,13.001]) # Kardinalzahl
 	{ push(@statement, number(\@speech, $val)); }
 	when([5.001,6.001]) # Prozent
 	{ 
@@ -176,13 +180,13 @@ elsif($event=~/bus/ && $msg{'apci'} eq 'A_GroupValue_Write')
 		push(@statement, "Wochentage/$1.wav");
 		push(@statement, number(\@speech, $2));
 		push(@statement, "Zeiten/Uhr.wav");
-		push(@statement, number(\@speech, $3));
-	    }
-	    elsif($val=~/^([0-9][0-9])\:([0-9][0-9])}\:([0-9][0-9])/)
-	    {
-		push(@statement, number(\@speech, $2));
-		push(@statement, "Zeiten/Uhr.wav");
 		push(@statement, number(\@speech, $3)) if $3;
+	    }
+	    elsif($val=~/^([0-9][0-9])\:([0-9][0-9])/)
+	    {
+		push(@statement, number(\@speech, $1));
+		push(@statement, "Zeiten/Uhr.wav");
+		push(@statement, number(\@speech, $2)) if $2;
 	    }
 	    else
 	    {
@@ -224,9 +228,9 @@ sub words
     # Konstruiere die abzuspielenden File(s) aus dem GA-Kuerzel
     # erster Versuch: eine Datei passt komplett auf das Muster im Kuerzel
     my $pat1=$pattern;
-    $pat1=~s/[_\s]+/.*?/g; # allgemeine Fassung
-#    $pat1=~s/\s+.*$//; # meine spezielle GA-Struktur
-#    $pat1=~s/_+/.*?/g; # meine spezielle GA-Struktur
+#    $pat1=~s/[_\s]+/.*?/g; # allgemeine Fassung
+    $pat1=~s/\s+.*$//; # meine spezielle GA-Struktur
+    $pat1=~s/_+/.*?/g; # meine spezielle GA-Struktur
     $pat1='.*'.$pat1.'.*\.wav$';
     
     my @hits=();
@@ -236,8 +240,8 @@ sub words
     unless(@hits)
     {
 	$pattern='_'.$pattern;
-	$pattern=~s/\s+/_/g; # allgemeine Fassung
-#	$pattern=~s/\s+.*$//; # meine spezielle GA-Struktur
+#	$pattern=~s/\s+/_/g; # allgemeine Fassung
+	$pattern=~s/\s+.*$//; # meine spezielle GA-Struktur
 
 	# zweiter Versuch: aus Kuerzeln die Bausteine zusammenbauen
 	while($pattern=~s/^_([^_]+)//)
@@ -441,11 +445,11 @@ sub speak
 	    system "$mpc update"; # Aktualisierung verfuegbarer Soundclips
 
 	    # wird momentan noch was gespielt?
-	    my $playing = grep /playing/, `$mpc`;
-
-	    system "$mpc clear" unless $playing; # aufraeumen
+	    system "$mpc clear" unless `$mpc`=~/playing/s; # leeren falls abgespielt
 	    system "$mpc add \"".(join "\" \"", @_)."\"";
-	    system "$mpc play" unless $playing; # nur dann noetig 
+#	    plugin_log($plugname, "$mpc add \"".(join "\" \"", @_)."\"");
+#	    plugin_log($plugname, "$mpc play") unless `$mpc`=~/playing/s;
+	    system "$mpc play" unless `$mpc`=~/playing/s; # starten falls noch nicht aktiv
 
 #	    $playing=`$mpc; $mpc outputs`;
 #	    $playing=~s/\s+/ /sg;
