@@ -9,7 +9,7 @@
 use POSIX qw(floor);
 use Math::Round qw(nearest);
 
-my $use_short_names=0; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
+my $use_short_names=1; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
 
 # eibgaconf fixen falls nicht komplett indiziert
 if($use_short_names && !exists $eibgaconf{ZV_Uhrzeit})
@@ -65,7 +65,7 @@ if($event=~/restart|modified/)
     # Alle Controller-GAs abonnieren, Reglerstati initialisieren
     for my $r (grep ref($house{$_}), keys %house)
     {
-	$plugin_subscribe{$house{$r}{control}}{$plugname}=1;
+	$plugin_subscribe{groupaddress($house{$r}{control})}{$plugname}=1;
 	RESET($r);
     }
 
@@ -109,18 +109,28 @@ if($event=~/cycle/)
     if(defined $Vreq)
     {
 	$Vreq=$house{inflow_max} if defined $house{inflow_max} && $Vreq>$house{inflow_max};
-	knx_write($house{inflow_control},$Vreq,9.001) if defined $house{inflow_control};
+	knx_write(groupaddress($house{inflow_control}),$Vreq,9.001) if defined $house{inflow_control};
 	$retval.=sprintf "Vreq=%d", $Vreq;
 	$anynews=1;
     }
 
     $retval=~s/\s*$//; # Space am Ende entfernen
 
-    return unless $anynews;
+    unless($anynews)
+    {
+	for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
+	for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
+	return;
+    }
 }
 elsif($event=~/bus/)
 {
-    return if $msg{apci} eq 'A_GroupValue_Response';
+    if($msg{apci} eq 'A_GroupValue_Response')
+    {
+	for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
+	for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
+	return;
+    }
 
     # Aufruf durch GA - neue Wunschtemperatur
     my $ga=$msg{dst};
@@ -142,6 +152,8 @@ elsif($event=~/bus/)
 	    $T0=$dyn{$r}{T0};
 	    $T0=$dyn{$r}{T0old} if $dyn{mode} eq 'OPTIMIZE';
 	    knx_write($ga,$T0,9.001); 
+	    for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
+	    for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
 	    return;
 	}
 	
@@ -155,8 +167,13 @@ elsif($event=~/bus/)
 	}
 	elsif($T0==-1)
 	{
-	    return if $dyn{$r}{mode} eq 'OPTIMIZE'; # Entprellen
-
+	    if($dyn{$r}{mode} eq 'OPTIMIZE') # Entprellen
+	    {
+		for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
+		for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
+		return;
+	    }
+		
 	    # Initialisierung der Optimierungsfunktion
 	    $dyn{$r}{mode}='OPTIMIZE';
 	    $dyn{$r}{T0old}=$dyn{$r}{T0};
@@ -167,8 +184,13 @@ elsif($event=~/bus/)
 	}
 	else # neue Wunschtemperatur
 	{
-	    return if $dyn{$r}{T0} == $T0; # Entprellen
-	    
+	    if($dyn{$r}{T0} == $T0) # Entprellen
+	    {
+		for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
+		for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
+		return;
+	    }   
+
 	    RESET($r) if $mode eq 'OPTIMIZE'; # Optimierung unterbrochen
 	    $dyn{$r}{mode}='ON'; # ansonsten uebrige Werte behalten
 	    $dyn{$r}{T0}=$T0;
@@ -186,6 +208,8 @@ elsif($event=~/bus/)
 # Speichere Statusvariablen aller Regler
 store_to_plugin_info(\%dyn);
 
+for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
+for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
 return $retval eq '' ? undef : $retval;
 
 
@@ -291,7 +315,9 @@ sub readsensors
 	{
 	    if(defined $ss->{$type})
 	    {
-		my $sensorlist=(ref $ss->{$type})?$ss->{$type}:[$ss->{$type}];
+		my $sensorlist=groupaddress($ss->{$type});
+		$sensorlist=[$sensorlist] unless ref $sensorlist eq 'ARRAY';
+
 		for my $s (@{$sensorlist})
 		{
 		    unless(defined $T{$type}{$s})
@@ -342,7 +368,7 @@ sub readsensors
     {
 	if(!defined $R{$type} && defined $house{$type})
 	{
-	    $R{$type} = knx_read($house{$type},$house{cycle},9);
+	    $R{$type} = knx_read(groupaddress($house{$type}),$house{cycle},9);
 	    delete $R{$type} unless $R{$type};
 	}
     }
@@ -373,16 +399,11 @@ sub writeactuators
     {
 	if(defined $ss->{actuator})
 	{
-	    unless(ref $ss->{actuator})
+	    $ss->{actuator}=[$ss->{actuator}] unless ref $ss->{actuator} eq 'ARRAY';
+
+	    for my $s (@{$ss->{actuator}})
 	    {
-		knx_write($ss->{actuator},100*$U,5.001); # DPT NOCH UNKLAR ########
-	    }
-	    else
-	    {
-		for my $s (@{$ss->{actuator}})
-		{
-		    knx_write($s,100*$U,5.001);
-		}
+		knx_write(groupaddress($s),100*$U,5.001); # DPT NOCH UNKLAR ########
 	    }
 	}
     }
@@ -762,3 +783,76 @@ sub OPTIMIZE
     return sprintf "t=%dh:%02dmin Tv=%.1fmin Tn=%dmin lim=%.1f prop=%.1f spread=%.1f ", $tp/3600,($tp/60)%60,$Tv,$Tn,$lim,$prop,$refspread;
 }	    
 
+
+# Umgang mit GA-Kurznamen und -Adressen
+
+sub groupaddress
+{
+    my $short=shift;
+
+    return unless defined $short;
+
+    if(ref $short)
+    {
+	my $ga=[];
+	for my $sh (@{$short})
+	{
+	    if($sh!~/^[0-9\/]+$/ && defined $eibgaconf{$sh}{ga})
+	    {
+		push @{$ga}, $eibgaconf{$sh}{ga};
+	    }
+	    else
+	    {
+		push @{$ga}, $sh;
+	    }
+	}
+        return $ga;
+    }
+    else
+    {
+	my $ga=$short;
+
+	if($short!~/^[0-9\/]+$/ && defined $eibgaconf{$short}{ga})
+	{
+	    $ga=$eibgaconf{$short}{ga};
+	}
+
+	return $ga;
+    }
+}
+
+sub shortname
+{
+    my $gas=shift;
+
+    return unless defined $gas;
+    return $gas unless $use_short_names;
+
+    if(ref $gas)
+    {
+	my $sh=[];
+	for my $ga (@{$gas})
+	{
+	    if($ga=~/^[0-9\/]+$/ && defined $eibgaconf{$ga}{short})
+	    {
+		push @{$sh}, $eibgaconf{$ga}{short};
+	    }
+	    else
+	    {
+		push @{$sh}, $ga;
+	    }
+	}
+	return $sh;
+    }
+    else
+    {
+	my $sh=$gas;
+
+	if($gas=~/^[0-9\/]+$/ && defined $eibgaconf{$gas}{short})
+	{
+	    $sh=$eibgaconf{$gas}{short};
+	}
+
+	return $sh;
+    }
+}

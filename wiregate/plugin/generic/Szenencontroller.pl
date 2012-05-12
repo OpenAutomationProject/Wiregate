@@ -97,7 +97,11 @@ if($event=~/restart|modified/ || $config_modified)
 elsif($event=~/bus/)
 {
     # nur auf Write-Telegramme reagieren
-    return if $msg{apci} ne 'A_GroupValue_Write'; 
+    if($msg{apci} ne 'A_GroupValue_Write')
+    {
+	for my $k (keys %scene) { delete $scene{$k}; } # Hilfe fuer die Garbage Collection
+	return;
+    }
 
     # Aufruf durch GA
     my $ga=$msg{dst};
@@ -107,6 +111,7 @@ elsif($event=~/bus/)
     unless($plugin_info{$plugname.'__SceneLookup'}=~/(St|Rc)\($ga\)=>\'(.+?)\',/)
     {
 	delete $plugin_subscribe{$ga}{$plugname}; # unbekannte GA
+	for my $k (keys %scene) { delete $scene{$k}; } # Hilfe fuer die Garbage Collection
 	return;
     }
 
@@ -116,7 +121,11 @@ elsif($event=~/bus/)
     if($eibgaconf{$ga}{DPTSubId} eq '1.017')
     {
         # Szenennummer aus physikalischer Adresse ableiten falls DPTSubId==1.017
-	return unless $msg{src}=~/[0-9]+\.[0-9]+\.([0-9]+)/;
+	unless($msg{src}=~/[0-9]+\.[0-9]+\.([0-9]+)/)
+	{
+	    for my $k (keys %scene) { delete $scene{$k}; } # Hilfe fuer die Garbage Collection
+	    return;
+	}
 	$n=$1;
     }
     elsif($scene{$sc}{store} eq $scene{$sc}{recall})
@@ -184,6 +193,7 @@ elsif($event=~/bus/)
     }    
 }
 
+for my $k (keys %scene) { delete $scene{$k}; } # Hilfe fuer die Garbage Collection
 return unless $retval;
 return $retval;
 
