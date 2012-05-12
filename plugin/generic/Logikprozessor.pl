@@ -125,7 +125,7 @@ if($event=~/restart|modified/ || $config_modified)
 	# transmit-Adresse abonnieren
 	my $transmit=groupaddress($logic{$t}{transmit});
 	$plugin_subscribe{$transmit}{$plugname}=1;
-	plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit abonniert") if $debug;
+	plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
 
 	# Zaehlen und Logeintrag
 	$count++;
@@ -146,15 +146,15 @@ if($event=~/restart|modified/ || $config_modified)
 	unless(ref $receive)
 	{ 
 	    $plugin_subscribe{$receive}{$plugname}=1; 
-	    plugin_log($plugname, "\$logic{$t}: Receive-GA $receive abonniert") if $debug;
+	    plugin_log($plugname, "\$logic{$t}: Receive-GA $receive nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$receive};
 	}
 	else
 	{
 	    for my $rec (@{$receive})
 	    {
 		$plugin_subscribe{$rec}{$plugname}=1;
+		plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$rec};
 	    }
-	    plugin_log($plugname, "\$logic{$t}: Receive-GAs (".join(",",@{$receive}).") abonniert") if $debug;
 	}
     }
 
@@ -211,8 +211,7 @@ if($event=~/bus/)
 		my $result=$plugin_info{$plugname.'_'.$t.'_result'};
 		if(defined $result)
 		{
-		    plugin_log($plugname, "$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet ("
-			       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet. " if $debug;
 		    $stime=time();
 		    knx_write($ga, $result);		    
 		}
@@ -240,7 +239,7 @@ if($event=~/bus/)
 	# Cool-Periode definiert und noch nicht abgelaufen?
 	if(defined $plugin_info{$plugname.'__'.$t.'_cool'} && $plugin_info{$plugname.'__'.$t.'_cool'}>time())
 	{
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Cool)") if $debug;
+	    $retval.="$ga:$in -> \$logic{$t}{receive}(Cool) " if $debug;
 	    next;
 	}
 
@@ -255,15 +254,14 @@ if($event=~/bus/)
 	# In bestimmten Sonderfaellen nichts schicken
 	unless(defined $result) # Resultat undef => nichts senden
 	{
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden (".sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden " if $debug;
 	    $stime=time();
 	    next;
 	}
 
 	if($logic{$t}{transmit_only_on_request})
 	{
-	    plugin_log($plugname, "$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gespeichert (".sprintf("%0.1f",time()-$stime)."s)")
-		if $debug;
+	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gespeichert "	if $debug;
 	    $stime=time();
 	    next;
 	}
@@ -273,15 +271,13 @@ if($event=~/bus/)
 	{
 	    $plugin_info{$plugname.'__'.$t.'_timer'}=$systemtime+$logic{$t}{delay};
 	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{delay}+$logic{$t}{cool} if defined $logic{$t}{cool};
-	    plugin_log($plugname, "$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, zu senden in ".$logic{$t}{delay}."s ("
-		       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, zu senden in ".$logic{$t}{delay}."s " if $debug;
 	    $stime=time();
 	}
 	else
 	{
 	    knx_write($transmit, $result);
-	    plugin_log($plugname, "$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet ("
-		       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet " if $debug;
 	    $stime=time();
 
 	    # Cool-Periode starten
@@ -317,9 +313,8 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	{
 	    # zu sendendes Resultat = zuletzt berechnetes Ergebnis der Logik
 	    $result=$plugin_info{$plugname.'_'.$t.'_result'};
-	    plugin_log($plugname, "\$logic{$t} -> $transmit:".
-		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (delayed) ("
-		       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $retval.="\$logic{$t} -> $transmit:".
+		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (delayed) " if $debug;
 	    $stime=time();
 	}
 	else
@@ -327,9 +322,8 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	    # ...es sei denn, es ist eine timer-Logik. Die muss jetzt ausgefuehrt werden
 	    # Aufruf der Logik-Engine
 	    $result=execute_logic($t, groupaddress($logic{$t}{receive}), undef, undef);
-	    plugin_log($plugname, "\$logic{$t} -> $transmit:".
-		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer) ("
-		       .sprintf("%0.1f",time()-$stime)."s)") if $debug;
+	    $retval.="\$logic{$t} -> $transmit:".
+		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer) " if $debug;
 	    $stime=time();
 	}
 
@@ -357,18 +351,20 @@ unless(defined $nexttimer)
 }
 else
 {
-    my $cycle=$nexttimer-time();
+    my $cycle=int($nexttimer-time());
     $cycle=1 if $cycle<1;
     $plugin_info{$plugname."_cycle"}=$cycle;
-    plugin_log($plugname, "Cycle (Timer) gestellt auf ".$cycle."s") if $logic{debug};
+    $retval.="Cycle (Timer) gestellt auf ".$cycle."s" if $logic{debug};
 }
 
+# experimentell - wir helfen der Garbage Collection etwas nach...
+for my $k (keys %logic) { delete $logic{$k}; }
 return unless $retval;
 return $retval;
 
 
 # Fuer Logiken mit timer-Klausel: Zeit des naechsten Aufrufs bestimmen
-
+# Fuer einen Tag den jeweils naechsten berechnen
 sub next_day
 {
     my $d=shift;
@@ -386,6 +382,7 @@ sub next_day
     return $d;
 }
 
+# Passt ein bestimmtes Datum auf das Schema in einer "Schedule"?
 sub schedule_matches_day
 {
     my ($schedule,$day)=@_; 
@@ -407,6 +404,8 @@ sub schedule_matches_day
     return $match;
 }
 
+# Fuer eine bestimmte Timer-Logik den naechsten Aufruf berechnen (relativ komplexes Problem wegen der 
+# vielen moeglichen Konfigurationen und Konstellationen)
 sub set_next_call
 {
     my ($t,$debug)=@_; # der relevante Eintrag in %logic, und das Debugflag
@@ -431,17 +430,20 @@ sub set_next_call
 
     for my $s (@{$schedule})
     {
+	# Timereintrag pruefen und standardisieren
 	unless(ref $s eq 'HASH')
 	{
 	    plugin_log($plugname, "Logiktimer zu Logik '$t' ist kein Hash oder Liste von Hashes");
 	    next;
 	}
+
 	unless(defined $s->{time})
 	{
 	    plugin_log($plugname, "Logiktimer zu Logik '$t' enthaelt mindestens einen Eintrag ohne Zeitangabe (time=>...)");
 	    next;
 	}	    
 
+	# Eintrag pruefen und standardisieren
 	for my $k (keys %{$s})
 	{
 	    unless($k=~/^(year|month|calendar_week|day_of_month|day_of_week|time)$/)
@@ -461,6 +463,33 @@ sub set_next_call
 	    @{$s->{$k}}=sort @{$s->{$k}}; # alle Listen sortieren
 	}
 
+	# Expandieren periodischer Zeitangaben, das sind Zeitangaben der Form
+	# time=>'08:00+30min' - ab 08:00 alle 30min
+        # time=>'08:00+5min-09:00' - ab 08:00 alle 5min mit Ende 09:00
+	if(grep /\+/, @{$s->{time}}) 
+	{
+	    my $newtime=[];
+	    for my $ts (@{$s->{time}})
+	    {
+		unless($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])\+([1-9][0-9]*)(m|h)(?:\-([0-9][0-9]):([0-9][0-9]))?(.*?)$/)
+		{
+		    push @{$newtime}, $ts;
+		}
+		else
+		{
+		    my ($head,$t1,$period,$t2h,$t2m,$tail)=($1,$2*60+$3,$4*($5 eq 'h'?60:1),$6,$7,$8);
+		    my $t2 = (defined $t2h ? $t2h : 24)*60 + (defined $t2m ? $t2m : 0); 
+		    
+		    for(my $tm=$t1; $tm<=$t2; $tm+=$period)
+		    {
+			push @{$newtime}, sprintf("$head%02d:%02d$tail",$tm/60,$tm%60);
+		    }
+		}
+	    }
+	    @{$s->{time}} = sort @{$newtime};
+	    plugin_log($plugname, "\$logic{$t} Aufrufzeiten: ".join " ", @{$newtime}) if $debug;
+	}
+	
 	# Steht heute aus diesem Schedule noch ein Termin an?
 	next unless schedule_matches_day($s,$today) && $s->{time}[-1] gt $time_of_day;
 
@@ -511,11 +540,12 @@ sub set_next_call
     }
 }
 
-
 # Es folgt die eigentliche Logik-Engine 
+# Im wesentlichen Vorbesetzen von input und state, Aufrufen der Logik, Zurueckschreiben von state
 sub execute_logic
 {
-    my ($t, $receive, $ga, $in)=@_; # Logikindex $t, Bustelegramm erhalten auf $ga mit Inhalt $in 
+    my ($t, $receive, $ga, $in)=@_; # Logikindex $t, Bustelegramm erhalten auf $ga mit Inhalt $in
+    # $receive muss die direkten Gruppenadressen enthalten - Decodierung von Kuerzeln wird nicht vorgenommen
 
     # als erstes definiere das Input-Array fuer die Logik
     my $input=$in;
@@ -532,8 +562,6 @@ sub execute_logic
 	$input=();
 	for my $rec (@{$receive})
 	{
-	    my $rec=groupaddress($rec);
-	    
 	    if($ga eq $rec)
 	    {
 		push @{$input}, $in;
@@ -609,7 +637,6 @@ sub execute_logic
 
     return $result;
 }
-
 
 # Umgang mit GA-Kurznamen und -Adressen
 
