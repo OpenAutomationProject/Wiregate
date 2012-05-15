@@ -1,12 +1,15 @@
 #!/usr/bin/perl -w
 
+# Ansagedateien fuer das Wiregate-Plugin Ansagen.pl in /var/lib/mpd/music/Ansagen schreiben
+# Quelle fuer die Dateien ist Google
+
 use strict;
 
 system "mkdir", "-p", "/var/lib/mpd/music/Ansagen";
 chdir "/var/lib/mpd/music/Ansagen";
 
 my %text=(
-    "./Achtung, es wurde ein Einbruch detektiert. Die Polizei wird automatisch benachrichtigt.wav"=>"Achtung, es wurde ein Einbruch detektiert. Die Polizei wird automatisch benachrichtigt",
+    "./Achtung Einbruch.wav"=>"Achtung Einbruch Verlassen Sie sofort das Haus",
     "./AufWiedersehen.wav"=>"Auf Wiedersehen",
     "./Tschuess.wav"=>"tschuess",
     "./Ciao.wav"=>"tschau",
@@ -45,7 +48,8 @@ my %text=(
     "./Personen/Lynn.wav"=>"Lynn",
     "./Personen/Michael.wav"=>"Michael",
     "./Personen/Nils.wav"=>"Nils",
-    "./Personen/Rita.wav"=>"Rita",
+    "./Personen/Rita.wav"=>"Ritah",
+    "./Personen/Jule.wav"=>"Jule",
     "./Personen/Tanja.wav"=>"Tanja",
     "./Personen/Uta.wav"=>"Uta",
     "./Personen/Wigbert.wav"=>"Wigbert",
@@ -123,6 +127,8 @@ my %text=(
     "./Zahlen/an.wav"=>"an",
     "./Zahlen/auf.wav"=>"auf",
     "./Zahlen/aus.wav"=>"aus",
+    "./Zahlen/ab.wav"=>"ab",
+    "./Zahlen/stop.wav"=>"stop",
     "./Zahlen/c0.wav"=>"Null",
     "./Zahlen/c1000.wav"=>"tausend",
     "./Zahlen/c100.wav"=>"hundert",
@@ -218,7 +224,21 @@ my %text=(
     "./Zeiten/Minuten.wav"=>"Minuten",
     "./Zeiten/Sekunden.wav"=>"Sekunden",
     "./Zeiten/Stunden.wav"=>"Stunden",
-    "./Zeiten/Uhr.wav"=>"Uhr");
+    "./Zeiten/Uhr.wav"=>"Uhr",
+    "./Warnung/keine_Meldung.wav"=>"keine Meldung",
+    "./Warnung/Hinweis.wav"=>"Hinweis",
+    "./Warnung/Vorwarnung.wav"=>"Vorwarnung",
+    "./Warnung/Warnung.wav"=>"Warnung",
+    "./Warnung/Gefahr.wav"=>"Gefahr",
+    "./Warnung/Gefahr_hoch.wav"=>"Gefahr hoch",
+    "./Unwetter/Gewitter.wav"=>"Gewitter",
+    "./Unwetter/Glatteis.wav"=>"Glatteis",
+    "./Unwetter/Regen.wav"=>"Regen",
+    "./Unwetter/Schnee.wav"=>"Schnee",
+    "./Unwetter/Sturm.wav"=>"Sturm",
+    "./Unwetter/Temperatur.wav"=>"Temperatur",
+    "./Unwetter/Strassenglaette.wav"=>"Strassenglaette",
+);
 
 for my $f (keys %text)
 {
