@@ -7,43 +7,44 @@
 
 #$plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
-my $use_short_names=1; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
-my $stime=time(); # Stoppuhr zum Nachverfolgen der Reaktionsgeschwindigkeit der Logikengine
-
 # eibgaconf fixen falls nicht komplett indiziert
-if($use_short_names && !exists $eibgaconf{ZV_Uhrzeit})
-{
-    for my $ga (grep /^[0-9\/]+$/, keys %eibgaconf)
-    {
-	$eibgaconf{$ga}{ga}=$ga;
-	my $name=$eibgaconf{$ga}{name};
-	next unless defined $name;
-	$eibgaconf{$name}=$eibgaconf{$ga};
-
-	next unless $name=~/^\s*(\S+)/;
-	my $short=$1;
-	$short='ZV_'.$1 if $eibgaconf{$ga}{name}=~/^Zeitversand.*(Uhrzeit|Datum)/;
-
-	$eibgaconf{$ga}{short}=$short;
-	$eibgaconf{$short}=$eibgaconf{$ga};
-    }
-}
+# Kann ab Wiregate PL32 entfallen
+#if(!exists $eibgaconf{ZV_Uhrzeit})
+#{
+#    for my $ga (grep /^[0-9\/]+$/, keys %eibgaconf)
+#    {
+#	$eibgaconf{$ga}{ga}=$ga;
+#	my $name=$eibgaconf{$ga}{name};
+#	next unless defined $name;
+#	$eibgaconf{$name}=$eibgaconf{$ga};
+#
+#	next unless $name=~/^\s*(\S+)/;
+#	my $short=$1;
+#	$short='ZV_'.$1 if $eibgaconf{$ga}{name}=~/^Zeitversand.*(Uhrzeit|Datum)/;
+#
+#	$eibgaconf{$ga}{short}=$short;
+#	$eibgaconf{$short}=$eibgaconf{$ga};
+#    }
+#}
 
 # Tools und vorbesetzte Variablen fue die Logiken
 sub limit { my ($lo,$x,$hi)=@_; return $x<$lo?$lo:($x>$hi?$hi:$x); }
-my $date=`/bin/date +"%W,%a,%u,%m,%d,%Y,%H,%M,%X"`;
-plugin_log($plugname, "Datum/Uhrzeit konnte nicht lesbar.") unless $date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/;
+my $date=`/bin/date +"%W,%a,%u,%m,%d,%Y,%j,%H,%M,%X"`;
+plugin_log($plugname, "Datum/Uhrzeit konnte nicht lesbar.") unless $date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/;
 my $calendar_week=$1;
 my $day_of_week=$2;
 my $day_of_week_no=$3;
 my $month=int($4);
 my $day_of_month=int($5);
 my $year=int($6);
-my $hour=int($7);
-my $minute=int($8);
-my $time_of_day=$9; # '08:30:43'
+my $day_of_year=int($7);
+my $hour=int($8);
+my $minute=int($9);
+my $time_of_day=$10; # '08:30:43'
 my $weekend=($day_of_week_no>=6);
 my $weekday=!$weekend;
+my $holiday=is_holiday($year,$day_of_year);
+my $workingday=(!$weekend && !$holiday);
 my $day=($hour>7 && $hour<23);
 my $night=!$day;
 my $systemtime=time();
@@ -212,7 +213,6 @@ if($event=~/bus/)
 		if(defined $result)
 		{
 		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet. " if $debug;
-		    $stime=time();
 		    knx_write($ga, $result);		    
 		}
 		next;
@@ -255,14 +255,12 @@ if($event=~/bus/)
 	unless(defined $result) # Resultat undef => nichts senden
 	{
 	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden " if $debug;
-	    $stime=time();
 	    next;
 	}
 
 	if($logic{$t}{transmit_only_on_request})
 	{
 	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gespeichert "	if $debug;
-	    $stime=time();
 	    next;
 	}
 
@@ -272,13 +270,11 @@ if($event=~/bus/)
 	    $plugin_info{$plugname.'__'.$t.'_timer'}=$systemtime+$logic{$t}{delay};
 	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{delay}+$logic{$t}{cool} if defined $logic{$t}{cool};
 	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, zu senden in ".$logic{$t}{delay}."s " if $debug;
-	    $stime=time();
 	}
 	else
 	{
 	    knx_write($transmit, $result);
 	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet " if $debug;
-	    $stime=time();
 
 	    # Cool-Periode starten
 	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{cool} if defined $logic{$t}{cool};
@@ -315,7 +311,6 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	    $result=$plugin_info{$plugname.'_'.$t.'_result'};
 	    $retval.="\$logic{$t} -> $transmit:".
 		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (delayed) " if $debug;
-	    $stime=time();
 	}
 	else
 	{
@@ -324,7 +319,6 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	    $result=execute_logic($t, groupaddress($logic{$t}{receive}), undef, undef);
 	    $retval.="\$logic{$t} -> $transmit:".
 		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer) " if $debug;
-	    $stime=time();
 	}
 
 	# Timer loeschen bzw. neu setzen
@@ -376,10 +370,55 @@ sub next_day
     $d->{calendar_week} += $d->{day_of_week}==1;
     $d->{day_of_month} = ($d->{day_of_month} % $days_in_month[$d->{month}])+1;
     $d->{month} += $d->{day_of_month}==1;
-    $d->{month}=1 if $d->{month}==13;
+    $d->{month} = 1 if $d->{month}==13;
+    $d->{day_of_year} = ($d->{day_of_year} % (365+$leapyear))+1;
     $d->{year} += ($d->{day_of_month}==1 && $d->{month}==1);
+    
+    add_day_info($d);
 
     return $d;
+}
+
+sub is_holiday
+{
+    my $Y=int(shift);
+    my $doy=int(shift);
+
+    # Schaltjahr?
+    my $leapyear = ($Y % 4)==0 && ($Y % 100!=0 || $Y % 400==0);
+
+    # Osterdatum berechnen (Algorithmus von Ron Mallen, Codefragment von Randy McLeary) 
+    my $C = int($Y/100);
+    my $G = $Y%19;
+    my $K = int(($C - 17)/25);
+    my $I = ($C - int($C/4) - int(($C - $K)/3) + 19 * $G + 15)%30;
+    $I = $I - int($I/28) * (1 - int($I/28) * int(29/($I + 1)) * int((21 - $G)/11));
+    my $L = $I - ($Y + int($Y/4) + $I + 2 - $C + int($C/4))%7;   
+    my $M = 3 + int(($L + 40)/44);
+    my $D = $L + 28 - 31 * int($M/4);
+    # diesjaehriger Ostersonntag ist $Y-$M-$D
+
+    # julianisches Osterdatum (Tag im Jahr) berechnen $Y-$J
+    my @days_before_month=(0,0,31,59+$leapyear,90+$leapyear,120+$leapyear,151+$leapyear,181+$leapyear,212+$leapyear,243+$leapyear,
+			   273+$leapyear,304+$leapyear,334+$leapyear);
+    my $J = $days_before_month[$M]+$D; 
+
+    # Feiertagstabelle als Tageszahl im Jahr (1=1.Januar, 32=1.Februar usw.): 1.1., 1.5., 3.10., 25./26.12. 
+    # und die auf Ostern bezogenen Kirchenfeiertage: Karfreitag, Ostern (2x), Christi Himmelfahrt, Pfingsten (2x), Fronleichnam
+    my @holidays=(1,121+$leapyear,276+$leapyear,359+$leapyear,360+$leapyear,$J-2,$J,$J+39,$J+49,$J+50,$J+60);
+    my $is_holiday = scalar(grep { $_==$doy } @holidays);
+
+    return $is_holiday;
+}
+
+sub add_day_info
+{
+    my $day=shift;
+    
+    $day->{weekend}=($day->{day_of_week_no}>=6);
+    $day->{weekday}=!$day->{weekend};
+    $day->{holiday}=is_holiday($day->{year},$day->{day_of_year});
+    $day->{workingday}=(!$day->{weekend} && !$day->{holiday});
 }
 
 # Passt ein bestimmtes Datum auf das Schema in einer "Schedule"?
@@ -420,7 +459,10 @@ sub set_next_call
     # Pflichtfeld ist lediglich time, die anderen duerfen auch entfallen. 
     # Jeder Wert darf ein Einzelwert oder eine Liste sein.
     my $schedule=$logic{$t}{timer}; 
-    my $today={year=>$year,month=>$month,day_of_month=>$day_of_month,calendar_week=>$calendar_week,day_of_week=>$day_of_week_no};
+    my $today={year=>$year,day_of_year=>$day_of_year,month=>$month,day_of_month=>$day_of_month,
+	       calendar_week=>$calendar_week,day_of_week=>$day_of_week_no};
+    add_day_info($today);
+
     my $time_of_day=`/bin/date +"%X"`;
 
     # Schedule-Form standardisieren (alle Eintraege in Listenform setzen und Wochentage durch Zahlen ersetzen)
@@ -446,12 +488,12 @@ sub set_next_call
 	# Eintrag pruefen und standardisieren
 	for my $k (keys %{$s})
 	{
-	    unless($k=~/^(year|month|calendar_week|day_of_month|day_of_week|time)$/)
+	    unless($k=~/^(year|month|calendar_week|day_of_year|day_of_month|day_of_week|holiday|weekend|weekday|workingday|time)$/)
 	    {
-		plugin_log($plugname, "Logiktimer zu Logik '$t': Unerlaubter Eintrag '$k'; erlaubt sind year, month, calendar_week, day_of_month, day_of_week, und Pflichteintrag ist time");
+		plugin_log($plugname, "Logiktimer zu Logik '$t': Unerlaubter Eintrag '$k'; erlaubt sind year, month, calendar_week, day_of_year, day_of_month, day_of_week, weekend, weekday, holiday, workingday, und Pflichteintrag ist time");
 		next;
 	    }
-	    
+
 	    unless(!ref $s->{$k} || ref $s->{$k} eq 'ARRAY')
 	    {
 		plugin_log($plugname, "Logiktimer zu Logik '$t': '$k' muss auf Skalar oder Array ($k=>[...]) verweisen");
@@ -471,23 +513,30 @@ sub set_next_call
 	    my $newtime=[];
 	    for my $ts (@{$s->{time}})
 	    {
-		unless($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])\+([1-9][0-9]*)(m|h)(?:\-([0-9][0-9]):([0-9][0-9]))?(.*?)$/)
+		unless($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])\+([1-9][0-9]*)(m|h)(?:\-([0-9][0-9]):([0-9][0-9]))?$/)
 		{
-		    push @{$newtime}, $ts;
+		    if($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])$/)
+		    {
+			push @{$newtime}, sprintf("%02d:%02d",$2, $3);
+		    }
+		    else
+		    {
+			plugin_log($plugname, "Ignoriere falschen time-Eintrag in \$logic{$t}{timer}: '$ts' (Format ist nicht XX:XX)");
+			next;
+		    }
 		}
 		else
 		{
-		    my ($head,$t1,$period,$t2h,$t2m,$tail)=($1,$2*60+$3,$4*($5 eq 'h'?60:1),$6,$7,$8);
-		    my $t2 = (defined $t2h ? $t2h : 24)*60 + (defined $t2m ? $t2m : 0); 
-		    
+		    my ($head,$t1,$period,$t2)=($1,$2*60+$3,$4*($5 eq 'h' ? 60 : 1),(defined $6 ? ($6*60+$7) : 24*60));	    
+
 		    for(my $tm=$t1; $tm<=$t2; $tm+=$period)
 		    {
-			push @{$newtime}, sprintf("$head%02d:%02d$tail",$tm/60,$tm%60);
+			push @{$newtime}, sprintf("%02d:%02d",$tm/60,$tm%60);
 		    }
 		}
 	    }
 	    @{$s->{time}} = sort @{$newtime};
-	    plugin_log($plugname, "\$logic{$t} Aufrufzeiten: ".join " ", @{$newtime}) if $debug;
+#	    plugin_log($plugname, "\$logic{$t} Aufrufzeiten: ".join " ", @{$newtime});
 	}
 	
 	# Steht heute aus diesem Schedule noch ein Termin an?
@@ -522,8 +571,9 @@ sub set_next_call
 
     if(defined $nextcall)
     {
-	plugin_log($plugname, "Naechster Aufruf der Logik '$t' um $nextcall".($days_until_nextcall?" in $days_until_nextcall Tagen.":".")) 
-	    if $debug;
+	my $daytext='';
+	$daytext = ($days_until_nextcall==1 ? " morgen" : " in $days_until_nextcall Tagen") if $days_until_nextcall;
+	plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall."); # if $debug;
     
 	# Zeitdelta zu jetzt berechnen
 	my $seconds=3600*(substr($nextcall,0,2)-substr($time_of_day,0,2))
@@ -675,38 +725,3 @@ sub groupaddress
     }
 }
 
-sub shortname
-{
-    my $gas=shift;
-
-    return unless defined $gas;
-    return $gas unless $use_short_names;
-
-    if(ref $gas)
-    {
-	my $sh=[];
-	for my $ga (@{$gas})
-	{
-	    if($ga=~/^[0-9\/]+$/ && defined $eibgaconf{$ga}{short})
-	    {
-		push @{$sh}, $eibgaconf{$ga}{short};
-	    }
-	    else
-	    {
-		push @{$sh}, $ga;
-	    }
-	}
-	return $sh;
-    }
-    else
-    {
-	my $sh=$gas;
-
-	if($gas=~/^[0-9\/]+$/ && defined $eibgaconf{$gas}{short})
-	{
-	    $sh=$eibgaconf{$gas}{short};
-	}
-
-	return $sh;
-    }
-}
