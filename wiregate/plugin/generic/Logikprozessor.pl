@@ -502,7 +502,29 @@ sub set_next_call
 
 	    $s->{$k}=[$s->{$k}] unless ref $s->{$k} eq 'ARRAY'; # alle Kategorien in Listenform
 	    map $_=$weekday{$_}, @{$s->{$k}} if $k eq 'day_of_week'; # Wochentage in Zahlenform
-	    @{$s->{$k}}=sort @{$s->{$k}}; # alle Listen sortieren
+
+	    # Expandieren von Bereichen, z.B. month=>'3-5'
+	    if($k ne 'time' && grep /\-/, @{$s->{$k}}) 
+	    {
+		my $newlist=[];
+		for my $ks (@{$s->{$k}})
+		{
+		    if($ks=~/^([0-9]+)\-([0-9]+)$/)
+		    {
+			push @{$newlist}, ($1..$2);
+		    }
+		    else
+		    {
+			push @{$newlist}, $ks;
+		    }		    
+		}
+		@{$s->{$k}} = sort @{$newlist};
+#		plugin_log($plugname, "\$logic{$t} Aufrufdaten $k: ".join " ", @{$s->{$k}});
+	    } 
+	    else
+	    {
+		@{$s->{$k}}=sort @{$s->{$k}}; # alle Listen sortieren
+	    }
 	}
 
 	# Expandieren periodischer Zeitangaben, das sind Zeitangaben der Form
@@ -553,7 +575,7 @@ sub set_next_call
     my $schedules_done=0; 
 
     # falls nextcall noch nicht definiert, geht es jetzt um den naechsten Tag mit Termin
-    until($schedules_done || defined $nextcall)
+    until($schedules_done || defined $nextcall || $days_until_nextcall>5000) # maximal ca. 15 Jahre suchen
     {
 	$schedules_done=1;
 	$days_until_nextcall++;
@@ -572,7 +594,8 @@ sub set_next_call
     if(defined $nextcall)
     {
 	my $daytext='';
-	$daytext = ($days_until_nextcall==1 ? " morgen" : " in $days_until_nextcall Tagen") if $days_until_nextcall;
+	my $datum="$today->{day_of_month}\.$today->{month}\.$today->{year}";
+	$daytext = ($days_until_nextcall==1 ? " morgen" : " in $days_until_nextcall Tagen, am $datum,") if $days_until_nextcall;
 	plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall."); # if $debug;
     
 	# Zeitdelta zu jetzt berechnen
