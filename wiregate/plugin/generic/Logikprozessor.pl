@@ -501,7 +501,14 @@ sub set_next_call
 	    }
 
 	    $s->{$k}=[$s->{$k}] unless ref $s->{$k} eq 'ARRAY'; # alle Kategorien in Listenform
-	    map $_=$weekday{$_}, @{$s->{$k}} if $k eq 'day_of_week'; # Wochentage in Zahlenform
+
+	    if($k eq 'day_of_week')
+	    {
+		for my $wd (sort { length($b) cmp length($a) } keys %weekday)
+		{
+		    foreach (@{$s->{$k}}) { s/$wd/$weekday{$wd}/gie } # Wochentage in Zahlenform
+		}
+	    }
 
 	    # Expandieren von Bereichen, z.B. month=>'3-5'
 	    if($k ne 'time' && grep /\-/, @{$s->{$k}}) 
