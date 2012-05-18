@@ -11,25 +11,6 @@ use Math::Round qw(nearest);
 
 my $use_short_names=1; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
 
-# eibgaconf fixen falls nicht komplett indiziert
-if($use_short_names && !exists $eibgaconf{ZV_Uhrzeit})
-{
-    for my $ga (grep /^[0-9\/]+$/, keys %eibgaconf)
-    {
-	$eibgaconf{$ga}{ga}=$ga;
-	my $name=$eibgaconf{$ga}{name};
-	next unless defined $name;
-	$eibgaconf{$name}=$eibgaconf{$ga};
-
-	next unless $name=~/^\s*(\S+)/;
-	my $short=$1;
-	$short='ZV_'.$1 if $eibgaconf{$ga}{name}=~/^Zeitversand.*(Uhrzeit|Datum)/;
-
-	$eibgaconf{$ga}{short}=$short;
-	$eibgaconf{$short}=$eibgaconf{$ga};
-    }
-}
-
 # Aufrufgrund ermitteln
 my $event=undef;
 if (!$plugin_initflag) 
@@ -136,7 +117,7 @@ elsif($event=~/bus/)
     my $ga=$msg{dst};
 
     # erstmal den betroffenen Raum finden
-    my @rms=(grep ref($house{$_}) && $house{$_}{control} eq $ga, keys %house);
+    my @rms=(grep ref($house{$_}) && groupaddress($house{$_}{control}) eq $ga, keys %house);
     my $r=shift @rms;
 
     # $r ist undef falls obige Schleife fertig durchlaufen wurde
@@ -202,6 +183,7 @@ elsif($event=~/bus/)
     {
 	# GA-Abonnement loeschen
 	delete $plugin_subscribe{$ga}{$plugname};
+	print "Storniere $eibgaconf{$ga}{short}\n";
     }
 }
 
@@ -210,6 +192,7 @@ store_to_plugin_info(\%dyn);
 
 for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
 for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
+
 return $retval eq '' ? undef : $retval;
 
 
@@ -230,19 +213,31 @@ sub store_to_plugin_info
 
 	for my $v (keys %{$dyn->{$r}})
 	{
-	    next if $v=~/^(temps|times|Uvals)$/; # Arrays
-	    $plugin_info{$plugname.'_'.$r.'_'.$v}=$dyn->{$r}{$v};
-	}
-
-	for my $array (qw(temps times Uvals))
-	{
-	    my $arr=$dyn->{$r}{$array};
-	    next unless $arr;
-	    for my $i (0..$#{$arr})
+	    unless($v=~/^(temps|times|Uvals)$/) # Arrays
 	    {
-		$plugin_info{$plugname.'_'.$r.'_'.$array.'_'.$i}=$arr->[$i];
+		$plugin_info{$plugname.'_'.$r.'_'.$v}=$dyn->{$r}{$v};
+	    }
+	    else
+	    {
+		$plugin_info{$plugname.'_'.$r.'_'.$v}=join ',', @{$dyn->{$r}{$v}};
 	    }
 	}
+
+#	for my $v (keys %{$dyn->{$r}})
+#	{
+#	    next if $v=~/^(temps|times|Uvals)$/; # Arrays
+#	    $plugin_info{$plugname.'_'.$r.'_'.$v}=$dyn->{$r}{$v};
+#	}
+
+#	for my $array (qw(temps times Uvals))
+#	{
+#	    my $arr=$dyn->{$r}{$array};
+#	    next unless $arr;
+#	    for my $i (0..$#{$arr})
+#	    {
+#		$plugin_info{$plugname.'_'.$r.'_'.$array.'_'.$i}=$arr->[$i];
+#	    }
+#	}
     }
 }
 
@@ -255,15 +250,24 @@ sub recall_from_plugin_info
 	next unless $k=~/^$plugname\_([^_]+)\_(\S+)$/; 
 	my $r=$1; my $v=$2; 
 
-	unless($v=~/^(temps|times|Uvals)_([0-9]+)$/)
+	unless($v=~/^(temps|times|Uvals)$/)
 	{
 	    $dyn{$r}{$v}=$plugin_info{$k};
 	}
 	else
 	{
-	    my $array=$1; my $i=$2;
-	    $dyn{$r}{$array}[$i]=$plugin_info{$k};
+	    @{$dyn{$r}{$v}}=split ',', $plugin_info{$k};
 	}
+
+#	unless($v=~/^(temps|times|Uvals)_([0-9]+)$/)
+#	{
+#	    $dyn{$r}{$v}=$plugin_info{$k};
+#	}
+#	else
+#	{
+#	    my $array=$1; my $i=$2;
+#	    $dyn{$r}{$array}[$i]=$plugin_info{$k};
+#	}
     }
 
     return %dyn;
