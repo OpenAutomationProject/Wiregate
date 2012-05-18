@@ -48,6 +48,7 @@ my $workingday=(!$weekend && !$holiday);
 my $day=($hour>7 && $hour<23);
 my $night=!$day;
 my $systemtime=time();
+my $date=sprintf("%02d/%02d",$month,$day_of_month);
 
 # Konfigurationsfile einlesen
 my $eibd_backend_address='1.1.254';
@@ -373,7 +374,7 @@ sub next_day
     $d->{month} = 1 if $d->{month}==13;
     $d->{day_of_year} = ($d->{day_of_year} % (365+$leapyear))+1;
     $d->{year} += ($d->{day_of_month}==1 && $d->{month}==1);
-    
+
     add_day_info($d);
 
     return $d;
@@ -413,12 +414,13 @@ sub is_holiday
 
 sub add_day_info
 {
-    my $day=shift;
+    my $d=shift;
     
-    $day->{weekend}=($day->{day_of_week_no}>=6);
-    $day->{weekday}=!$day->{weekend};
-    $day->{holiday}=is_holiday($day->{year},$day->{day_of_year});
-    $day->{workingday}=(!$day->{weekend} && !$day->{holiday});
+    $d->{weekend}=($d->{day_of_week_no}>=6);
+    $d->{weekday}=!$d->{weekend};
+    $d->{holiday}=is_holiday($d->{year},$d->{day_of_year});
+    $d->{workingday}=(!$d->{weekend} && !$d->{holiday});
+    $d->{date} = sprintf("%02d/%02d",$d->{month},$d->{day_of_month});
 }
 
 # Passt ein bestimmtes Datum auf das Schema in einer "Schedule"?
@@ -442,6 +444,143 @@ sub schedule_matches_day
 
     return $match;
 }
+
+
+sub standardize_and_expand_single_schedule
+{
+    my ($t,$s)=@_;
+    my @days_in_month=(0,31,29,31,30,31,30,31,31,30,31,30,31); # hier ist jedes Jahr ein Schaltjahr
+    my %weekday=(Mo=>1,Mo=>1,Mon=>1,Di=>2,Tu=>2,Tue=>2,Mi=>3,We=>3,Wed=>3,Do=>4,Th=>4,Thu=>4,Fr=>5,Fri=>5,Sa=>6,Sat=>6,So=>7,Su=>7,Sun=>7);
+
+    # Timereintrag pruefen und standardisieren
+    unless(ref $s eq 'HASH')
+    {
+	plugin_log($plugname, "Logiktimer zu Logik '$t' ist kein Hash oder Liste von Hashes");
+	next;
+    }
+    
+    unless(defined $s->{time})
+    {
+	plugin_log($plugname, "Logiktimer zu Logik '$t' enthaelt mindestens einen Eintrag ohne Zeitangabe (time=>...)");
+	next;
+    }	    
+    
+    # Eintrag pruefen und standardisieren
+    for my $k (keys %{$s})
+    {
+	unless($k=~/^(year|month|calendar_week|day_of_year|day_of_month|day_of_week|date|holiday|weekend|weekday|workingday|time)$/)
+	{
+	    plugin_log($plugname, "Logiktimer zu Logik '$t': Unerlaubter Eintrag '$k'; erlaubt sind year, month, calendar_week, day_of_year, day_of_month, day_of_week, date, weekend, weekday, holiday, workingday, und Pflichteintrag ist time");
+	    next;
+	}
+
+	if($k=~/^(holiday|weekend|weekday|workingday)$/ && $s->{$k}!~/^(0|1)$/)
+	{
+	    plugin_log($plugname, "Logiktimer zu Logik '$t': Unerlaubter Wert '$k\->$s->{$k}': erlaubt sind 0 und 1");
+	    next;
+	}
+	
+	unless(!ref $s->{$k} || ref $s->{$k} eq 'ARRAY')
+	{
+	    plugin_log($plugname, "Logiktimer zu Logik '$t': '$k' muss auf Skalar oder Array ($k=>[...]) verweisen");
+	    next;
+	}
+	
+	$s->{$k}=[$s->{$k}] unless ref $s->{$k} eq 'ARRAY'; # alle Kategorien in Listenform
+	
+	if($k eq 'day_of_week')
+	{
+	    for my $wd (sort { length($b) cmp length($a) } keys %weekday)
+	    {
+		foreach (@{$s->{$k}}) { s/$wd/$weekday{$wd}/gie } # Wochentage in Zahlenform
+	    }
+	}
+	
+	# Expandieren von Bereichen, z.B. month=>'3-5'
+	if($k!~/^(time|date)$/ && grep /\-/, @{$s->{$k}})
+	{
+	    my $newlist=[];
+	    for my $ks (@{$s->{$k}})
+	    {
+		if($ks=~/^([0-9]+)\-([0-9]+)$/)
+		{
+		    push @{$newlist}, ($1..$2);
+		}
+		else
+		{
+		    push @{$newlist}, $ks;
+		}		    
+	    }
+	    @{$s->{$k}} = sort @{$newlist};
+#		plugin_log($plugname, "\$logic{$t} Aufrufdaten $k: ".join " ", @{$s->{$k}});
+	} 
+	elsif($k eq 'date')
+	{
+	    my $newlist=[];
+	    for my $ks (@{$s->{date}})
+	    {
+		if($ks=~/^([0-9]+)\/([0-9]+)\-([0-9]+)\/([0-9]+)$/)
+		{
+		    my ($m1,$d1,$m2,$d2)=($1,$2,$3,$4); 
+		    while($m1<$m2 || ($m1==$m2 && $d1<$d2))
+		    {
+			push @{$newlist}, sprintf("%02d\/%02d",$m1,$d1);
+			if($d1==$days_in_month[$m1]) { $m1++; $d1=1; } else { $d1++; }
+		    }
+		}
+		elsif($ks=~s/([0-9]+)\/([0-9]+)/sprintf("%02d\/%02d",$1,$2)/ge)
+		{
+		    push @{$newlist}, $ks;
+		}	
+		else
+		{
+		    plugin_log($plugname, "Logiktimer zu Logik '$t': unerlaubte Datumsangabe date->$ks (erlaubt sind Einzeleintraege wie '02/03' oder Bereich wie '02/28-03/15')");
+		}
+	    }
+	    @{$s->{date}} = sort @{$newlist};
+#	    plugin_log($plugname, "\$logic{$t} Aufrufdaten date: ".join " ", @{$s->{date}});	
+	}
+	else
+	{
+	    @{$s->{$k}}=sort @{$s->{$k}}; # alle Listen sortieren
+	}
+    }
+    
+    # Expandieren periodischer Zeitangaben, das sind Zeitangaben der Form
+    # time=>'08:00+30min' - ab 08:00 alle 30min
+    # time=>'08:00+5min-09:00' - ab 08:00 alle 5min mit Ende 09:00
+    if(grep /\+/, @{$s->{time}}) 
+    {
+	my $newtime=[];
+	for my $ts (@{$s->{time}})
+	{
+	    unless($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])\+([1-9][0-9]*)(m|h)(?:\-([0-9][0-9]):([0-9][0-9]))?$/)
+	    {
+		if($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])$/)
+		{
+		    push @{$newtime}, sprintf("%02d:%02d",$2, $3);
+		}
+		else
+		{
+		    plugin_log($plugname, "Logiktimer zu Logik '$t': Unerlaubter time-Eintrag '$ts' (erlaubt sind Eintraege wie '14:05' oder '07:30+30m-14:30' oder '07:30+5m-08:00')");
+		    next;
+		}
+	    }
+	    else
+	    {
+		my ($head,$t1,$period,$t2)=($1,$2*60+$3,$4*($5 eq 'h' ? 60 : 1),(defined $6 ? ($6*60+$7) : 24*60));	    
+		
+		for(my $tm=$t1; $tm<=$t2; $tm+=$period)
+		{
+		    push @{$newtime}, sprintf("%02d:%02d",$tm/60,$tm%60);
+		}
+	    }
+	}
+	@{$s->{time}} = sort @{$newtime};
+#	    plugin_log($plugname, "\$logic{$t} Aufrufzeiten: ".join " ", @{$newtime});
+    }
+}
+
 
 # Fuer eine bestimmte Timer-Logik den naechsten Aufruf berechnen (relativ komplexes Problem wegen der 
 # vielen moeglichen Konfigurationen und Konstellationen)
@@ -468,105 +607,10 @@ sub set_next_call
     # Schedule-Form standardisieren (alle Eintraege in Listenform setzen und Wochentage durch Zahlen ersetzen)
     # dabei gleich schauen, ob HEUTE noch ein Termin ansteht
     $schedule=[$schedule] if ref $schedule eq 'HASH';
-    my %weekday=(Mo=>1,Mo=>1,Mon=>1,Di=>2,Tu=>2,Tue=>2,Mi=>3,We=>3,Wed=>3,Do=>4,Th=>4,Thu=>4,Fr=>5,Fri=>5,Sa=>6,Sat=>6,So=>7,Su=>7,Sun=>7);
 
     for my $s (@{$schedule})
     {
-	# Timereintrag pruefen und standardisieren
-	unless(ref $s eq 'HASH')
-	{
-	    plugin_log($plugname, "Logiktimer zu Logik '$t' ist kein Hash oder Liste von Hashes");
-	    next;
-	}
-
-	unless(defined $s->{time})
-	{
-	    plugin_log($plugname, "Logiktimer zu Logik '$t' enthaelt mindestens einen Eintrag ohne Zeitangabe (time=>...)");
-	    next;
-	}	    
-
-	# Eintrag pruefen und standardisieren
-	for my $k (keys %{$s})
-	{
-	    unless($k=~/^(year|month|calendar_week|day_of_year|day_of_month|day_of_week|holiday|weekend|weekday|workingday|time)$/)
-	    {
-		plugin_log($plugname, "Logiktimer zu Logik '$t': Unerlaubter Eintrag '$k'; erlaubt sind year, month, calendar_week, day_of_year, day_of_month, day_of_week, weekend, weekday, holiday, workingday, und Pflichteintrag ist time");
-		next;
-	    }
-
-	    unless(!ref $s->{$k} || ref $s->{$k} eq 'ARRAY')
-	    {
-		plugin_log($plugname, "Logiktimer zu Logik '$t': '$k' muss auf Skalar oder Array ($k=>[...]) verweisen");
-		next;
-	    }
-
-	    $s->{$k}=[$s->{$k}] unless ref $s->{$k} eq 'ARRAY'; # alle Kategorien in Listenform
-
-	    if($k eq 'day_of_week')
-	    {
-		for my $wd (sort { length($b) cmp length($a) } keys %weekday)
-		{
-		    foreach (@{$s->{$k}}) { s/$wd/$weekday{$wd}/gie } # Wochentage in Zahlenform
-		}
-	    }
-
-	    # Expandieren von Bereichen, z.B. month=>'3-5'
-	    if($k ne 'time' && grep /\-/, @{$s->{$k}}) 
-	    {
-		my $newlist=[];
-		for my $ks (@{$s->{$k}})
-		{
-		    if($ks=~/^([0-9]+)\-([0-9]+)$/)
-		    {
-			push @{$newlist}, ($1..$2);
-		    }
-		    else
-		    {
-			push @{$newlist}, $ks;
-		    }		    
-		}
-		@{$s->{$k}} = sort @{$newlist};
-#		plugin_log($plugname, "\$logic{$t} Aufrufdaten $k: ".join " ", @{$s->{$k}});
-	    } 
-	    else
-	    {
-		@{$s->{$k}}=sort @{$s->{$k}}; # alle Listen sortieren
-	    }
-	}
-
-	# Expandieren periodischer Zeitangaben, das sind Zeitangaben der Form
-	# time=>'08:00+30min' - ab 08:00 alle 30min
-        # time=>'08:00+5min-09:00' - ab 08:00 alle 5min mit Ende 09:00
-	if(grep /\+/, @{$s->{time}}) 
-	{
-	    my $newtime=[];
-	    for my $ts (@{$s->{time}})
-	    {
-		unless($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])\+([1-9][0-9]*)(m|h)(?:\-([0-9][0-9]):([0-9][0-9]))?$/)
-		{
-		    if($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])$/)
-		    {
-			push @{$newtime}, sprintf("%02d:%02d",$2, $3);
-		    }
-		    else
-		    {
-			plugin_log($plugname, "Ignoriere falschen time-Eintrag in \$logic{$t}{timer}: '$ts' (Format ist nicht XX:XX)");
-			next;
-		    }
-		}
-		else
-		{
-		    my ($head,$t1,$period,$t2)=($1,$2*60+$3,$4*($5 eq 'h' ? 60 : 1),(defined $6 ? ($6*60+$7) : 24*60));	    
-
-		    for(my $tm=$t1; $tm<=$t2; $tm+=$period)
-		    {
-			push @{$newtime}, sprintf("%02d:%02d",$tm/60,$tm%60);
-		    }
-		}
-	    }
-	    @{$s->{time}} = sort @{$newtime};
-#	    plugin_log($plugname, "\$logic{$t} Aufrufzeiten: ".join " ", @{$newtime});
-	}
+	standardize_and_expand_single_schedule($t,$s);
 	
 	# Steht heute aus diesem Schedule noch ein Termin an?
 	next unless schedule_matches_day($s,$today) && $s->{time}[-1] gt $time_of_day;

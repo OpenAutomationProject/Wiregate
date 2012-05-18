@@ -12,6 +12,7 @@ my %text=(
     "./Achtung Einbruch.wav"=>"Achtung Einbruch Verlassen Sie sofort das Haus",
     "./AufWiedersehen.wav"=>"Auf Wiedersehen",
     "./Tschuess.wav"=>"tschuess",
+    "./Achtung.wav"=>"Achtung",
     "./Ciao.wav"=>"tschau",
     "./Bitte Schluesselbund ans Schluesselbrett haengen.wav"=>"Bitte Schluesselbund ans Schluesselbrett haengen",
     "./Der Trockner ist fertig.wav"=>"Der Trockner ist fertig",
