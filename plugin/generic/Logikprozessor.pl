@@ -165,8 +165,7 @@ if($event=~/restart|modified/ || $config_modified)
 
 if($event=~/bus/)
 {
-    # Bustraffic bedienen - nur Schreibzugriffe der iButtons interessieren
-    return unless $msg{apci}=~/A_GroupValue_(Write|Read)/;  
+    return if $msg{apci} eq "A_GroupValue_Response";
 
     my $ga=$msg{dst};
     my $in=$msg{value};
@@ -214,13 +213,13 @@ if($event=~/bus/)
 		if(defined $result)
 		{
 		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet. " if $debug;
-		    knx_write($ga, $result);		    
+		    knx_write($ga, $result, undef, 0x40); # response, DPT aus eibga.conf		    
 		}
 		next;
 	    }
 	    elsif(!$receive_ga) # Receive geht vor - bei Timer-Logiken ist receive_ga immer 0
 	    {
-		if(defined $in) # Write-Telegramm: das waren moeglicherweise wir selbst, also nicht antworten
+		if(defined $in) # Write/Response-Telegramm: das waren moeglicherweise wir selbst, also nicht antworten
 		{
 		    $plugin_info{$plugname.'_'.$t.'_result'}=$in; # einfach Input ablegen
 		}
@@ -232,6 +231,7 @@ if($event=~/bus/)
 	    }
 	}
 
+	next unless $msg{apci} eq "A_GroupValue_Write" && $receive_ga;
 	# Wir wissen ab hier: Es liegt ein Write-Telegramm auf einer der receive-Adressen vor
 
 	# Nebenbei berechnen wir noch zwei Flags, die Zirkelkommunikation verhindern sollen
