@@ -320,6 +320,7 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	    $result=execute_logic($t, groupaddress($logic{$t}{receive}), undef, undef);
 	    $retval.="\$logic{$t} -> $transmit:".
 		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer) " if $debug;
+	    
 	}
 
 	# Timer loeschen bzw. neu setzen
@@ -337,6 +338,21 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
     {
 	$nexttimer=$plugin_info{$timer} if !defined $nexttimer || $plugin_info{$timer}<$nexttimer;
     }
+}
+
+# Suche Timer-Logiken, bei denen aus irgendeinem Grund der naechste Aufruf noch nicht berechnet wurde,
+# bspw wegen eines Plugin-Timeouts waehrend der Berechnung
+for my $t (keys %logic)
+{
+    next if $t eq 'debug' || !defined $logic{$t}{timer};
+    
+    my $timer=$plugin_info{$plugname.'__'.$t.'_timer'};
+
+    next if defined $timer && $timer>time();
+
+    # Debuggingflag gesetzt
+    my $debug = $logic{debug} || $logic{$t}{debug}; 
+    set_next_call($t, $debug);
 }
 
 # Cycle auf naechsten Aufruf setzen
@@ -407,19 +423,18 @@ sub is_holiday
     # Feiertagstabelle als Tageszahl im Jahr (1=1.Januar, 32=1.Februar usw.): 1.1., 1.5., 3.10., 25./26.12. 
     # und die auf Ostern bezogenen Kirchenfeiertage: Karfreitag, Ostern (2x), Christi Himmelfahrt, Pfingsten (2x), Fronleichnam
     my @holidays=(1,121+$leapyear,276+$leapyear,359+$leapyear,360+$leapyear,$J-2,$J,$J+39,$J+49,$J+50,$J+60);
-    my $is_holiday = scalar(grep { $_==$doy } @holidays);
-
-    return $is_holiday;
+    
+    return (grep { $_==$doy } @holidays) ? 1 : 0;
 }
 
 sub add_day_info
 {
     my $d=shift;
     
-    $d->{weekend}=($d->{day_of_week_no}>=6);
-    $d->{weekday}=!$d->{weekend};
-    $d->{holiday}=is_holiday($d->{year},$d->{day_of_year});
-    $d->{workingday}=(!$d->{weekend} && !$d->{holiday});
+    $d->{weekend} = ($d->{day_of_week}>=6) ? 1 : 0;
+    $d->{weekday} = !$d->{weekend};
+    $d->{holiday} = is_holiday($d->{year},$d->{day_of_year});
+    $d->{workingday} = (!$d->{weekend} && !$d->{holiday}) ? 1 : 0;
     $d->{date} = sprintf("%02d/%02d",$d->{month},$d->{day_of_month});
 }
 
@@ -474,7 +489,7 @@ sub standardize_and_expand_single_schedule
 	    next;
 	}
 
-	if($k=~/^(holiday|weekend|weekday|workingday)$/ && $s->{$k}!~/^(0|1)$/)
+	if($k=~/^(holiday|weekend|weekday|workingday)$/ && !ref $s->{$k} && $s->{$k}!~/^(0|1)$/)
 	{
 	    plugin_log($plugname, "Logiktimer zu Logik '$t': Unerlaubter Wert '$k\->$s->{$k}': erlaubt sind 0 und 1");
 	    next;
@@ -598,6 +613,11 @@ sub set_next_call
     # Pflichtfeld ist lediglich time, die anderen duerfen auch entfallen. 
     # Jeder Wert darf ein Einzelwert oder eine Liste sein.
     my $schedule=$logic{$t}{timer}; 
+
+#    return unless defined $schedule;
+
+    # Das "Day-Hash" wird dazu verwendet, Tage zu finden, auf die die Timer-Spezifikation zutrifft
+    # Wir fangen dabei mit today, also heute, an.
     my $today={year=>$year,day_of_year=>$day_of_year,month=>$month,day_of_month=>$day_of_month,
 	       calendar_week=>$calendar_week,day_of_week=>$day_of_week_no};
     add_day_info($today);
@@ -611,7 +631,7 @@ sub set_next_call
     for my $s (@{$schedule})
     {
 	standardize_and_expand_single_schedule($t,$s);
-	
+
 	# Steht heute aus diesem Schedule noch ein Termin an?
 	next unless schedule_matches_day($s,$today) && $s->{time}[-1] gt $time_of_day;
 
@@ -658,7 +678,7 @@ sub set_next_call
     else
     {
 	plugin_log($plugname, "Logik '$t' wird nicht mehr aufgerufen (alle in time=>... festgelegten Termine sind verstrichen).") 
-	    if $debug && $logic{$t}{timer};
+	    if $logic{$t}{timer}; # if $debug;
 
 	delete $plugin_info{$plugname.'__'.$t.'_timer'}; 
     }
