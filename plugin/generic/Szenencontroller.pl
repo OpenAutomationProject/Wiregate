@@ -10,23 +10,24 @@
 my $use_short_names=1; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
 
 # eibgaconf fixen falls nicht komplett indiziert
-if($use_short_names && !exists $eibgaconf{ZV_Uhrzeit})
-{
-    for my $ga (grep /^[0-9\/]+$/, keys %eibgaconf)
-    {
-	$eibgaconf{$ga}{ga}=$ga;
-	my $name=$eibgaconf{$ga}{name};
-	next unless defined $name;
-	$eibgaconf{$name}=$eibgaconf{$ga};
-
-	next unless $name=~/^\s*(\S+)/;
-	my $short=$1;
-	$short='ZV_'.$1 if $eibgaconf{$ga}{name}=~/^Zeitversand.*(Uhrzeit|Datum)/;
-
-	$eibgaconf{$ga}{short}=$short;
-	$eibgaconf{$short}=$eibgaconf{$ga};
-    }
-}
+# entfaellt ab Wiregate PL32
+#if($use_short_names && !exists $eibgaconf{ZV_Uhrzeit})
+#{
+#    for my $ga (grep /^[0-9\/]+$/, keys %eibgaconf)
+#    {
+#	$eibgaconf{$ga}{ga}=$ga;
+#	my $name=$eibgaconf{$ga}{name};
+#	next unless defined $name;
+#        $eibgaconf{$name}=$eibgaconf{$ga};
+#
+#	next unless $name=~/^\s*(\S+)/;
+#	my $short=$1;
+#	$short='ZV_'.$1 if $eibgaconf{$ga}{name}=~/^Zeitversand.*(Uhrzeit|Datum)/;
+#
+#	$eibgaconf{$ga}{short}=$short;
+#	$eibgaconf{$short}=$eibgaconf{$ga};
+#    }
+#}
 
 # Aufrufgrund ermitteln
 my $event=undef;
@@ -42,7 +43,8 @@ else { $event='cycle'; } # Zyklus
 
 # Konfigurationsfile einlesen
 my %scene=();
-my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; $conf=~s/\.pl$/.conf/;
+my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
+$conf.='.conf' unless $conf=~s/\.pl$/.conf/;
 my $err=read_from_config();
 return $err if $err;
 
@@ -110,6 +112,7 @@ elsif($event=~/bus/)
     # die betreffende Szene finden
     unless($plugin_info{$plugname.'__SceneLookup'}=~/(St|Rc)\($ga\)=>\'(.+?)\',/)
     {
+	plugin_log($plugname, "Storniere $ga");
 	delete $plugin_subscribe{$ga}{$plugname}; # unbekannte GA
 	for my $k (keys %scene) { delete $scene{$k}; } # Hilfe fuer die Garbage Collection
 	return;
@@ -213,7 +216,7 @@ sub store_to_config
     my $z=shift; # die Szenenbezeichnung 
 
     open CONFIG, ">>$conf";
-    print CONFIG "\$scene{$z}={";
+    print CONFIG "\$scene{'$z'}={";
     for my $v (sort keys %{$scene{$z}})
     {
 	print CONFIG sprintf "'$v'=>%.2f, ", $scene{$z}{$v};
@@ -230,25 +233,41 @@ sub store_to_plugin_info
 
     # Alle Laufzeitvariablen im Hash %{$dyn} 
     # in das (flache) Hash plugin_info schreiben
-    for my $k (grep /^$plugname\__$z/, keys %plugin_info)
-    {
-	delete $plugin_info{$k};
-    }
+
+    my @keylist=keys %{$scene{$z}};
+    map { $_=sprintf("$_=>'%.2f'",$scene{$z}{$_}) } @keylist;
     
-    for my $v (keys %{$scene{$z}})
-    {
-	$plugin_info{$plugname.'__'.$z.'__'.$v}=$scene{$z}{$v};
-    }
+    $plugin_info{$plugname.'__'.$z} = join ',', @keylist;
+#    plugin_log($plugname, "stored: ".$plugin_info{$plugname.'__'.$z});
+
+#    for my $k (grep /^$plugname\__$z/, keys %plugin_info)
+#    {
+#	delete $plugin_info{$k};
+#    }
+#    
+#    for my $v (keys %{$scene{$z}})
+#    {
+#	$plugin_info{$plugname.'__'.$z.'__'.$v}=$scene{$z}{$v};
+#    }
 }
 
 sub recall_from_plugin_info
 {
     for my $k (grep /^$plugname\__/, keys %plugin_info)
     {
-	next unless($k=~/^$plugname\__(.*\#.*)__(.*)$/);
-	my ($z,$v)=($1,$2); 
-	$scene{$z}{$v}=$plugin_info{$k};
+	next unless($k=~/^$plugname\__(.*\#.*)$/);
+	my $z=$1;
+	$scene{$z}={};
+	my $pi=$plugin_info{$k};
+	while($pi=~m/(.*?)=>\'(.*?)\'/g) { $scene{$z}{$1}=$2 }
+#	plugin_log($plugname, "retrieved: ".join ',', map $_=sprintf("$_=>'%.2f'",$scene{$z}{$_}), keys %{$scene{$z}});
     }
+#    for my $k (grep /^$plugname\__/, keys %plugin_info)
+#    {
+#	next unless($k=~/^$plugname\__(.*\#.*)__(.*)$/);
+#	my ($z,$v)=($1,$2); 
+#	$scene{$z}{$v}=$plugin_info{$k};
+#    }
 }
 
 # Umgang mit GA-Kurznamen und -Adressen
@@ -284,42 +303,6 @@ sub groupaddress
 	}
 
 	return $ga;
-    }
-}
-
-sub shortname
-{
-    my $gas=shift;
-
-    return unless defined $gas;
-    return $gas unless $use_short_names;
-
-    if(ref $gas)
-    {
-	my $sh=[];
-	for my $ga (@{$gas})
-	{
-	    if($ga=~/^[0-9\/]+$/ && defined $eibgaconf{$ga}{short})
-	    {
-		push @{$sh}, $eibgaconf{$ga}{short};
-	    }
-	    else
-	    {
-		push @{$sh}, $ga;
-	    }
-	}
-	return $sh;
-    }
-    else
-    {
-	my $sh=$gas;
-
-	if($gas=~/^[0-9\/]+$/ && defined $eibgaconf{$gas}{short})
-	{
-	    $sh=$eibgaconf{$gas}{short};
-	}
-
-	return $sh;
     }
 }
 

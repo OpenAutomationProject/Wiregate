@@ -18,6 +18,8 @@ my $beep = "Beep/03d.wav";
 my @additional_subscriptions=();
 my %mpdhost=('default'=>'127.0.0.1/6600');
 my $mode='mpd'; 
+my $radioga=undef;
+my %stations=(); # Internet-Radiostationen
 
 # Konfigurationsfile einlesen
 my $conf=$plugname; $conf=~s/\.pl$/.conf/;
@@ -61,14 +63,21 @@ if($event=~/restart|modified/)
 
 	for my $pat (keys %channels)
 	{
-	    next if $pat eq 'default';
+	    next if $pat eq 'default' || $name!~/$pat/;
+	    $plugin_subscribe{$ga}{$plugname}=1;
+	    $gas{$channels{$pat}}++;    
 
-	    if($name=~/$pat/)
+	    if($name=~/$radioga/)
 	    {
-		$plugin_subscribe{$ga}{$plugname}=1;
-		$gas{$channels{$pat}}++;
+		speak($channels{$pat},$name,'AUS');
 	    }
 	}
+
+    }
+
+    for my $channel (values %channels)
+    {
+	$plugin_info{$plugname.'_radio_'.$channel}='AUS';
     }
 
     for my $ga (@additional_subscriptions)
@@ -101,35 +110,59 @@ elsif($event=~/bus/ && $msg{apci} eq 'A_GroupValue_Write')
 	}
     }
 
+    # Radiosender bei dpt 16 (Text=Sendername)
+    if($mode eq 'mpd' && $name=~/$radioga/ && $dpt=~/^16/)
+    {
+	$val=~s/\000*$//; # streiche Nullen am Ende
+	return speak($channel, $name, $val);
+    }
+
     # Hole alle verfuegbaren Durchsagedateien 
     my $find=checkexec('find');
     my @speech=split /\n/, `$find . -name '*.wav'`;
     map s!^\./!!, @speech; # Pfade relativ zum speechdir
     return 'no speech files found' unless @speech;
-    
+
     my @statement=();
+
+    # Praefix bei Gefahrenwarnung (dpt 5.005)
+    push(@statement, words(\@speech, 'Achtung')) if $dpt eq '5.005'; # Gefahrenwarnung
     
     # Textteil (Gruppenadresse ausgesprochen)
-    if(defined $pattern)
-    {
-	push(@statement, words(\@speech, $pattern));
-    }
+    push(@statement, words(\@speech, $pattern)) if defined $pattern;
     
     # Informationsteil (Inhalt des Telegramms)
     given($dpt)
     {
 	when (1.001) # An/Aus
-	{ push(@statement, 'Zahlen/'.($val?'an':'aus').'.wav'); } 
+	{ 
+	    push(@statement, 'Zahlen/'.($val?'an':'aus').'.wav'); 
+	} 
 	when (1.008) # Hoch/Runter
-	{ push(@statement, 'Zahlen/'.($val?'hoch':'runter').'.wav'); }
+	{ 
+	    push(@statement, 'Zahlen/'.($val?'hoch':'runter').'.wav'); 
+	}
 	when(1.009) # Auf/Zu
-	{ push(@statement, 'Zahlen/'.($val?'auf':'zu').'.wav'); }
+	{ 
+	    push(@statement, 'Zahlen/'.($val?'auf':'zu').'.wav'); 
+	}
 	when(2.007) # Auf/Ab/Stop
-	{ push(@statement, 'Zahlen/'.($val==1?'auf':($val==-1?'ab':'stop')).'.wav'); }
+	{ 
+	    push(@statement, 'Zahlen/'.($val==1?'auf':($val==-1?'ab':'stop')).'.wav'); 
+	}
+	when(5.005) # Gefahrenwarnung
+	{ 
+	    my %warnstufe=(0=>'keine_Meldung', 1=>'Hinweis', 2=>'Vorwarnung', 3=>'Warnung', 4=>'Gefahr', 5=>'Gefahr_hoch');
+	    push(@statement, 'Warnung/'.$warnstufe{$val}.'.wav'); 
+	}
 	when([5.010,7.001,12.001]) # Ordinalzahl
-	{ push(@statement, number(\@speech, $val, -1)); }
+	{ 
+	    push(@statement, number(\@speech, $val, -1)); 
+	}
 	when([3.007,6.010,8.001,13.001]) # Kardinalzahl
-	{ push(@statement, number(\@speech, $val)); }
+	{ 
+	    push(@statement, number(\@speech, $val)); 
+	}
 	when([5.001,6.001]) # Prozent
 	{ 
 	    push(@statement, number(\@speech, $val));
@@ -150,7 +183,7 @@ elsif($event=~/bus/ && $msg{apci} eq 'A_GroupValue_Write')
 	    }    
 	    else
 	    {
-		return "Unbekanntes Datumsformat $val";
+		return "Unbekanntes Datumsformat '$val'";
 	    }
 	}
 	when(7.005) # Zeitdauer
@@ -180,23 +213,30 @@ elsif($event=~/bus/ && $msg{apci} eq 'A_GroupValue_Write')
 		push(@statement, "Wochentage/$1.wav");
 		push(@statement, number(\@speech, $2));
 		push(@statement, "Zeiten/Uhr.wav");
-		push(@statement, number(\@speech, $3)) if $3;
+		push(@statement, number(\@speech, $3)) if int($3)>0;
 	    }
 	    elsif($val=~/^([0-9][0-9])\:([0-9][0-9])/)
 	    {
 		push(@statement, number(\@speech, $1));
 		push(@statement, "Zeiten/Uhr.wav");
-		push(@statement, number(\@speech, $2)) if $2;
+		push(@statement, number(\@speech, $2)) if int($2)>0;
 	    }
 	    else
 	    {
-		return "Unbekanntes Uhrzeitformat $msg{value}";
+		return "Unbekanntes Uhrzeitformat '$val'";
 	    }
+	}
+	when(/^16/) # Freitext
+	{
+	    $val=~s/\000*$//; # streiche Nullen am Ende
+	    push(@statement, words(\@speech, $val));
 	}
 	when(1.017) # Trigger, kein Datenzusatz
 	{}
 	default	 # kein Datenzusatz, aber mit Logeintrag
-	{ return "Datentyp $dpt nicht implementiert"; }  
+	{ 
+	    return "Datentyp $dpt nicht implementiert"; 
+	}  
     }
     # Das komplette Statement in die Ausgabe geben
     return speak($channel, $name, @statement);
@@ -404,21 +444,21 @@ sub speak
     my $datetime=`$date +"%F %X"`;
     $datetime=~s/\s*$//s; 
 	
+    # Fuer Russound-Ausgabe: Star Trek 'Beep' vorweg weckt Russound (und User) fuer Ansage auf
+    if($channel=~/$beepchannel/ && $name!~/$radioga/)
+    {
+	my $lastbeep=$plugin_info{$plugname.'_lastbeep_'.$channel};
+	
+	# max ein Beep pro Minute
+	if(!defined $lastbeep || time()>$lastbeep+60)
+	{
+	    unshift(@_, $beep);
+	    $plugin_info{$plugname.'_lastbeep_'.$channel}=time();
+	}
+    }
+
     if(@_)
     {
-	# Nur fuer Russound-Paging: Star Trek 'Beep' vorweg weckt Russound auf
-	if($channel=~/$beepchannel/)
-	{
-	    my $lastbeep=$plugin_info{$plugname.'_lastbeep'};
-
-	    # max ein Beep pro Minute
-	    if(!defined $lastbeep || time()>$lastbeep+60)
-	    {
-		unshift(@_, $beep);
-		$plugin_info{$plugname.'_lastbeep'}=time();
-	    }
-	}
-
 	if($mode eq 'aplay')
 	{
 	    my $aplay=checkexec('aplay');
@@ -429,12 +469,7 @@ sub speak
 	}
 	elsif($mode eq 'mpd')
 	{
-	    push @_, "silence.wav"; # kurze Pause zwischen Ansagen
-
-	    map s!^/*!$speechdir/!, @_; # alle Eintraege relativ zum speechdir
-	    map s!^$mpddir/!!, @_; # mpd braucht einen Pfadnamen relativ zum music-Dir
-	    map s!/+!/!, @_; # zur Sicherheit
-
+	    # Host und Port ermitteln
 	    $mpdhost{$channel}=~m!^\s*(.*)\s*/\s*(.*)\s*$!;
 	    my $host=$1; my $port=$2;
 
@@ -442,19 +477,71 @@ sub speak
 	    # also so:
 	    my $mpc=checkexec('mpc');
 	    $mpc="export MPD_HOST=$host; export MPD_PORT=$port; $mpc";
-	    system "$mpc update"; # Aktualisierung verfuegbarer Soundclips
 
-	    # wird momentan noch was gespielt?
-	    system "$mpc clear" unless `$mpc`=~/playing/s; # leeren falls abgespielt
-	    system "$mpc add \"".(join "\" \"", @_)."\"";
-#	    plugin_log($plugname, "$mpc add \"".(join "\" \"", @_)."\"");
-#	    plugin_log($plugname, "$mpc play") unless `$mpc`=~/playing/s;
-	    system "$mpc play" unless `$mpc`=~/playing/s; # starten falls noch nicht aktiv
+	    # Laeuft gerade das Radio oder eine Ansage?
+	    my $lfd_radio = $plugin_info{$plugname.'_radio_'.$channel} ne 'AUS';
+	    my $lfd_ansage = `$mpc`=~/playing/s && !$lfd_radio;
 
-#	    $playing=`$mpc; $mpc outputs`;
-#	    $playing=~s/\s+/ /sg;
-#	    plugin_log($plugname, $playing);
-	    map s!^.*/(.*?)\.wav!$1!, @_;
+	    # Sonderfall Internetradio statt Sprachausgabe
+	    if($name=~/$radioga/)
+	    {
+		my $val=$_[0];
+
+		if($val=~s/V([+-]?[0-9X])$//)
+		{
+		    my $vol=$1;
+		    $vol = ($vol eq 'X' ? 100: 10*$vol);
+		    system "$mpc volume $vol"; # ermoeglicht gleichzeitig Sender u Lautstaerke festzulegen
+		}
+
+		if($val eq 'AUS')
+		{
+		    system "$mpc clear";
+		    $plugin_info{$plugname.'_radio_'.$channel}='AUS';
+		}
+		elsif($val =~ /^VOLUME\s*([+-]?[0-9]+)/)
+		{
+		    system "$mpc volume $1";		    
+		}
+		elsif(defined $stations{$val})
+		{
+		    system "$mpc clear" unless $lfd_ansage; # nur leeren falls abgespielt
+		    system "$mpc add \"$stations{$val}\"";
+		    plugin_log($plugname, "$mpc add \"$stations{$val}\"");
+		    system "$mpc play" unless `$mpc`=~/playing/s; # starten falls noch nicht aktiv
+		    $plugin_info{$plugname.'_radio_'.$channel}=$stations{$val};
+		}
+		else
+		{
+		    return "Unbekannter Radiosender '$val'";
+		}
+	    }
+	    else # Regelfall: Sprachausgabe
+	    {
+		system "$mpc update"; # Aktualisierung verfuegbarer Soundclips
+
+		push @_, "silence.wav"; # kurze Pause zwischen Ansagen
+
+		map s!^/*!$speechdir/!, @_; # alle Eintraege relativ zum speechdir
+		map s!^$mpddir/!!, @_; # mpd braucht einen Pfadnamen relativ zum music-Dir
+		map s!/+!/!, @_; # zur Sicherheit
+
+		push @_, $plugin_info{$plugname.'_radio_'.$channel} if $lfd_radio; # nach der Ansage wieder zurueck aufs Radio
+
+		# wird momentan noch was gespielt?
+                # dann Playlist leeren, ggf Radio stoppen falls abgespielt
+		system "$mpc crossfade 0"; # nur leeren falls abgespielt
+		system "$mpc clear" unless $lfd_ansage; 
+		# ein Fall noch zu klaeren: wenn Radio laeuft und zwei Ansagen kurz hintereinander kommen,
+		# wird die zweite die erste unterbrechen, weil $lfd_ansage hier (inkorrekt) 0 sein wird.
+
+		system "$mpc add \"".(join "\" \"", @_)."\"";
+		plugin_log($plugname, "$mpc add \"".(join "\" \"", @_)."\"");
+		system "$mpc play" unless `$mpc`=~/playing/s; # starten falls noch nicht aktiv
+
+		map s!^.*/(.*?)\.wav!$1!, @_;
+	    }
+
 	    $retval.=$channel.':'.(join ' ', @_);
 	}
 	else
