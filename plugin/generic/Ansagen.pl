@@ -61,29 +61,43 @@ if($event=~/restart|modified/)
 	my $name=$eibgaconf{$ga}{name};
 	next unless defined $name;
 
+	my $channel_found=undef;
 	for my $pat (keys %channels)
 	{
 	    next if $pat eq 'default' || $name!~/$pat/;
-	    $plugin_subscribe{$ga}{$plugname}=1;
-	    $gas{$channels{$pat}}++;    
+	    $channel_found=$channels{$pat};
+	    last;
+	}
+	next unless $channel_found;
 
+	$gas{$channel_found}++;
+	$plugin_subscribe{$ga}{$plugname}=1;
+
+	if($name=~/$radioga/)
+	{
+	    speak($channel_found,$name,'AUS');
+	    $plugin_info{$plugname.'_radio_'.$channel_found}='AUS';
+	    plugin_log($plugname, 'Internetradio auf Kanal '.$channel_found.', GA='.$ga); 
+	}
+    }
+
+    my $channel_found=$channels{'default'};
+    if($channel_found)
+    {
+	for my $ga (@additional_subscriptions)
+	{
+	    my $name=$eibgaconf{$ga}{name};
+	    
+	    $gas{$channel_found}++;
+	    $plugin_subscribe{$ga}{$plugname}=1;
+	    
 	    if($name=~/$radioga/)
 	    {
-		speak($channels{$pat},$name,'AUS');
+		speak($channel_found,$name,'AUS');
+		$plugin_info{$plugname.'_radio_'.$channel_found}='AUS';
+		plugin_log($plugname, 'Internetradio auf Kanal '.$channel_found.', GA='.$ga); 
 	    }
 	}
-
-    }
-
-    for my $channel (values %channels)
-    {
-	$plugin_info{$plugname.'_radio_'.$channel}='AUS';
-    }
-
-    for my $ga (@additional_subscriptions)
-    {
-	$plugin_subscribe{$ga}{$plugname}=1;
-	$gas{$channels{default}}++;
     }
 
     $plugin_info{$plugname.'_cycle'}=0;
