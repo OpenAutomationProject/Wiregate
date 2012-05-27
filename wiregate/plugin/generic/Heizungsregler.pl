@@ -54,6 +54,7 @@ if($event=~/restart|modified/)
 
     store_to_plugin_info(\%dyn);
 
+    $retval.='initialisiert.';
     $event='cycle';
 }
 
@@ -96,13 +97,6 @@ if($event=~/cycle/)
     }
 
     $retval=~s/\s*$//; # Space am Ende entfernen
-
-    unless($anynews)
-    {
-	for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
-	for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
-	return;
-    }
 }
 elsif($event=~/bus/)
 {
@@ -204,40 +198,25 @@ sub store_to_plugin_info
 
     # Alle Laufzeitvariablen im Hash %{$dyn} 
     # in das (flache) Hash plugin_info schreiben
-    for my $r (keys %{$dyn})
+    for my $r (grep ref($house{$_}), keys %house)
     {
-	for my $k (grep /^$plugname\_$r\_(temps|times|Uvals)_/, keys %plugin_info)
-	{
-	    delete $plugin_info{$k};
-	}
+	# Skalare
+	my @keylist=grep !/^(temps|times|Uvals)$/, keys %{$dyn->{$r}};
+	map { $_=sprintf("'$_'=>'%.2f'",$dyn->{$r}{$_}) } @keylist;   
+	$plugin_info{$plugname.'_'.$r} = join ',', @keylist;
 
-	for my $v (keys %{$dyn->{$r}})
+	# Arrays
+	for my $v (qw(temps times Uvals))
 	{
-	    unless($v=~/^(temps|times|Uvals)$/) # Arrays
-	    {
-		$plugin_info{$plugname.'_'.$r.'_'.$v}=$dyn->{$r}{$v};
-	    }
-	    else
+	    if(defined $dyn->{$r}{$v} && $#{$dyn->{$r}{$v}}>=0)
 	    {
 		$plugin_info{$plugname.'_'.$r.'_'.$v}=join ',', @{$dyn->{$r}{$v}};
 	    }
+	    elsif(exists $plugin_info{$plugname.'_'.$r.'_'.$v})
+	    {
+		delete $plugin_info{$plugname.'_'.$r.'_'.$v};
+	    }
 	}
-
-#	for my $v (keys %{$dyn->{$r}})
-#	{
-#	    next if $v=~/^(temps|times|Uvals)$/; # Arrays
-#	    $plugin_info{$plugname.'_'.$r.'_'.$v}=$dyn->{$r}{$v};
-#	}
-
-#	for my $array (qw(temps times Uvals))
-#	{
-#	    my $arr=$dyn->{$r}{$array};
-#	    next unless $arr;
-#	    for my $i (0..$#{$arr})
-#	    {
-#		$plugin_info{$plugname.'_'.$r.'_'.$array.'_'.$i}=$arr->[$i];
-#	    }
-#	}
     }
 }
 
@@ -245,31 +224,27 @@ sub recall_from_plugin_info
 {
     my %dyn=();
 
-    for my $k (grep /^$plugname\_/, keys %plugin_info)
+    for my $r (grep ref($house{$_}), keys %house)
     {
-	next unless $k=~/^$plugname\_([^_]+)\_(\S+)$/; 
-	my $r=$1; my $v=$2; 
-
-	unless($v=~/^(temps|times|Uvals)$/)
+	if(defined $plugin_info{$plugname.'_'.$r})
 	{
-	    $dyn{$r}{$v}=$plugin_info{$k};
-	}
-	else
-	{
-	    @{$dyn{$r}{$v}}=split ',', $plugin_info{$k};
+	    my $pi=$plugin_info{$plugname.'_'.$r};
+	    while($pi=~m/\'(.*?)\'=>\'(.*?)\'/g) { $dyn{$r}{$1}=$2 }
 	}
 
-#	unless($v=~/^(temps|times|Uvals)_([0-9]+)$/)
-#	{
-#	    $dyn{$r}{$v}=$plugin_info{$k};
-#	}
-#	else
-#	{
-#	    my $array=$1; my $i=$2;
-#	    $dyn{$r}{$array}[$i]=$plugin_info{$k};
-#	}
-    }
-
+	for my $v (qw(temps times Uvals))
+	{
+	    if(defined $plugin_info{$plugname.'_'.$r.'_'.$v})
+	    {
+		@{$dyn{$r}{$v}}=split ',', $plugin_info{$plugname.'_'.$r.'_'.$v};
+	    }
+	    else
+	    {
+		$dyn{$r}{$v}=[];
+	    }
+	}
+   }
+    
     return %dyn;
 }
 
