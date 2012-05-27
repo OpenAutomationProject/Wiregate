@@ -22,7 +22,7 @@ my $radioga=undef;
 my %stations=(); # Internet-Radiostationen
 
 # Konfigurationsfile einlesen
-my $conf=$plugname; $conf=~s/\.pl$/.conf/;
+my $conf=$plugname; $conf.='.conf' unless $conf=~s/\.pl$/.conf/;
 open FILE, "</etc/wiregate/plugin/generic/conf.d/$conf" || return "no config found";
 my @lines = <FILE>;
 close FILE;
