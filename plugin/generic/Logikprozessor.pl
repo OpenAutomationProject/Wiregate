@@ -505,7 +505,7 @@ sub standardize_and_expand_single_schedule
 	
 	if($k eq 'day_of_week')
 	{
-	    for my $wd (sort { length($b) cmp length($a) } keys %weekday)
+	    for my $wd (sort { length($b) <=> length($a) } keys %weekday)
 	    {
 		foreach (@{$s->{$k}}) { s/$wd/$weekday{$wd}/gie } # Wochentage in Zahlenform
 	    }

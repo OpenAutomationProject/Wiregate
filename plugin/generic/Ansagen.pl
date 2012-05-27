@@ -31,7 +31,7 @@ eval("@lines");
 # speechdir muss im mpddir liegen!
 $speechdir=~s!/$!!;
 $mpddir=~s!/$!!;
-return "config error" if $@ || ($mode eq 'mpd' && $speechdir !~ /^$mpddir/);
+return "config error: $@" if $@ || ($mode eq 'mpd' && $speechdir !~ /^$mpddir/);
 
 # Aufrufgrund ermitteln
 my $event=undef;
@@ -442,7 +442,7 @@ sub bestmatch
     my $speech=shift;
     my $pattern=shift;
 
-    my @hits=sort { length($a) cmp length($b) } grep /$pattern/i, @{$speech};
+    my @hits=sort { length($a) <=> length($b) } grep /$pattern/i, @{$speech};
     
     return @hits ? (shift @hits) : undef;
 }
@@ -517,17 +517,42 @@ sub speak
 		{
 		    system "$mpc volume $1";		    
 		}
-		elsif(defined $stations{$val})
+		elsif(grep /$val/i, keys %stations)
 		{
+		    my $station=undef;
+		    
+		    unless(defined $stations{$val})
+		    {
+			my @hits=grep /$val/i, sort { length($a) <=> length($b) } keys %stations;
+			$val=shift @hits;
+		    }
+		    $station=$stations{$val};
+
+		    my $wget=checkexec('wget');
+		    
+		    # MusicPal-Links "uebersetzen"
+		    if($station=~/freecom\.vtuner\.com/)
+		    {
+			$station=~s!freecom\.vtuner\.com!vtuner.com!;
+			$station=~s!setupapp/fc/asp!setupapp/guide/asp!;
+			$station=~s!dynam.*?\.asp!dynampls.asp!;
+			$station=~s!\?ex45v=.*\&id=!\?id=!;
+		    }
+		    
+		    # vtuner-Links "uebersetzen"
+		    $station = `$wget 2>/dev/null -O - $station` if $station=~/vtuner/;
+		    
 		    system "$mpc clear" unless $lfd_ansage; # nur leeren falls abgespielt
-		    system "$mpc add \"$stations{$val}\"";
-		    plugin_log($plugname, "$mpc add \"$stations{$val}\"");
+		    system "$mpc add \"$station\"";
+		    plugin_log($plugname, "$mpc add \"$station\"");
 		    system "$mpc play" unless `$mpc`=~/playing/s; # starten falls noch nicht aktiv
-		    $plugin_info{$plugname.'_radio_'.$channel}=$stations{$val};
+		    $plugin_info{$plugname.'_radio_'.$channel}=$station;
+
+		    $retval.="$channel:Radiosender '$val'='$station'";
 		}
 		else
 		{
-		    return "Unbekannter Radiosender '$val'";
+		    $retval.="Unbekannter Radiosender '$val'";
 		}
 	    }
 	    else # Regelfall: Sprachausgabe
@@ -550,13 +575,13 @@ sub speak
 		# wird die zweite die erste unterbrechen, weil $lfd_ansage hier (inkorrekt) 0 sein wird.
 
 		system "$mpc add \"".(join "\" \"", @_)."\"";
-		plugin_log($plugname, "$mpc add \"".(join "\" \"", @_)."\"");
+#		plugin_log($plugname, "$mpc add \"".(join "\" \"", @_)."\"");
 		system "$mpc play" unless `$mpc`=~/playing/s; # starten falls noch nicht aktiv
 
 		map s!^.*/(.*?)\.wav!$1!, @_;
-	    }
 
-	    $retval.=$channel.':'.(join ' ', @_);
+		$retval.=$channel.':'.(join ' ', @_);
+	    }
 	}
 	else
 	{
