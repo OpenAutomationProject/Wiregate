@@ -91,7 +91,7 @@ if($event=~/restart|modified/ || $config_modified)
 	$count++;
     }
 
-    $plugin_info{$plugname.'__SceneLookup'}=$scene_lookup;
+    $plugin_info{$plugname.'__Lookup'}=$scene_lookup;
     $plugin_info{$plugname.'_cycle'}=0; 
    
     $retval.=$count." initialisiert";
@@ -110,7 +110,7 @@ elsif($event=~/bus/)
     my $n=int($msg{value}); # die Szenennummer 
 
     # die betreffende Szene finden
-    unless($plugin_info{$plugname.'__SceneLookup'}=~/(St|Rc)\($ga\)=>\'(.+?)\',/)
+    unless($plugin_info{$plugname.'__Lookup'}=~/(St|Rc)\($ga\)=>\'(.+?)\',/)
     {
 	plugin_log($plugname, "Storniere $ga");
 	delete $plugin_subscribe{$ga}{$plugname}; # unbekannte GA
@@ -230,25 +230,9 @@ sub store_to_config
 sub store_to_plugin_info
 {
     my $z=shift; # die Szenenbezeichnung   
-
-    # Alle Laufzeitvariablen im Hash %{$dyn} 
-    # in das (flache) Hash plugin_info schreiben
-
     my @keylist=keys %{$scene{$z}};
-    map { $_=sprintf("$_=>'%.2f'",$scene{$z}{$_}) } @keylist;
-    
+    map { $_=sprintf("'$_'=>'%.2f'",$scene{$z}{$_}) } @keylist;   
     $plugin_info{$plugname.'__'.$z} = join ',', @keylist;
-#    plugin_log($plugname, "stored: ".$plugin_info{$plugname.'__'.$z});
-
-#    for my $k (grep /^$plugname\__$z/, keys %plugin_info)
-#    {
-#	delete $plugin_info{$k};
-#    }
-#    
-#    for my $v (keys %{$scene{$z}})
-#    {
-#	$plugin_info{$plugname.'__'.$z.'__'.$v}=$scene{$z}{$v};
-#    }
 }
 
 sub recall_from_plugin_info
@@ -259,15 +243,8 @@ sub recall_from_plugin_info
 	my $z=$1;
 	$scene{$z}={};
 	my $pi=$plugin_info{$k};
-	while($pi=~m/(.*?)=>\'(.*?)\'/g) { $scene{$z}{$1}=$2 }
-#	plugin_log($plugname, "retrieved: ".join ',', map $_=sprintf("$_=>'%.2f'",$scene{$z}{$_}), keys %{$scene{$z}});
+	while($pi=~m/\'(.*?)\'=>\'(.*?)\'/g) { $scene{$z}{$1}=$2 }
     }
-#    for my $k (grep /^$plugname\__/, keys %plugin_info)
-#    {
-#	next unless($k=~/^$plugname\__(.*\#.*)__(.*)$/);
-#	my ($z,$v)=($1,$2); 
-#	$scene{$z}{$v}=$plugin_info{$k};
-#    }
 }
 
 # Umgang mit GA-Kurznamen und -Adressen
