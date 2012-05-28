@@ -81,13 +81,13 @@ my $retval='';
 
 if($event=~/restart|modified/ || $config_modified) 
 {
-    $plugin_info{$plugname.'_configtime'}=(24*60*60*(-M $conf)-time());
-
     # alle Variablen loeschen
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
 	delete $plugin_info{$k};
     }
+
+    $plugin_info{$plugname.'_configtime'}=(24*60*60*(-M $conf)-time());
 
     my $count=0;
     my $err=0;
