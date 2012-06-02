@@ -282,9 +282,9 @@ sub words
     # Konstruiere die abzuspielenden File(s) aus dem GA-Kuerzel
     # erster Versuch: eine Datei passt komplett auf das Muster im Kuerzel
     my $pat1=$pattern;
-#    $pat1=~s/[_\s]+/.*?/g; # allgemeine Fassung
-    $pat1=~s/\s+.*$//; # meine spezielle GA-Struktur
-    $pat1=~s/_+/.*?/g; # meine spezielle GA-Struktur
+    $pat1=~s/[_\s]+/.*?/g; # allgemeine Fassung
+#    $pat1=~s/\s+.*$//; # meine spezielle GA-Struktur
+#    $pat1=~s/_+/.*?/g; # meine spezielle GA-Struktur
     $pat1='.*'.$pat1.'.*\.wav$';
     
     my @hits=();
@@ -294,8 +294,8 @@ sub words
     unless(@hits)
     {
 	$pattern='_'.$pattern;
-#	$pattern=~s/\s+/_/g; # allgemeine Fassung
-	$pattern=~s/\s+.*$//; # meine spezielle GA-Struktur
+	$pattern=~s/\s+/_/g; # allgemeine Fassung
+#	$pattern=~s/\s+.*$//; # meine spezielle GA-Struktur
 
 	# zweiter Versuch: aus Kuerzeln die Bausteine zusammenbauen
 	while($pattern=~s/^_([^_]+)//)
