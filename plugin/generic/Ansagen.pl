@@ -104,8 +104,10 @@ if($event=~/restart|modified/)
     
     return join ' ', map $_.'->'.$gas{$_}, keys %gas; 
 }
-elsif($event=~/bus/ && $msg{apci} eq 'A_GroupValue_Write')
+elsif($event=~/bus/)
 {
+    return if $msg{apci} eq "A_GroupValue_Response";
+
     my $ga=$msg{dst};
     my $val=$msg{value};
     my $dpt=$eibgaconf{$ga}{DPTSubId};
@@ -123,22 +125,48 @@ elsif($event=~/bus/ && $msg{apci} eq 'A_GroupValue_Write')
 	    last;
 	}
     }
-
+    
     # Radiosender bei dpt 16 (Text=Sendername)
     if($mode eq 'mpd' && $name=~/$radioga/ && $dpt=~/^16/)
     {
-	$val=~s/\000*$//; # streiche Nullen am Ende
-	return speak($channel, $name, $val);
+	if($msg{apci} eq 'A_GroupValue_Read')
+	{
+	    # Host und Port ermitteln
+	    $mpdhost{$channel}=~m!^\s*(.*)\s*/\s*(.*)\s*$!;
+	    my $host=$1; my $port=$2;
+
+	    # aus irgendeinem Grund funktioniert %ENV im wiregate-Plugin nicht
+	    # also so:
+	    my $mpc=checkexec('mpc');
+	    $mpc="export MPD_HOST=$host; export MPD_PORT=$port; $mpc";
+
+	    # Laeuft gerade das Radio oder eine Ansage?
+	    my $lfd_radio = $plugin_info{$plugname.'_radio_'.$channel} ne 'AUS';
+	    my $lfd_ansage = `$mpc`=~/playing/s && !$lfd_radio;
+
+	    return unless $lfd_radio && !$lfd_ansage;
+
+	    my $mpcout=`$mpc`;    
+	    $mpcout=~s/\n.*//s; # erste Zeile rausschneiden
+	    knx_write($ga, $mpcout, undef, 0x40); # response, DPT aus eibga.conf		    
+	}
+	else
+	{
+	    $val=~s/\000*$//; # streiche Nullen am Ende
+	    return speak($channel, $name, $val);
+	}
     }
+    
+    return unless $msg{apci} eq 'A_GroupValue_Write';
 
     # Hole alle verfuegbaren Durchsagedateien 
     my $find=checkexec('find');
     my @speech=split /\n/, `$find . -name '*.wav'`;
     map s!^\./!!, @speech; # Pfade relativ zum speechdir
     return 'no speech files found' unless @speech;
-
+    
     my @statement=();
-
+    
     # Praefix bei Gefahrenwarnung (dpt 5.005)
     push(@statement, words(\@speech, 'Achtung')) if $dpt eq '5.005'; # Gefahrenwarnung
     
