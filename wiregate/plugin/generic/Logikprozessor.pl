@@ -74,7 +74,8 @@ elsif ($fh) { $event='socket'; } # Netzwerktraffic
 else { $event='cycle'; } # Zyklus
 
 # Konfigfile seit dem letzten Mal geaendert?
-my $config_modified = (24*60*60*(-M $conf)-time()) > $plugin_info{$plugname.'_configtime'};
+my $configtime=24*60*60*(-M $conf);
+my $config_modified = ($configtime < $plugin_info{$plugname.'_configtime'}-1);
 
 # Plugin-Code
 my $retval='';
@@ -84,10 +85,11 @@ if($event=~/restart|modified/ || $config_modified)
     # alle Variablen loeschen
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
+	next if $k=~/^$plugname\_last/;
 	delete $plugin_info{$k};
     }
 
-    $plugin_info{$plugname.'_configtime'}=(24*60*60*(-M $conf)-time());
+    $plugin_info{$plugname.'_configtime'}=$configtime;
 
     my $count=0;
     my $err=0;
@@ -404,7 +406,7 @@ sub is_holiday
     # Schaltjahr?
     my $leapyear = ($Y % 4)==0 && ($Y % 100!=0 || $Y % 400==0);
 
-    # Osterdatum berechnen (Algorithmus von Ron Mallen, Codefragment von Randy McLeary) 
+    # Osterdatum berechnen (Algorithmus von Ron Mallen, Codefragment von Randy McLeary, beruht auf der Formel von Gauss/Lichtenberg) 
     my $C = int($Y/100);
     my $G = $Y%19;
     my $K = int(($C - 17)/25);

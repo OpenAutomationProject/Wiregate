@@ -49,7 +49,8 @@ my $err=read_from_config();
 return $err if $err;
 
 # Konfigfile seit dem letzten Mal geaendert?
-my $config_modified = ($scene{storage} ne 'configfile' && (24*60*60*(-M $conf)-time()) > $plugin_info{$plugname.'_configtime'});
+my $configtime=24*60*60*(-M $conf);
+my $config_modified = ($scene{storage} ne 'configfile' && $configtime < $plugin_info{$plugname.'_configtime'}-1);
 
 # Dynamisch definierte Szenen aus plugin_info einlesen
 recall_from_plugin_info();
@@ -59,13 +60,14 @@ my $retval='';
 
 if($event=~/restart|modified/ || $config_modified)
 {
-    $plugin_info{$plugname.'_configtime'}=(24*60*60*(-M $conf)-time());
-
     # Cleanup aller Szenenvariablen in %plugin_info 
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
+	next if $k=~/^$plugname\_last/;
 	delete $plugin_info{$k};
     }
+
+    $plugin_info{$plugname.'_configtime'}=$configtime;
 
     # Alle Szenen-GAs abonnieren
     my $count=0;
