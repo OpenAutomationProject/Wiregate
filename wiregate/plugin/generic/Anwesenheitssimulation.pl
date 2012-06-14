@@ -62,6 +62,9 @@ while($_=<IN>)
     my ($year, $month, $day, $hour, $min, $sec, $ga, $val, $dpt)=($1, $2, $3, $4, $5, $6, $7, $8, $9); 
     $val="'$val'" if $dpt=~/^16/; 
 
+    # Alle Telegramme auf manchen GAs ausfiltern
+    next if $ga=~m!^(5|6)/0!;  
+
     my $daynum=365*$year; $year-- if $month<=2; $daynum+=int($year/4) - int($year/100) + int($year/400); 
 
     my $delta = (defined $lastdaynum) ? $daynum-$lastdaynum : 0; 
@@ -79,9 +82,6 @@ when($line) {
 EOF
     }
 
-    # Alle Telegramme auf manchen Hauptgruppen ausfiltern
-    next if $ga=~m!^(5|6)/0!; 
-    
     print SIM <<EOF;
 # $_ 
 knx_write('$ga', $val, $dpt);
