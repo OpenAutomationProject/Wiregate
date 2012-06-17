@@ -1,5 +1,5 @@
 # Plugin zum verarbeiten aller Funktelegramme von FS20/(K)S300/FHZ/FHT/HMS/EM via CUL
-# Version: 0.71 2010-07-28
+# Version: 0.72 2012-06-17
 
 # - KS300,S300TH-Empfang
 # - FS20<->KNX
@@ -98,7 +98,7 @@ if (!$socket[$socknum] or !$socket[$socknum]->opened or (defined $fh and eof($so
                 # RM100: T3
                 return "HMS recv: $buf T$type Status $stat P$prf Batt:$bat Code:$HA Val:$values";
             }
-            elsif($fn eq "K" && $len == 15)   # KS300
+            elsif($fn eq "K" && $len >= 15)   # KS300
             {
                 my @a = split("", $buf);
                 my $rain = sprintf("%0.1f", hex("$a[14]$a[11]$a[12]") * 255 / 1000);
@@ -117,7 +117,7 @@ if (!$socket[$socknum] or !$socket[$socknum]->opened or (defined $fh and eof($so
                 knx_write($ks300_israin_ga,$ir,1);
                 return "KS300 recv: $val";
             }
-            elsif($fn eq "K" && $len == 9) # S300TH
+            elsif($fn eq "K" && $len >= 9) # S300TH
             { 
                 my @a = split("", $buf);
                 my $addr = $a[2]+(hex($a[1])&7);
@@ -145,7 +145,19 @@ if (!$socket[$socknum] or !$socket[$socknum]->opened or (defined $fh and eof($so
 #                  1111: cumulated value
 #                  2222: last value (Not set for type 2)
 #                  3333: top value  (Not set for type 2)
-              return "Debug EM recv: $buf";
+                #FIXME: ist noch nicht 100% ..
+                my @a = split("", $buf);
+                my $type = $a[2];
+                my $addr = $a[3] . $a[4];
+                my $seqno = hex($a[5].$a[6]);
+                my $total_cnt = hex($a[ 9].$a[10].$a[ 7].$a[ 8]) / 100;
+                my $current_cnt = hex($a[13].$a[14].$a[11].$a[12]) / 100;
+                my $peak_cnt = hex($a[17].$a[18].$a[15].$a[16]) / 100;
+                # these are the raw readings from the device
+                my $val = sprintf("CNT: %d CUM: %0.3f kW 5MIN: %0.3f kW TOP: %0.3f kW",
+                                   $seqno, $total_cnt, $current_cnt, $peak_cnt);
+                # nun sollten wir noch was sinnvolles tun, aufn Bus schreiben oder so
+                return "Debug EM recv: $buf type $type addr $addr $val";
             }
             elsif($fn eq "?" or $fn eq "") # empty/error-message
             {
