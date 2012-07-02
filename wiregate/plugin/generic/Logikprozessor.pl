@@ -669,13 +669,20 @@ sub set_next_call
 	my $daytext='';
 	my $datum="$today->{day_of_month}\.$today->{month}\.$today->{year}";
 	$daytext = ($days_until_nextcall==1 ? " morgen" : " in $days_until_nextcall Tagen, am $datum,") if $days_until_nextcall;
-	plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall."); # if $debug;
     
 	# Zeitdelta zu jetzt berechnen
-	my $seconds=3600*(substr($nextcall,0,2)-substr($time_of_day,0,2))
-	    +60*(substr($nextcall,3,2)-substr($time_of_day,3,2))-substr($time_of_day,6,2);
-	$nextcall=$systemtime+$seconds+3600*24*$days_until_nextcall;
-	$plugin_info{$plugname.'__'.$t.'_timer'}=$nextcall;
+	if($nextcall=~/^([0-9]+)\:([0-9]+)/)
+	{
+	    my $seconds=3600*($1-substr($time_of_day,0,2))+60*($2-substr($time_of_day,3,2))-substr($time_of_day,6,2);
+	    plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall."); # if $debug;
+
+	    my $timer=$systemtime+$seconds+3600*24*$days_until_nextcall;
+	    $plugin_info{$plugname.'__'.$t.'_timer'}=$timer;
+	}
+	else
+	{
+	    plugin_log($plugname, "Ungueltige Uhrzeit des naechsten Aufrufs der Timer-Logik '$t'$daytext."); # if $debug;
+	}
     }
     else
     {
@@ -687,7 +694,7 @@ sub set_next_call
 }
 
 # Es folgt die eigentliche Logik-Engine 
-# Im wesentlichen Vorbesetzen von input und state, Aufrufen der Logik, Zurueckschreiben von state
+# Im wesentlichen Vorbesetzen von input und state, Aufrufen der Logik, knx_write, Zurueckschreiben von state
 sub execute_logic
 {
     my ($t, $receive, $ga, $in)=@_; # Logikindex $t, Bustelegramm erhalten auf $ga mit Inhalt $in
@@ -720,7 +727,7 @@ sub execute_logic
     }
     
     # ab hier liegt $input komplett vor, und nun muss die Logik ausgewertet 
-    # und das Resultat auf der Transmit-GA uebertragen
+    # und das Resultat auf der Transmit-GA uebertragen werden
     my $result=undef;
     
     unless(ref $logic{$t}{translate}) 
