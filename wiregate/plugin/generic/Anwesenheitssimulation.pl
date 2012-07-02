@@ -46,8 +46,10 @@ given(\$plugin_info{\$plugname.'_line'}) {
 when($line) { 
 EOF
 
-my $time=`/bin/date +%X`; $time=~/^([0-9][0-9])\:([0-9][0-9])\:([0-9][0-9])/; my ($h,$m,$s)=($1,$2,$3); 
+my $time=`/bin/date +%X`; $time=~/^([0-9][0-9])\:([0-9][0-9])\:([0-9][0-9])/; 
+my ($h,$m,$s)=($1,$2,$3); 
 my $lastdaynum=undef; 
+my @first=(0,0,31,59,90,120,151,181,212,243,273,304,334);
 
 open IN, "</var/log/eib.log"; 
 
@@ -60,26 +62,29 @@ while($_=<IN>)
     next unless /^([0-9][0-9][0-9][0-9])\-([0-9][0-9])\-([0-9][0-9]) ([0-9][0-9])\:([0-9][0-9])\:([0-9][0-9])[^,]*,[^,]*,[^,]*,([0-9]+\/[0-9]+\/[0-9]+),[^,]*,([^,]*),[^,]*,([^,]*),.*$/; 
 
     my ($year, $month, $day, $hour, $min, $sec, $ga, $val, $dpt)=($1, $2, $3, $4, $5, $6, $7, $8, $9); 
-    $val="'$val'" if $dpt=~/^16/; 
+    $val="'$val'" if $dpt=~/^(16|10|11)/; 
 
     # Alle Telegramme auf manchen GAs ausfiltern
     next if $ga=~m!^(5|6)/0!;  
 
-    my $daynum=365*$year; $year-- if $month<=2; $daynum+=int($year/4) - int($year/100) + int($year/400); 
+    my $daynum=365*$year+$first[$month]+$day; $year-- if $month<=2; $daynum+=int($year/4) - int($year/100) + int($year/400); 
 
-    my $delta = (defined $lastdaynum) ? $daynum-$lastdaynum : 0; 
-    $lastdaynum=$daynum; 
+    my $delta = ($h>20 ? 1:0); # falls nach 20 Uhr, starte Simulation erst am nächsten Tag 
+    $delta=$daynum-$lastdaynum if defined $lastdaynum;
     $delta=(($delta*24+($hour-$h))*60+($min-$m))*60+($sec-$s); 
+
     next if $delta<0; 
-    ($h,$m,$s)=($hour,$min,$sec);  
 
     if($delta>0)
     {
+	($lastdaynum,$h,$m,$s)=($daynum,$hour,$min,$sec);  
 	$line++;
-    print SIM <<EOF;
+	
+	print SIM <<EOF;
 \$plugin_info{\$plugname.'_cycle'}=$delta; }
 when($line) {
 EOF
+
     }
 
     print SIM <<EOF;
