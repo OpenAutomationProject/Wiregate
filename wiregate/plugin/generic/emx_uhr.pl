@@ -10,6 +10,17 @@
 #  ##  who  yyyymmdd   bug#  description
 #  --  ---  --------  -----  ----------------------------------------
 #   .  ...  ........  .....  vorlage 
+#   6  edh  20120706  .....  Zeitzonen eingefuehrt. Durch Angabe 
+#                             des neuen Parameters 'Zone' in der 
+#                             @Zeiten Tabelle kann nun festgelegt
+#                             werden, fuer welche Zeitzone der 
+#                             Schaltzeitpunkt berechnet werden soll.
+#                             Der Parameter is wahlweise, so dass
+#                             bisherige conf-Dateien ohne Aenderung
+#                             weiter verwendet werden koennen.
+#                             Eine detaillierte Dokumentation findet
+#                             sich in der conf-Datei, die auch Beipiele
+#                             enthaelt.
 #   5  edh  20111023  .....  conf.d Verzeichnis eingefuehrt. Alle 
 #                             Einstellungen werden kuenftig ueber
 #                             ueber eine entsprechende Konfigura-
@@ -23,30 +34,33 @@
 #                              Allerdings sind tw. immer noch solche 
 #                              Underruns zu beobachten, die anscheinend
 #                              wg. unkorrektem timings von 'aussen' 
-#                              verursacht werden. Das Script fängt 
+#                              verursacht werden. Das Script faengt 
 #                              diese underruns allerdings ebenfalls ab.                              
 #   3  edh  20110910  .....  Zykluszeit wurde nicht korrekt verarbeitet,
 #                            Zyklus-Anpassung nun exakt in Sekunden,
 #                            -  dadurch keine 1-Sekunden leer-Zyklen mehr,
 #                            -  weniger Systemlast.
-#                            Alte plugin_info einträge werden bei neuer 
+#                            Alte plugin_info Eintraege werden bei neuer 
 #                             versionsnummer nun bereinigt.
 #   2  edh  20110910  -----  Bug im Wertevergleich in 'matches()' gefixt
 #   1  edh  20110807  -----  wg. utf-8 Zirkus Umlaute in ae/ue/oe geaendert
 #   0  edh  20110708  -----  erste Version
 
 use POSIX;
+use Time::Zone;
 
 #-----------------------------------------------------------------------------
-# konfigurierbare  Werte, siehe conf.d/emx_uhr.conf
+# konfigurierbare  Werte, siehe conf.d/emx_uhr.conf.sample
 #-----------------------------------------------------------------------------
-my @Zeiten = ();
+my @Zeiten               = ();
+my $LokaleZeitZone       = "CET";  # lokale Zeitzone
+my $LokaleSommerZeitZone = "CEST"; # lokale Zeitzone im Sommer
 my $slotEnd = 3; 
 
 #-----------------------------------------------------------------------------
 # Aufruf-Zyklus setzen
 # Das script verarbeitet keine Sekunden, weshalb die kleinste 
-# Granularitaet ohne zusaetzlioche Statusverarbeitung eine Minute ist. 
+# Granularitaet ohne zusaetzliche Statusverarbeitung eine Minute ist. 
 #-----------------------------------------------------------------------------
 my $cycleTime = 60;
 
@@ -56,12 +70,12 @@ my $cycleTime = 60;
 # auch ohne den wiregated neu starten zu muessen. Die Nummer 
 # einfach nach einer Aenderung des scripts um eins erhoehen.
 #-----------------------------------------------------------------------------
-my $version = 9;
+my $version = 11;
 
 #-----------------------------------------------------------------------------
-# Numerischen string als Zahl zurückgeben
+# Numerischen String als Zahl zurueckgeben
 # - blanks entfernen
-# - führende Nullen entfernen
+# - fuehrende Nullen entfernen
 #-----------------------------------------------------------------------------
 sub toNumber
 {
@@ -111,16 +125,19 @@ sub setCycle
     }
 }
 
+#-----------------------------------------------------------------------------
+# Konfiguration lesen. Erwartet wird eine Datei conf.d/emx_uhr.conf
+#-----------------------------------------------------------------------------
 sub readConf
 {
     my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
     if (! -f $confFile)
     {
-        plugin_log($plugname, " no conf file [$confFile] found."); 
+        plugin_log($plugname, "no conf file [$confFile] found."); 
     }
     else
     {
-        plugin_log($plugname, " reading conf file [$confFile]."); 
+        plugin_log($plugname, "reading conf file [$confFile]."); 
         open(CONF, $confFile);
         my @lines = <CONF>;
         close($confFile);
@@ -128,7 +145,7 @@ sub readConf
         ($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
         if ($@) 
         {
-            plugin_log($plugname, "conf file [$confFile] returned:");
+            plugin_log($plugname, "ERR: conf file [$confFile] returned:");
             my @parts = split(/\n/, $@);
             plugin_log($plugname, "--> $_") foreach (@parts);
         }
@@ -139,8 +156,14 @@ sub readConf
 # main()
 #=============================================================================
 
-my ($curSec,$curMin,$curStu,$curMTag,$curMon,$curJahr,$curWTag,$curJTag,$isdst) = localtime(time);
+my $tStamp = time;
+my ($curSec,$curMin,$curStu,$curMTag,$curMon,$curJahr,$curWTag,$curJTag,$isdst) = localtime($tStamp);
 $curJahr += 1900;
+
+# set the time zone to use here and now
+my $curZone = ($isdst) ? $LokaleSommerZeitZone : $LokaleZeitZone;
+my $lclOffset = tz_offset("$curZone");
+
 &readConf();
 
 # kontrollierte Startkonditionen setzen
@@ -170,16 +193,28 @@ if (defined $plugin_info{"$plugname.$version.lastMinute"} && $plugin_info{"$plug
     return;
 }
 
+# create the 'basetime' which is used for calclulations
+my ($basSec,$basMin,$basStu,$basMTag,$basMon,$basJahr,$basWTag,$basJTag) =
+    ($curSec,$curMin,$curStu,$curMTag,$curMon,$curJahr,$curWTag,$curJTag);
+
 foreach my $Zeit (@Zeiten) 
 {
     (defined $Zeit->{Aktiv} && !$Zeit->{Aktiv})                    and next;
-    (defined $Zeit->{Min}   && !&matches($curMin,  $Zeit->{Min}))  and next;
-    (defined $Zeit->{Std}   && !&matches($curStu,  $Zeit->{Std}))  and next;
-    (defined $Zeit->{MTag}  && !&matches($curMTag, $Zeit->{MTag})) and next;
-    (defined $Zeit->{Mon}   && !&matches($curMon,  $Zeit->{Mon}))  and next;
-    (defined $Zeit->{WTag}  && !&matches($curWTag, $Zeit->{WTag})) and next;
+    my $baseZone = (defined $Zeit->{Zone} && (length($Zeit->{Zone}) >= 3) ) ? $Zeit->{Zone} : $curZone;
+    if ($baseZone ne $curZone)         # different time zone than local,recalculate time values for defined zone
+    {
+        ($basSec,$basMin,$basStu,$basMTag,$basMon,$basJahr,$basWTag,$basJTag) = localtime($tStamp-$lclOffset+tz_offset($baseZone));
+        $basJahr += 1900;
+    }
+
+    (defined $Zeit->{Min}   && !&matches($basMin,  $Zeit->{Min}))  and next;
+    (defined $Zeit->{Std}   && !&matches($basStu,  $Zeit->{Std}))  and next;
+    (defined $Zeit->{MTag}  && !&matches($basMTag, $Zeit->{MTag})) and next;
+    (defined $Zeit->{Mon}   && !&matches($basMon,  $Zeit->{Mon}))  and next;
+    (defined $Zeit->{WTag}  && !&matches($basWTag, $Zeit->{WTag})) and next;
     (defined $Zeit->{Log}   && $Zeit->{Log} eq '1') and 
-        plugin_log($plugname, "Sending Value[$Zeit->{Wert}] to GA[$Zeit->{GA}], $Zeit->{Name}"); 
+        plugin_log($plugname, sprintf "Sending at[$baseZone %02d:%02d:%02d],Value[$Zeit->{Wert}],GA[$Zeit->{GA}]",
+                   $basStu,$basMin,$basSec);
 
     knx_write($Zeit->{GA},$Zeit->{Wert}, $Zeit->{DPT});   
 } # foreach (@Zeiten)
