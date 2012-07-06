@@ -4,15 +4,26 @@
 #-----------------------------------------------------------------------------
 # ACHTUNG: Variablen duerfen nur im Plugin mit 'my' definiert werden,
 #          'my' hier nicht verwenden!
+#
 #-----------------------------------------------------------------------------
-
+# 20120706: Neue Konfigurationsvariablen:
+#
+#           $LokaleZeitZone = "CET";          # lokale Zeitzone
+#           $LokaleSommerZeitZone="CEST";     # lokale Zeitzone im Sommer
+#
+# Die Variablen sind notwendig, um Schaltvorgänge fuer andere Zeitzonen 
+# korrekt berechnen zu koennen.
+#
+# Sofern diese nicht angegeben werden, oder keine conf-Datei existiert, 
+# werden die o.a. Werte angenommen.
+#
 #----------------------------------------------------
 # Hinweis zu den Eintraegen in der '@Zeiten' Tabelle
 # (Bitte auch die nachfolgenden Anmerkungen beachten):
 #----------------------------------------------------
 # Folgende Eintraege werden verarbeitet:
 #  #
-# - Name     Ein beliebiger Text. Ich habe nicht getestst, ob diser Leerstellen 
+# - Name     Ein beliebiger Text. Ich habe nicht getestet, ob dieser Leerstellen
 #            enthalten darf. Statt dessen besser Unterstriche nehmen oder 
 #            ausprobieren. Dieser Text erscheint im Logfile sofern aktiviert.
 #            Zwingende Angabe.
@@ -53,6 +64,33 @@
 #              sofern das Telegramm gesendet wurde.
 #            Wenn nicht definiert, wird kein Logeintrag geschrieben.
 #            Wahlweise Angabe.
+# - Zone     Zeitzone, fuer die die angegebene Zeit stimmen soll.
+#            Wenn nicht angegeben, wird die lokale Zeit angenommen.
+#            Wahlweise Angabe.
+#
+#            Gueltige Zeitzonen-Namen finden sich im Web, z.B. hier:
+#
+#              http://www.timeanddate.com/library/abbreviations/timezones/
+#
+#            Beispiel: 
+#            -  Eine Aktion soll immer dann ausgefuehrt werden, wenn es in 
+#               New-York 12:00 Uhr Mittags ist: 
+#
+#                  { ... Std=>'12', Min=>'0', Zone=>'EST' ... }
+#
+#               wobei die Zeitzone hier 'EST' ist, also 'Eastern Standard Time',
+#               die New-Yorker Zeitzone.
+#            - Eine Aktion soll immer um 17:00 Uhr europäischer Zeit 
+#              ausgefuehrt werden. Die Sommerzeit soll dabei ignoriert werden,
+#              so das im Winter im 12:00 Uhr, im Sommer dagegen erst im 13:00 
+#              Uhr geschaltet wird:
+#
+#                 { ... Std=>'12', Min=>'0', Zone=>'CET' ... }
+#
+#              Da die Aktion immer entsprechend 12:00 CET, also 
+#              'Central European Time' stattfindet, wird das Ereignis im Winter
+#              in Deutschland im 12:00 ausgelöst, im Sommer dagegen um 13:00 
+#              lokaler Zeit.
 #
 # Anmerkungen:
 #
@@ -75,10 +113,16 @@
 #------------------------
 # Konfigurierbare Werte
 #------------------------
+
+$LokaleZeitZone = "CET";          # lokale Zeitzone
+$LokaleSommerZeitZone="CEST";     # lokale Zeitzone im Sommer
+
 @Zeiten = 
     ( 
       # Aussenlicht und Aussensteckdosen zyklisch ausschalten
       { Name=>'ELW_Terrassenlicht',      Aktiv=>'1', Min=>'0-59', Wert=>'0', DPT=>'1', GA=>'1/5/92', Log=>'1' }, 
+      { Name=>'Keller_Vent', Aktiv=>'1', Std=>'5', Min=>'01', Wert=>'1', DPT=>'1', GA=>'9/2/151', Log=>'1', Zone=>"CET" }, 
+      { Name=>'Keller_Vent', Aktiv=>'1', Std=>'5', Min=>'11', Wert=>'0', DPT=>'1', GA=>'9/2/151', Log=>'1', Zone=>"CET" }, 
     );
 
 #-----------------------------------------------------------------
