@@ -10,7 +10,7 @@ my $retval='';
 chdir "/etc/wiregate/plugin/generic";
 
 # Cleanup plugin_subscribe
-my @plugins=<*.pl>; 
+my @plugins=<*>; 
 my $valid=join "|", map quotemeta, @plugins;
 for my $ga (keys %plugin_subscribe)
 {
