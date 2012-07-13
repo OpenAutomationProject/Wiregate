@@ -1,5 +1,5 @@
 # Plugin: Schnittstelle zum Pelletskessel ETA-PU
-# Version 1.0
+# Version 1.1
 # License: GPL (v3)
 
 # Dieses Plugin dient als Schnittstelle zwischen KNX und dem ETA Heizkessel PU (Pellets Unit).
@@ -10,7 +10,6 @@
 # https://www.meineta.at/user/download.action?contentType=application%2Fpdf&file=ETA-RESTful-v1.pdf
 # CAN-BUS-URI können in der XML-Datei für die Menüstruktur entnommen werden:
 # http://ip:port/user/menu
-
 
 # Aktuell werden folgende Features unterstützt:
 # 1.	Lesen von festgelegten Kesseldaten in einem festgelegten Intervall (aktuell 1 Minute):
@@ -51,9 +50,9 @@
 # Kontaktaufnahme bitte über das knx-user-forum.de
 
 
-
 ## Beginn Definitionen ##
 my $IP_PU = 			"192.168.10.11:8080";
+my $TimeoutSek =		5;
 my $ResVariables = 		"/user/vars";
 my $ResSingleVariable =	"/user/var";
 my $ResErrors = 		"/user/errors";
@@ -64,7 +63,6 @@ my $GA_Fehler = 			"10/0/3";
 my $DPT_GA_Fehler = 		"1.001";
 my $GA_AnzahlFehler = 		"10/0/4";
 my $DPT_GA_AnzahlFehler =	"5.010";
-
 
 # Mapping ETA can-bus-uri zu Gruppenadressen für Werte aus string Rückgaben
 my %string_GA_URI_mapping = (
@@ -253,15 +251,13 @@ my %unit_DPT_mapping = (
 ## Ende Definitionen ##
 
 #Module laden
-use strict;
 use warnings;
 use LWP::UserAgent;
 use XML::Parser;
-use IO::File;
 
 
 # Plugin alle 1 Minuten aufrufen
-$plugin_info{$plugname.'_cycle'} = 60*1;
+$plugin_info{$plugname.'_cycle'} = 60*2;
 
 #Letzte Laufzeit protokollieren
 update_rrd("LaufzeitPlugin_".$plugname,"",$plugin_info{$plugname.'_runtime'});
@@ -274,9 +270,10 @@ my %string_GA_URI;
 
 # ETA Variablenset anlegen, wenn Plugin durch Speichern aufgerufen
 my $SetVar;
-if ((stat('/etc/wiregate/plugin/generic/' . $plugname))[9] > time()-10) {
+# Code vor PL30
+#if ((stat('/etc/wiregate/plugin/generic/' . $plugname))[9] > time()-10) {
 # Code nach PL30
-#if = ($plugin_info{$plugname.'_lastsaved'} > $plugin_info{$plugname.'_last'} or $plugin_info{$plugname.'_lastSetVariable'} == 0) {
+if ($plugin_info{$plugname.'_lastsaved'} > $plugin_info{$plugname.'_last'} or $plugin_info{$plugname.'_lastSetVariable'} == 0) {
 	$SetVar = 1;
 }
 
@@ -436,14 +433,8 @@ sub do_request {
 	my ($type, $url) = @_;
 	my $request = HTTP::Request->new($type => $url);
 	my $ua = LWP::UserAgent->new;
+	$ua->timeout($TimeoutSek);
 	my $response = $ua->request($request);
-	#unless ($response->is_success) {
-	#	die $response->status_line;
-	#}
-	if ($url =~ m|http://localhost:|) {
-		# Sleep to allow testing with nc -l 8080 -w 1
-		sleep 1;
-	}
 	if ($response->content eq undef) {
 		return 'Abfrage '.$type.' - '.$url.' fehlgeschlagen' ;
 	}
@@ -509,14 +500,8 @@ sub set_value {
 sub post_request {
 	my ($url, %form) = @_;
 	my $ua = LWP::UserAgent->new;
+	$ua->timeout($TimeoutSek);
 	my $response = $ua->post($url, \%form);
-	#unless ($response->is_success) {
-	#	die $response->status_line;
-	#
-	if ($url =~ m|http://localhost:|) {
-		# Sleep to allow testing with nc -l 8080 -w 1
-		sleep 1;
-	}
 	return $response->content;
 }
 
