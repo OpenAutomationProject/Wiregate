@@ -19,17 +19,14 @@ my $datum_ga  = "0/7/200";   # Gruppenadresse Datum
 ### ENDE DEFINITION ###
 #######################
 
-
-# Plugin an Gruppenadresse "anmelden"
-#$plugin_subscribe{$wert_ga}{$plugname} = 1;
-
 my $knxdate = knx_read($datum_ga,1,11);
 my ($dummy,$knxtime) = split(" ",knx_read($uhrzeit_ga,1,10));
 
 if ($knxdate and $knxtime) {
     my $oldtime = `date \"+%Y-%m-%d %H:%M:%S\"`;
     my $newtime = `date --set=\"$knxdate $knxtime\"`;
-    $dummy = `hwclock --systohc`;
+    # In RTC schreiben, nur wenn die Uhrzeit nicht zyklisch kommt! Ab PL33 in crontab
+    # $dummy = `hwclock --systohc`;
     return "Uhrzeit vom Bus gesetzt: $oldtime -> $newtime";
 } else {
     return "Fehler beim lesen von Datum/Uhrzeit von $datum_ga / $uhrzeit_ga!";
