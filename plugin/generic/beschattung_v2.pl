@@ -19,6 +19,13 @@
 # - Im Winter nur auf 90% nach unten fahren (Aneisungsgefahr)
 # - Beschattung abhängig von der Raumtemperatur
 
+# Änderungen:
+# 20120804 - joda123 - rollo_beschattungsposition eingeführt: Rollos können bei
+#            Beschattung jetzt n% geschlossen werden (vorher immer 100%)
+# 20120805 - joda123 - Lokale Definitionen in conf Datei ausgelagert: Es sind keine
+#            site-spezifischen Definitionen in diesem Script mehr erforderlich.
+#            Alle lokalen Anpassungen in /etc/wiregate/plugin/generic/conf.d/beschattung_v2.conf
+
 # Konstanten für Aufrufart
 use constant EVENT_RESTART => 'restart';
 use constant EVENT_MODIFIED => 'modified';
@@ -82,48 +89,40 @@ my $gv_wochentag;
 my $gv_jahrestag;
 my $gv_sommerzeit;
 
-#########################################################################################
-# Hier folgen nun die Definitionen für die Beschattung
-#########################################################################################
+my $show_debug; # switches debug information that will be shown in the log
 
-# Geografische Lage
-($gv_lat, $gv_lon, $gv_elev) = (
- 48.43333333333333,		# Breitengrad in Grad
- 14.3,					# Längengrad in Grad
- 825 / 1000				# Höhe über NN in Kilometer (deswegen geteilt durch 1000)
-);
-
-# Gruppenadressen
-# GA für die Helligkeit
-$gv_gaHelligkeit = '4/2/3';
-# GA um die gesamte Beschattungs-Automatik zu sperren
-$gv_gaSperre = '';
-
-# Alle Raffstores
-# id: ID des Raffstores (evtl. für Variablen, die benötigt werden)
-# name: Name, falls irgendwelche Meldungen ausgegeben werden
-# ausrichtung: Ausrichtung des Raffstores (z.B.: Süd = 180) Wird zur Berechnung des Start- und Endwinkels der Beschattung verwendet, sofern die Werte nicht direkt vorgegeben werden
-# startWinkel: Startwinkel der Beschattung
-# endWinkel: Endwinkel der Beschattung
-# aktiv: Beschattung aktiv für dieses Fenster
-# sperre: Beschattung für diesen Raffstore gesperrt (von außen)
-# automatik: Automatik für diesen Raffstore aktiv (von innen, z.B. wenn das Fenster geöffnet wird -> automatik aus, Raffstore ganz nach oben)
-# lamellenNachfuehrung: Wird die Lamelle dem Sonnenstand nachgeführt, oder sobald beschattet werden soll einfach ganz zugeklappt
-# gaRollo: GA des Rollo-Objekts für den Raffstore
-# gaRolloRM: Rückmelde-GA des Rollo-Objekts für den Raffstore
-# gaLamellePos: GA des Lamellen-Objekts für den Raffstore
-# gaLamellePosRM: Rückmelde-GA des Lamellen-Objekts für den Raffstore
-# gaFensterStatus: GA des Reed-Kontakts des Fensters (Wenn das Fenster geöffnet wird, fährt der Raffstore ganz nach oben)
-# gaTemperatur: Wird dzt. nicht verwendet! GA des Temperatursensores für das Fenster (kann verwendet werden, damit erst ab einer bestimmten Temperatur beschattet wird)
-# gaSperre: GA zum Sperren der Beschattungs-Automatik für desen Raffstore (z.B. wenn eine andere Funktion einen Raffstore fix ganz nach oben oder unten fährt)
-
-#Beispiele
-#push @gt_raffstores, { id => "UG_WZ_SUE_FEN", name => "Wohnzimmer Süd Fenster", ausrichtung => 180, startWinkel => 95, endWinkel => 265, aktiv => AKTIV, sperre => SPERRE_INAKTIV, automatik => AUTOMATIK_EIN, lamellenNachfuehrung => NACHF_EIN, gaRolloPos => "3/2/3", gaRolloPosRM => "3/4/3", gaLamellePos => "3/3/3", gaLamellePosRM => "3/5/3", gaFensterStatus => "", gaTemperatur => "4/1/0", gaSperre => "3/6/3" };
-#push @gt_raffstores, { id => "UG_KUE_WES_FEN", name => "Küche West Fenster", ausrichtung => 270, aktiv => AKTIV, sperre => SPERRE_INAKTIV, automatik => AUTOMATIK_EIN, lamellenNachfuehrung => NACHF_EIN, gaRolloPos => "3/2/7", gaRolloPosRM => "3/4/7", gaLamellePos => "3/3/7", gaLamellePosRM => "3/5/7", gaFensterStatus => "4/0/27", gaTemperatur => "4/1/0", gaSperre => "3/6/7" };
 
 #########################################################################################
 # Ab hier beginnt das Programm -> Sollte im Idealfall nicht mehr verändert werden müssen
 #########################################################################################
+
+# Read config file in conf.d
+my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
+if (! -f $confFile)
+{
+  plugin_log($plugname, " no conf file [$confFile] found."); 
+}
+else
+{
+  plugin_log($plugname, " reading conf file [$confFile].") if( $show_debug > 1); 
+  open(CONF, $confFile);
+  my @lines = <CONF>;
+  close($confFile);
+  my $result = eval("@lines");
+  if( $show_debug > 1 )
+  {
+    ($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+  }
+  if ($@) 
+  {
+    plugin_log($plugname, "conf file [$confFile] returned:") if( $show_debug > 1 );
+    my @parts = split(/\n/, $@);
+    if( $show_debug > 1 )
+    {
+      plugin_log($plugname, "--> $_") foreach (@parts);
+    }
+  }
+}
 
 # Ruf mich alle 60 Sekunden selbst auf, damit ich prüfen kann, ob die Helligkeit über-/unterschritten wurde
 $plugin_info{$plugname.'_cycle'} = 60;
@@ -179,15 +178,15 @@ use Astro::Coord::ECI::Utils qw{rad2deg deg2rad};
 # Aus welchem Grund läuft das Plugin gerade
 my $gv_event=undef;
 if (!$plugin_initflag) {
- $gv_event = EVENT_RESTART;			# Restart des daemons / Reboot
+ $gv_event = EVENT_RESTART;            # Restart des daemons / Reboot
 } elsif ($plugin_info{$plugname.'_lastsaved'} > $plugin_info{$plugname.'_last'}) {
- $gv_event = EVENT_MODIFIED;		# Plugin modifiziert
+ $gv_event = EVENT_MODIFIED;        # Plugin modifiziert
 } elsif (%msg) {
- $gv_event = EVENT_BUS;				# Bustraffic
+ $gv_event = EVENT_BUS;                # Bustraffic
 } elsif ($fh) {
- $gv_event = EVENT_SOCKET;			# Netzwerktraffic
+ $gv_event = EVENT_SOCKET;            # Netzwerktraffic
 } else {
- $gv_event = EVENT_CYCLE;			# Zyklus
+ $gv_event = EVENT_CYCLE;            # Zyklus
 }
 
 if ($gv_event eq EVENT_RESTART) {
@@ -239,20 +238,20 @@ if ($gv_event eq EVENT_RESTART) {
   $gv_azimuth = $plugin_info{$plugname.'_azimuth'};
 
   # Prüfen, ob das Telegramm etwas am aktuellen Status ändert und ggf. merken
-  if ($gv_elevation >  0 and $gv_elevation <= 10 and $gv_helligkeit >= 10000) { $gv_beschattungEin = 'J'; }
-  if ($gv_elevation > 10 and $gv_elevation <= 20 and $gv_helligkeit >= 20000) { $gv_beschattungEin = 'J'; }
-  if ($gv_elevation > 20 and $gv_elevation <= 30 and $gv_helligkeit >= 30000) { $gv_beschattungEin = 'J'; }
-  if ($gv_elevation > 30 and $gv_elevation <= 40 and $gv_helligkeit >= 40000) { $gv_beschattungEin = 'J'; }
-  if ($gv_elevation > 40 and $gv_elevation <= 50 and $gv_helligkeit >= 50000) { $gv_beschattungEin = 'J'; }
-  if ($gv_elevation > 50 and $gv_elevation <= 90 and $gv_helligkeit >= 75000) { $gv_beschattungEin = 'J'; }
+  if ($gv_elevation >  0 and $gv_elevation <= 10 and $gv_helligkeit >=  5000) { $gv_beschattungEin = 'J'; }
+  if ($gv_elevation > 10 and $gv_elevation <= 20 and $gv_helligkeit >= 10000) { $gv_beschattungEin = 'J'; }
+  if ($gv_elevation > 20 and $gv_elevation <= 30 and $gv_helligkeit >= 15000) { $gv_beschattungEin = 'J'; }
+  if ($gv_elevation > 30 and $gv_elevation <= 40 and $gv_helligkeit >= 20000) { $gv_beschattungEin = 'J'; }
+  if ($gv_elevation > 40 and $gv_elevation <= 50 and $gv_helligkeit >= 25000) { $gv_beschattungEin = 'J'; }
+  if ($gv_elevation > 50 and $gv_elevation <= 90 and $gv_helligkeit >= 30000) { $gv_beschattungEin = 'J'; }
 
   if ($gv_elevation <  0) { $gv_beschattungEin = 0; }
-  if ($gv_elevation >  0 and $gv_elevation <= 10 and $gv_helligkeit < 10000) { $gv_beschattungEin = 'N'; }
-  if ($gv_elevation > 10 and $gv_elevation <= 20 and $gv_helligkeit < 20000) { $gv_beschattungEin = 'N'; }
-  if ($gv_elevation > 20 and $gv_elevation <= 30 and $gv_helligkeit < 30000) { $gv_beschattungEin = 'N'; }
-  if ($gv_elevation > 30 and $gv_elevation <= 40 and $gv_helligkeit < 40000) { $gv_beschattungEin = 'N'; }
-  if ($gv_elevation > 40 and $gv_elevation <= 50 and $gv_helligkeit < 50000) { $gv_beschattungEin = 'N'; }
-  if ($gv_elevation > 50 and $gv_elevation <= 90 and $gv_helligkeit < 75000) { $gv_beschattungEin = 'N'; }
+  if ($gv_elevation >  0 and $gv_elevation <= 10 and $gv_helligkeit <  5000) { $gv_beschattungEin = 'N'; }
+  if ($gv_elevation > 10 and $gv_elevation <= 20 and $gv_helligkeit < 10000) { $gv_beschattungEin = 'N'; }
+  if ($gv_elevation > 20 and $gv_elevation <= 30 and $gv_helligkeit < 15000) { $gv_beschattungEin = 'N'; }
+  if ($gv_elevation > 30 and $gv_elevation <= 40 and $gv_helligkeit < 20000) { $gv_beschattungEin = 'N'; }
+  if ($gv_elevation > 40 and $gv_elevation <= 50 and $gv_helligkeit < 25000) { $gv_beschattungEin = 'N'; }
+  if ($gv_elevation > 50 and $gv_elevation <= 90 and $gv_helligkeit < 30000) { $gv_beschattungEin = 'N'; }
 
   # Abhängig vom letzten gültigen Wert den neuen beschattungEin setzen
   if ($gv_beschattungEin eq 'J' and $plugin_info{$plugname.'_beschattungEin'} eq BESCHATTUNG_AUS) {
@@ -273,28 +272,28 @@ if ($gv_event eq EVENT_RESTART) {
 
    if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gs_raffstore->{gaSperre}) {
     # Sperre wurde gesetzt oder aufgehoben
-	$gs_raffstore->{sperre} = $msg{'value'};
+    $gs_raffstore->{sperre} = $msg{'value'};
    }
    if ($msg{'apci'} eq "A_GroupValue_Read" and $msg{'dst'} eq $gs_raffstore->{gaSperre}) {
     # Sperre wurde abgefragt
-	knx_write($gs_raffstore->{gaSperre}, $gs_raffstore->{sperre});
+    knx_write($gs_raffstore->{gaSperre}, $gs_raffstore->{sperre});
    }
    if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gs_raffstore->{gaFensterStatus}) {
     if ($msg{'value'} == 0) {
      # Wird ein Fenster geöffnet, dann Raffstore nach oben und Automatik aus
-	 $gs_raffstore->{automatik} = AUTOMATIK_AUS;
-	 $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
-	 $gv_lamellePos = knx_read($gs_raffstore->{gaLamellePosRM}, 5.001);
-	 if ($gv_rolloPos != 0) {
-	  knx_write($gs_raffstore->{gaRolloPos}, 0, 5.001);
-	 }
-	 if ($gv_lamellePos != 0) {
-	  knx_write($gs_raffstore->{gaLamellePos}, 0, 5.001);
-	 }
-	} elsif ($msg{'value'} == 1) {
+     $gs_raffstore->{automatik} = AUTOMATIK_AUS;
+     $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
+     $gv_lamellePos = knx_read($gs_raffstore->{gaLamellePosRM}, 5.001);
+     if ($gv_rolloPos != 0) {
+      knx_write($gs_raffstore->{gaRolloPos}, 0, 5.001);
+     }
+     if ($gv_lamellePos != 0) {
+      knx_write($gs_raffstore->{gaLamellePos}, 0, 5.001);
+     }
+    } elsif ($msg{'value'} == 1) {
      # Wird ein Fenster geschlossen, dann Automatik aus
-	 $gs_raffstore->{automatik} = AUTOMATIK_EIN;
-	}
+     $gs_raffstore->{automatik} = AUTOMATIK_EIN;
+    }
    }
    $gt_raffstores[$gv_index] = $gs_raffstore;
   }
@@ -342,90 +341,90 @@ if ($gv_event eq EVENT_RESTART) {
        $gs_raffstore->{sperre} == SPERRE_INAKTIV and
        $gs_raffstore->{automatik} eq AUTOMATIK_EIN) {
 
-	# Automatik ist aktiv -> also mach nun deine Arbeit
-	if ($plugin_info{$plugname.'_beschattungFreigabe'} eq FREIGABE_AUS) {
-	 # Freigabe ist aufgrund der Helligkeit nicht notwendig -> Raffstore nach oben!
+    # Automatik ist aktiv -> also mach nun deine Arbeit
+    if ($plugin_info{$plugname.'_beschattungFreigabe'} eq FREIGABE_AUS) {
+     # Freigabe ist aufgrund der Helligkeit nicht notwendig -> Raffstore nach oben!
 
-	 # Aber nur, wenn es sich um den ersten Lauf nach Ende der Freigabe handelt!
-	 if ($plugin_info{$plugname.'_beschattungFreigabeOld'} eq FREIGABE_EIN) {
-	  # Raffstores hoch
-	  $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
-	  $gv_lamellePos = knx_read($gs_raffstore->{gaLamellePosRM}, 5.001);
-	  if ($gv_rolloPos != 0) {
-	   knx_write($gs_raffstore->{gaRolloPos}, 0, 5.001);
-	  }
-	  if ($gv_lamellePos != 0) {
-	   knx_write($gs_raffstore->{gaLamellePos}, 0, 5.001);
-	  }
-	 }
-	} else {
-	 if (exists($gs_raffstore->{ausrichtung})) {
-	  #Startwinkel berechnen
-	  $gv_startWinkel = $gs_raffstore->{ausrichtung} - 85;
-	  if ($gv_startWinkel < 0) {
-	   $gv_startWinkel = $gv_startWinkel + 360;
-	  }
-	  # Endwinkel berechnen
-	  $gv_endWinkel = $gs_raffstore->{ausrichtung} + 85;
-	  if ($gv_endWinkel > 360) {
-	   $gv_endWinkel = $gv_endWinkel - 360;
-	  }
-	 }
-	 if (exists($gs_raffstore->{startWinkel})) {
-	  $gv_startWinkel = $gs_raffstore->{startWinkel};
-	 }
-	 if (exists($gs_raffstore->{endWinkel})) {
-	  $gv_endWinkel = $gs_raffstore->{endWinkel};
-	 }
-	 # Aktuelle Sonnenposition verwenden um zu bestimmen, ob der Raffstore gerade beschattet werden muss
-	 if ($plugin_info{$plugname.'_azimuth'} >= $gv_startWinkel and
-	     $plugin_info{$plugname.'_azimuth'} <= $gv_endWinkel ) {
-	
-	  # Beschattung aufgrund der Ausrichtung
+     # Aber nur, wenn es sich um den ersten Lauf nach Ende der Freigabe handelt!
+     if ($plugin_info{$plugname.'_beschattungFreigabeOld'} eq FREIGABE_EIN) {
+      # Raffstores hoch
+      $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
+      $gv_lamellePos = knx_read($gs_raffstore->{gaLamellePosRM}, 5.001);
+      if ($gv_rolloPos != 0) {
+       knx_write($gs_raffstore->{gaRolloPos}, 0, 5.001);
+      }
+      if ($gv_lamellePos != 0) {
+       knx_write($gs_raffstore->{gaLamellePos}, 0, 5.001);
+      }
+     }
+    } else {
+     if (exists($gs_raffstore->{ausrichtung})) {
+      #Startwinkel berechnen
+      $gv_startWinkel = $gs_raffstore->{ausrichtung} - 85;
+      if ($gv_startWinkel < 0) {
+       $gv_startWinkel = $gv_startWinkel + 360;
+      }
+      # Endwinkel berechnen
+      $gv_endWinkel = $gs_raffstore->{ausrichtung} + 85;
+      if ($gv_endWinkel > 360) {
+       $gv_endWinkel = $gv_endWinkel - 360;
+      }
+     }
+     if (exists($gs_raffstore->{startWinkel})) {
+      $gv_startWinkel = $gs_raffstore->{startWinkel};
+     }
+     if (exists($gs_raffstore->{endWinkel})) {
+      $gv_endWinkel = $gs_raffstore->{endWinkel};
+     }
+     # Aktuelle Sonnenposition verwenden um zu bestimmen, ob der Raffstore gerade beschattet werden muss
+     if ($plugin_info{$plugname.'_azimuth'} >= $gv_startWinkel and
+         $plugin_info{$plugname.'_azimuth'} <= $gv_endWinkel ) {
+    
+      # Beschattung aufgrund der Ausrichtung
 
-	  # Raffstore runter
-	  $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
-	  $gv_lamellePos = knx_read($gs_raffstore->{gaLamellePosRM}, 5.001);
-	  if ($gv_rolloPos != 100) {
-	   knx_write($gs_raffstore->{gaRolloPos}, 100, 5.001);
-	  }
-	  
-	  # Lamellennachführung
-	  #$gv_lamellePosNeu = (90 - $plugin_info{$plugname.'_elevation'})/90*100;
-	  #if ($gv_lamellePos != $gv_lamellePosNeu) {
-	   #knx_write($gs_raffstore->{gaLamellePos}, 100, 5.001);
-	  #}
-	  
+      # Raffstore runter
+      $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
+      $gv_lamellePos = knx_read($gs_raffstore->{gaLamellePosRM}, 5.001);
+      if ($gv_rolloPos != $gs_raffstore->{rolloBeschattungspos}) {
+       knx_write($gs_raffstore->{gaRolloPos}, $gs_raffstore->{rolloBeschattungspos}, 5.001);
+      }
+      
+      # Lamellennachführung
+      #$gv_lamellePosNeu = (90 - $plugin_info{$plugname.'_elevation'})/90*100;
+      #if ($gv_lamellePos != $gv_lamellePosNeu) {
+       #knx_write($gs_raffstore->{gaLamellePos}, 100, 5.001);
+      #}
+      
       if ($gv_minuten % 5 == 0) {
-	   if ($gs_raffstore->{lamellenNachfuehrung} eq NACHF_AUS) {
-	    $gv_lamellePosNeu = 100;
-	   } else {
-	    $gv_lamellePosNeu = (90 - $plugin_info{$plugname.'_elevation'})/90*100;
-		# Faktor für die Abweichung der Sonne von der Ausrichtung des Fensters miteinbeziehen
-		$gv_lamellePosNeu = $gv_lamellePosNeu * (1 - (abs($plugin_info{$plugname.'_azimuth'} - $gs_raffstore->{ausrichtung}) * 0.01));
-		# Der Wert für den Lamellenwinkel muss immer zwischen 0 und 100 sein! Alles darüber hinaus wird fix auf 0 bzw. 100 gesetzt.
-		if ($gv_lamellePosNeu < 0) { $gv_lamellePosNeu = 0; }
-		if ($gv_lamellePosNeu > 100) { $gv_lamellePosNeu = 100; }
-	   }
-	   # Nicht wegen jeder Kleinigkeit gleich nachstellen, erst nach einer gewissen Mindeständerung.
-	   if (abs($gv_lamellePos - $gv_lamellePosNeu) > 2) {
-	    knx_write($gs_raffstore->{gaLamellePos},$gv_lamellePosNeu,5.001);
-	   }
-	  }
-	 } else {
-	  # Keine Beschattung aufgrund der Ausrichtung
+       if ($gs_raffstore->{lamellenNachfuehrung} eq NACHF_AUS) {
+        $gv_lamellePosNeu = 100;
+       } else {
+        $gv_lamellePosNeu = (90 - $plugin_info{$plugname.'_elevation'})/90*100;
+        # Faktor für die Abweichung der Sonne von der Ausrichtung des Fensters miteinbeziehen
+        $gv_lamellePosNeu = $gv_lamellePosNeu * (1 - (abs($plugin_info{$plugname.'_azimuth'} - $gs_raffstore->{ausrichtung}) * 0.01));
+        # Der Wert für den Lamellenwinkel muss immer zwischen 0 und 100 sein! Alles darüber hinaus wird fix auf 0 bzw. 100 gesetzt.
+        if ($gv_lamellePosNeu < 0) { $gv_lamellePosNeu = 0; }
+        if ($gv_lamellePosNeu > 100) { $gv_lamellePosNeu = 100; }
+       }
+       # Nicht wegen jeder Kleinigkeit gleich nachstellen, erst nach einer gewissen Mindeständerung.
+       if (abs($gv_lamellePos - $gv_lamellePosNeu) > 2) {
+        knx_write($gs_raffstore->{gaLamellePos},$gv_lamellePosNeu,5.001);
+       }
+      }
+     } else {
+      # Keine Beschattung aufgrund der Ausrichtung
 
-	  # Raffstore hoch
-	  $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
-	  $gv_lamellePos = knx_read($gs_raffstore->{gaLamellePosRM}, 5.001);
-	  if ($gv_rolloPos != 0) {
-	   knx_write($gs_raffstore->{gaRolloPos}, 0, 5.001);
-	  }
-	  if ($gv_lamellePos != 0) {
-	   knx_write($gs_raffstore->{gaLamellePos}, 0, 5.001);
-	  }
-	 }
-	}
+      # Raffstore hoch
+      $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
+      $gv_lamellePos = knx_read($gs_raffstore->{gaLamellePosRM}, 5.001);
+      if ($gv_rolloPos != 0) {
+       knx_write($gs_raffstore->{gaRolloPos}, 0, 5.001);
+      }
+      if ($gv_lamellePos != 0) {
+       knx_write($gs_raffstore->{gaLamellePos}, 0, 5.001);
+      }
+     }
+    }
    }
   }
  }
@@ -438,6 +437,8 @@ foreach $gs_raffstore (@gt_raffstores) {
 }
 $gv_raffstore_dyn = join(SEPARATOR1, @gt_raffstores_dyn);
 $plugin_info{$plugname.'_gt_raffstores_dyn'} = $gv_raffstore_dyn;
+
+return;
 
 
 ####################################################
