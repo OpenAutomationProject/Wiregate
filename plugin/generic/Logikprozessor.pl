@@ -27,7 +27,7 @@
 #    }
 #}
 
-# Tools und vorbesetzte Variablen fue die Logiken
+# Tools und vorbesetzte Variablen fur die Logiken
 sub limit { my ($lo,$x,$hi)=@_; return $x<$lo?$lo:($x>$hi?$hi:$x); }
 my $date=`/bin/date +"%W,%a,%u,%m,%d,%Y,%j,%H,%M,%X"`;
 plugin_log($plugname, "Datum/Uhrzeit konnte nicht lesbar.") unless $date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/;
@@ -53,6 +53,7 @@ my $date=sprintf("%02d/%02d",$month,$day_of_month);
 # Konfigurationsfile einlesen
 my $eibd_backend_address='1.1.254';
 my %logic=();
+my %settings=();
 my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
 $conf.='.conf' unless $conf=~s/\.pl$/.conf/;
 open FILE, "<$conf" || return "no config found";
@@ -119,6 +120,14 @@ if($event=~/restart|modified/ || $config_modified)
 	{
 	    plugin_log($plugname, "Config err: \$logic{$t}{state} ist weder Skalar noch HASH-Referenz ({...}).");
 	    next;
+	}
+
+	if(defined $logic{$t}{prowl} && ref $logic{$t}{prowl} 
+                && ! ((ref $logic{$t}{prowl} eq 'HASH') || (ref $logic{$t}{prowl} eq 'CODE')))
+	{
+	    plugin_log($plugname, "Config err: \$logic{$t}{prowl} ist weder Skalar noch "
+                    . "HASH-Referenz ({...}) noch CODE-Referenz (sub {...})." . (ref $logic{$t}{prowl}));
+	    next; 
 	}
 
 	if(defined $logic{$t}{timer} && defined $logic{$t}{delay})
@@ -700,6 +709,9 @@ sub execute_logic
     my ($t, $receive, $ga, $in)=@_; # Logikindex $t, Bustelegramm erhalten auf $ga mit Inhalt $in
     # $receive muss die direkten Gruppenadressen enthalten - Decodierung von Kuerzeln wird nicht vorgenommen
 
+	# Debuggingflag gesetzt
+	my $debug = $logic{debug} || $logic{$t}{debug}; 
+    
     # als erstes definiere das Input-Array fuer die Logik
     my $input=$in;
 
@@ -729,11 +741,15 @@ sub execute_logic
     # ab hier liegt $input komplett vor, und nun muss die Logik ausgewertet 
     # und das Resultat auf der Transmit-GA uebertragen werden
     my $result=undef;
+    my %prowlContext=();
     
     unless(ref $logic{$t}{translate}) 
     {
 	# Trivialer Fall: translate enthaelt einen fixen Rueckgabewert
 	$plugin_info{$plugname.'_'.$t.'_result'}=$result=$logic{$t}{translate};
+	# prowlContext befüllen
+	$prowlContext{result}=$result;
+	$prowlContext{input}=$input;
     }
     elsif(!ref $logic{$t}{state})
     {
@@ -744,6 +760,11 @@ sub execute_logic
 	# Funktionsaufruf, das Ergebnis vom letzten Mal steht in $state
 	$result=$logic{$t}{translate}($state,$input);
 	
+	# prowlContext befüllen
+	$prowlContext{result}=$result;
+	$prowlContext{state}=$state;
+	$prowlContext{input}=$input;
+
 	# Ergebnis des letzten Aufrufs zurueckschreiben
 	if(defined $result)
 	{
@@ -769,6 +790,11 @@ sub execute_logic
 	
 	# Funktionsaufruf, das Ergebnis vom letzten Mal steht in $state->{result}
 	$result=$state->{result}=$logic{$t}{translate}($state,$input);
+
+	# prowlContext befüllen
+	$prowlContext{result}=$result;
+	$prowlContext{state}=$state;
+	$prowlContext{input}=$input;
 	
 	# Alle dynamischen Variablen wieder nach plugin_info schreiben
 	# Damit plugin_info nicht durch Konfigurationsfehler vollgemuellt wird, 
@@ -786,6 +812,30 @@ sub execute_logic
 		delete $plugin_info{$plugname.'_'.$t.'_'.$v};
 	    }
 	}
+    }
+    
+    # Prowl-Nachrichten senden, falls definiert
+    if(defined $logic{$t}{prowl})
+    {
+        my %prowlParametersSource;
+        if (ref $logic{$t}{prowl}) {
+            %prowlParametersSource = %{$logic{$t}{prowl}} if (ref $logic{$t}{prowl} eq 'HASH');
+            %prowlParametersSource = $logic{$t}{prowl}(%prowlContext) if (ref $logic{$t}{prowl} eq 'CODE');
+        }
+        else 
+        {
+            %prowlParametersSource = ( event => $logic{$t}{prowl} );
+        }
+        
+        sendProwl((
+                debug => $debug,
+                priority => $prowlParametersSource{priority} || $settings{prowl}{priority},
+                event => $prowlParametersSource{event} || $settings{prowl}{event},
+                description => $prowlParametersSource{description} || $settings{prowl}{description},
+                application => $prowlParametersSource{application} || $settings{prowl}{application},
+                url => $prowlParametersSource{url} || $settings{prowl}{url},
+                apikey => $prowlParametersSource{url} || $settings{prowl}{apikey}
+            ));
     }
 
     return $result;
@@ -826,5 +876,57 @@ sub groupaddress
 
 	return $ga;
     }
+}
+
+sub sendProwl {
+    my (%parameters)=@_;
+    my ($priority, $event, $description, $application, $url, $apikey);
+    
+    # Parameter ermitteln
+    $priority = $parameters{priority} || 0;
+    $event = $parameters{event} || '[unbenanntes Ereignis]';
+    $description = $parameters{description} || '';
+    $application = $parameters{application} || 'WireGate KNX';
+    $url = $parameters{url} || '';
+    $apikey = $parameters{apikey} || '';
+    
+    use LWP::UserAgent;
+    use URI::Escape;
+ 
+    # Falls nur ein einziger skalarer API key geliefert wurde, muss dieser in 
+    # ein Array gehüllt werden
+    if(ref $apikey ne 'ARRAY') {
+        $apikey = [$apikey];
+    }
+
+    # Nachricht senden an jeden API key
+    for my $singleApikey (@{$apikey}) {
+        # HTTP Request aufsetzen
+        my ($userAgent, $request, $response, $requestURL);
+        $userAgent = LWP::UserAgent->new;
+        $userAgent->agent("WireGatePlugin/1.0");
+
+        $requestURL = sprintf("https://prowl.weks.net/publicapi/add?apikey=%s&application=%s&event=%s&description=%s&priority=%d&url=%s",
+      	    uri_escape($singleApikey),
+    	    uri_escape($application),
+    	    uri_escape($event),
+    	    uri_escape($description),
+    	    uri_escape($priority),
+    	    uri_escape($url));
+  
+        $request = HTTP::Request->new(GET => $requestURL);
+        #$request->timeout(5);
+
+        $response = $userAgent->request($request);
+  
+        if ($response->is_success) {
+   	    plugin_log($plugname, "Prowl-Nachricht erfolgreich abgesetzt: $priority, $event, $description, $application") if $parameters{debug};
+        } elsif ($response->code == 401) {
+   	    plugin_log($plugname, "Prowl-Nachricht nicht abgesetzt: API key gültig?");
+        } else {
+   	    plugin_log($plugname, "Prowl-Nachricht nicht abgesetzt: " . $response->content);
+        }
+    }
+    return undef;
 }
 
