@@ -60,6 +60,7 @@ open FILE, "<$conf" || return "no config found";
 $/=undef;
 my $lines = <FILE>;
 $lines =~ s/((?:translate|\'translate\'|\"translate\")\s*=>\s*sub\s*\{)/$1 my \(\$state,\$input\)=\@\_;/sg; 
+$lines =~ s/((?:prowl|\'prowl\'|\"prowl\")\s*=>\s*sub\s*\{)/$1 my \(\%context\)=\@\_;my \(\$input,\$state,\$result\)=\(\$context{input},\$context{state},\$context{result}\);/sg; 
 close FILE;
 eval($lines);
 return "config error: $@" if $@;
@@ -67,7 +68,7 @@ return "config error: $@" if $@;
 # Aufrufgrund ermitteln
 my $event=undef;
 if (!$plugin_initflag) 
-{ $event='restart'; } # Restart des daemons / Reboot
+{ $event='restart'; } # Restart des daemons / Reboot 
 elsif ($plugin_info{$plugname.'_lastsaved'} > $plugin_info{$plugname.'_last'})
 { $event='modified'; } # Plugin modifiziert
 elsif (%msg) { $event='bus'; } # Bustraffic
