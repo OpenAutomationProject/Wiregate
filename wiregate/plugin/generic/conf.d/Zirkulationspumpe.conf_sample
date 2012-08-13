@@ -1,0 +1,60 @@
+###Ansteuerung einer Zirkulationspumpe
+
+#Die Pumpe wird im PWM-Modus betrieben, also innerhalb der eingestellten Zykluszeit (base_time)
+#fuer X-Prozent (on_perc) einmal eingeschalten.
+#Weiterhin erfolgt die Zuschaltug nur im angegebenen Zeitfenster (start/end) und 
+#bei Anwesenheit (praesenz_ga = 1).
+#Bei der Warmwasserbereitung wird die die Zirkulationspumpe dauerhaft eingeschaltet 
+#um auch das Wasser in der Leitung mit zu erwärmen. 
+#Dafuer muss die Signalisierung der Warmwasserbereitung 
+#ueber die GA (ww_ga) mit einem einstellbaren Wert (ww_ga_val) erfolgen.
+#
+# $zirk_ga      ->  Gruppenadresse der Zirkulationspumpe
+#                   Aktor muss bei 0 ausschalten und bei 1 anschalten
+#                   DPT sollte im WG hinterlegt sein bzw. DPT 1.001
+#
+# $praesenz_ga  ->  Gruppenasdresse welche zyklisch die Anwesenheit sendet
+#                   0 = Abwesend   1 = Anwesend
+#                   DPT sollte im WG hinterlegt sein bzw. DPT 1.001
+#
+# $start        ->  Uhrzeit zum Start der Zirkulationsbereitschaft
+#                   Format: 'hh:mm'
+#
+# $end          ->  Uhrzeit zum Ende der Zirkulationsbereitschaft
+#                   Format: 'hh:mm'
+#
+# $base_time    ->  Zykluszeit des PWM-Modus in Minuten
+#                   Bei z.B. 60 Minuten Zykluszeit und 50 % Einschaltdauer ($on_perc)
+#                   wird die Pumpe 30 Minuten angeschalten und 30 Minuten ausgeschalten
+#                   Bei z.B. 30 Minuten Zykluszeit und 50 % Einschaltdauer ($on_perc)
+#                   wird die Pumpe 15 Minuten angeschalten und 15 Minuten ausgeschalten
+#
+# $on_perc      ->  Anschaltzeit des PWM-Modus in Prozent
+#                   Bei z.B. 60 Minuten Zykluszeit ($base_time) und 25 % Einschaltdauer
+#                   wird die Pumpe 15 Minuten angeschalten und 45 Minuten ausgeschalten
+#                   Bei z.B. 30 Minuten Zykluszeit ($base_time) und 10 % Einschaltdauer
+#                   wird die Pumpe 3 Minuten angeschalten und 27 Minuten ausgeschalten
+#
+# $ww_ga        ->  Gruppenasdresse welche den Status der Warmwasserbereitung der Heizung sendet
+#                   DPT muss im WG hinterlegt sein !!!
+#                   Die Heizung oder eine Logik muss Ihren Status auf den Bus senden der Wert fuer die
+#                   W-Bereitung wird in $ww_ga_val eingetragen
+#                   ueber einen Binaereingang lassen sich z.B. auch Waermepumpen ohne KNX-Anbindung auswerten
+#                   Beispiel: BE1 = Kompressor, BE2 = Umschaltventil (Heizen/WW), BE3 = Solepumpe
+#                   externe Logik: WENN Kompressor = "an" UND Umschaltventil = "WW" UND Solepumpe = "an" DANN Sende WW=1
+#
+# $ww_ga_val    ->  Wert der von der Heizung oder Logik bei WW-Bereitung gesendet wird
+#                   DPT sollte im WG hinterlegt sein bzw. DPT 1.001
+
+### VARIABLEN DIE DEFINIERT WERDEN MueSSEN ###
+
+$zirk_ga = '0/5/5';         #GA Zirkulationspumpe
+$praesenz_ga = '0/7/0';     #GA fuer Meldung der Praesenz
+$start = '7:00';	    #Startzeit Zirkulationsbereitschaft
+$end = '22:30';	            #Endzeit Zirkulationsbereitschaft
+$base_time = 30; 	    #Zykuluszeit in Minuten
+$on_perc = 15;	            #Einschaltdauer in Prozent
+$ww_ga = '0/5/0';           #GA fuer Statusuebertragung Heizung
+$ww_ga_val = '2';           #Wert fuer WW-Bereitung von GA
+
+### ENDE ###

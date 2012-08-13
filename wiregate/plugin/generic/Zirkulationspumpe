@@ -1,0 +1,168 @@
+###Zirkulationspumpe
+#v0.1 2012-07-29
+#JuMi2006 - > http://knx-user-forum.de
+
+### MAIN ### 
+# Variablen definieren
+my $time = time();
+my $ww;
+my($zirk_ga,$praesenz_ga,$start,$end,$base_time,$on_perc,$ww_ga,$ww_ga_val);
+&readConf;
+
+$plugin_subscribe{$ww_ga}{$plugname} = 1;
+$plugin_info{$plugname.'_cycle'} = 60;
+
+### CHECK PRAESENZ
+my $praesenz = knx_read($praesenz_ga,300);
+
+### CHECK ZEITFENSTER
+my $allowtime = &check_time;
+
+### CHECK WARMWASSERBEREITUNG
+if (knx_read($ww_ga,300) == $ww_ga_val)
+{
+my $ww = 1;
+}else{}
+
+### MAIN / VERARBEITUNG
+if ($ww == 1)
+    {
+    #Zirkulation waehrend WW-Bereitung
+    knx_write($zirk_ga,1,1.001);
+    }
+        else
+            {
+            if ($praesenz == 1 and
+                $allowtime == 1)
+                {
+                #PWM Zirkulation wenn Anwesenheit, im Zeitfenster und keine WW-Bereitung
+                & pwm;
+                }else{
+                    #Kein Zirkulation wenn Abwesenheit, ausserhalb Zeitfenster und keine WW-Bereitung
+                    knx_write($zirk_ga,0,1.001);
+                    }
+            }
+return;
+#-------------S U B S -------------#
+
+### ZEITABFRAGE ###
+sub check_time{
+use Time::Local;
+my ($sec, $min, $hour, $day, $mon, $year, $wday, $yday) = localtime();
+my ($sh,$sm,$eh,$em);
+my $allowtime = ();
+if ($start =~/(\w{1,})\:(\w{1,})/)
+{
+$sh = $1;
+$sm = $2;
+}
+if ($end =~/(\w{1,})\:(\w{1,})/)
+{
+$eh = $1;
+$em = $2;
+}
+my $su = timelocal (0,$sm,$sh,$day,$mon,$year); #Start-Zeit in Unixzeit
+my $eu = timelocal (0,$em,$eh,$day,$mon,$year); #End-Zeit in Unixzeit
+
+my $time = time ();
+##Startzeit vor Endzeit z.B. 14-18 Uhr
+	if ($sh <= $eh) #Startzeit vor Endzeit z.B. 14-18 Uhr
+	{
+        if ($time < $eu && $time > $su)
+	{
+	$allowtime = 1;
+	}else{}
+	if ($sm > $em && $sh == $eh) 
+	{
+        $allowtime = 1;
+	}else{}
+	}
+##Startzeit nach Endzeit z.B. 18-7 Uhr
+	if ($sh > $eh) #Startzeit nach Endzeit z.B. 18-7 Uhr
+	{
+	if ($time > $su)
+	{
+        $allowtime = 1;
+	}else{}	
+	if ($time < $eu)
+	{
+        $allowtime = 1;
+	}else{}
+	}
+return $allowtime;
+}
+
+### PWM ###
+sub pwm{
+
+my $on_time = (($base_time/100)*$on_perc);
+my $off_time = ($base_time - $on_time);
+    
+$on_time *= 60;     #Minuten in Sekunden umrechnen
+$off_time *= 60;    #Minuten in Sekunden umrechnen
+
+
+if ($plugin_info{$plugname.'_state'} eq 'pwm-off')                #status = aus
+{
+    if  (($plugin_info{$plugname.'_stat-time'} + $off_time) <= $time) #zyklus aus ist vorbei
+    {
+    #ANSCHALTEN
+    knx_write($zirk_ga,1,1.001);
+    #STATUS = EIN setzen
+    $plugin_info{$plugname.'_state'} = 'pwm-on';
+    #ANZEIT = jetzt
+    $plugin_info{$plugname.'_stat-time'} = $time;
+    } else {}
+} else {}
+
+
+if ($plugin_info{$plugname.'_state'} eq 'pwm-on')                #status = an
+{
+    if  (($plugin_info{$plugname.'_stat-time'} + $on_time) <= $time) #zyklus an ist vorbei
+    {
+    #AUSCHALTEN
+    knx_write($zirk_ga,0,1.001);
+    #STATUS = AUS setzen
+    $plugin_info{$plugname.'_state'} = 'pwm-off';
+    #AUSZEIT = JETZT
+    $plugin_info{$plugname.'_stat-time'} = $time; 
+    } else {}
+} else {}
+
+if (
+    ($plugin_info{$plugname.'_stat-time'} + $on_time + $off_time) <= $time)
+{
+    #ANSCHALTEN
+    knx_write($zirk_ga,1,1.001);
+    #STATUS = EIN setzen
+    $plugin_info{$plugname.'_state'} = 'pwm-on';
+    #ANZEIT = jetzt
+    $plugin_info{$plugname.'_stat-time'} = $time;
+    plugin_log($plugname, "INITIALISIERUNG nach Abwesenheit");
+} else {}
+}
+
+### READ CONF ###
+sub readConf
+{
+    my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
+    if (! -f $confFile)
+    {
+        plugin_log($plugname, "no conf file [$confFile] found."); 
+    }
+    else
+    {
+        #plugin_log($plugname, "reading conf file [$confFile]."); 
+        open(CONF, $confFile);
+        my @lines = <CONF>;
+        close($confFile);
+        my $result = eval("@lines");
+        #($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+        if ($@) 
+        {
+            #plugin_log($plugname, "ERR: conf file [$confFile] returned:");
+            my @parts = split(/\n/, $@);
+            #plugin_log($plugname, "--> $_") foreach (@parts);
+        }
+    }
+}
