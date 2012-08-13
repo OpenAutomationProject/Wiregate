@@ -1,0 +1,16 @@
+#return;
+#$plugin_info{$plugname.'_cycle'} = 0;
+# Nachts Licht nur gedimmt einschalten.
+# Plugin hört auf GA des Ein-Befehles und schickt Dimmwert hinterher.
+# V1.0 2012-07-20
+# Minutengenaues dimmen möglich
+# JuMi2006 -> knx-user-forum.de
+
+### Definitionen 
+### Hier werden die Werte/Gruppenadressen definiert
+$lichtein_ga = "1/2/20";  	# Gruppenadresse Licht Ein/Aus
+$lichtdim_ga  = "1/2/23";   # Gruppenadresse Licht Dimmwert
+$dimvalue = 15;   			# Dimmwert
+$start = "22:00";   		# Stunde, ab der gedimmt werden soll
+$end = "6:30";   			# Stunde, ab der nicht mehr gedimmt werden soll
+### Ende Definitionen
