@@ -1,33 +1,108 @@
+#return;
+#$plugin_info{$plugname.'_cycle'} = 0;
 # Nachts Licht nur gedimmt einschalten.
-# Plugin hÃ¶rt auf GA des Ein-Befehles und schickt Dimmwert hinterher.
-# V0.6 2012-07-02 removed wrong formated signs
+# Plugin hört auf GA des Ein-Befehles und schickt Dimmwert hinterher.
+# V1.0 2012-07-20 
+# Minutengenaues dimmen möglich
+# JuMi2006 -> knx-user-forum.de
 
-### Definitionen 
-### Hier werden die Werte/Gruppenadressen definiert
-my $lichtein_ga = "1/1/11";  # Gruppenadresse Licht Ein/Aus
-my $lichtdim_ga  = "1/3/65";   # Gruppenadresse Licht Dimmwert
-my $dimvalue = 25;   # Dimmwert
-my $starthour = 21;   # Stunde, ab der gedimmt werden soll z.B. 21:00
-my $endhour = 7;   # Stunde, ab der nicht mehr gedimmt werden soll z.B. bis 6:59 Uhr
-### Ende Definitionen
+### Variablen Einlesen/Deklarieren
 
-# Eigenen Aufruf-Zyklus auf 1x tÃ¤glich setzen, hÃ¶rt ja auf GA
+use Time::Local;
+my ($sec, $min, $hour, $day, $mon, $year, $wday, $yday) = localtime();
+my $now = sprintf ("%02d:%02d",$hour,$min);
+my ($lichtein_ga,$lichtdim_ga,$dimvalue,$start,$end);
+my ($sh,$sm,$eh,$em);
+&readConf;
+
+# Eigenen Aufruf-Zyklus auf 1x täglich setzen, hört ja auf GA
 $plugin_info{$plugname.'_cycle'} = 86400;
-
 # Plugin an Gruppenadresse "anmelden"
 $plugin_subscribe{$lichtein_ga}{$plugname} = 1;
 
-# Nur bei einer gesendeten 1 reagieren
-if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $lichtein_ga && defined $msg{'value'} && $msg{'value'} == "1" ) {
-    # Aktuelle Stunde
-    my $crthour = 'date \"+%H\"';
-    # Wenn innerhalb des Zeitraumes
-    if ($crthour >= $starthour || $crthour <$endhour) {
-        knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
-        #return "Gedimmt";
-    }
+if ($start =~/(\w{1,})\:(\w{1,})/)
+{
+$sh = $1;
+$sm = $2;
 }
 
-# Kein Log
-return 0;
+if ($end =~/(\w{1,})\:(\w{1,})/)
+{
+$eh = $1;
+$em = $2;
+}
 
+my $su = timelocal (0,$sm,$sh,$day,$mon,$year); #Start-Zeit in Unixzeit
+my $eu = timelocal (0,$em,$eh,$day,$mon,$year); #End-Zeit in Unixzeit
+
+my $time = time ();
+
+if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $lichtein_ga && $msg{'value'} == '1' ) {
+
+###Startzeit vor Endzeit z.B. 14-18 Uhr
+	if ($sh <= $eh) ###Startzeit vor Endzeit z.B. 14-18 Uhr
+	{
+	
+	if ($time < $eu && $time > $su)
+	{
+	#DIMMEN
+	knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
+	return "Gedimmt $now Uhr";
+	}else{}
+	
+	if ($sm > $em && $sh == $eh) 
+	{
+	#DIMMEN
+	knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
+	return "Gedimmt $now Uhr";
+	}else{}
+	
+	}
+
+### Startzeit nach Endzeit z.B. 18-7 Uhr
+	if ($sh > $eh) ### Startzeit nach Endzeit z.B. 18-7 Uhr
+	{
+	
+	if ($time > $su)
+	{
+	#DIMMEN
+	knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
+	return "Gedimmt $now Uhr";
+	}else{}
+	
+	if ($time < $eu)
+	{
+	#DIMMEN
+	knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
+	return "Gedimmt $now Uhr";
+	}else{}
+	
+	}
+
+}
+return;
+
+### READ CONF ###
+sub readConf
+{
+    my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
+    if (! -f $confFile)
+    {
+        plugin_log($plugname, "no conf file [$confFile] found."); 
+    }
+    else
+    {
+        #plugin_log($plugname, "reading conf file [$confFile]."); 
+        open(CONF, $confFile);
+        my @lines = <CONF>;
+        close($confFile);
+        my $result = eval("@lines");
+        #($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+        if ($@) 
+        {
+            plugin_log($plugname, "ERR: conf file [$confFile] returned:");
+            my @parts = split(/\n/, $@);
+            plugin_log($plugname, "--> $_") foreach (@parts);
+        }
+    }
+}
