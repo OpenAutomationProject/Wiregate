@@ -4,7 +4,8 @@
 # Plugin hört auf GA des Ein-Befehles und schickt Dimmwert hinterher.
 # V1.0 2012-07-20 
 # Minutengenaues dimmen möglich
-# JuMi2006 -> knx-user-forum.de
+# Auslagerung der Konfiguration in .conf file /etc/wiregate/plugin/generic/conf.d
+# update: JuMi2006 -> knx-user-forum.de
 
 ### Variablen Einlesen/Deklarieren
 
