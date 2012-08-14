@@ -6,6 +6,10 @@
 # Auslagerung der Konfiguration in .conf file /etc/wiregate/plugin/generic/conf.d
 # update: JuMi2006 -> knx-user-forum.de
 
+# Updates:
+# 20120814, mclb
+# - Umbau auf Liste von Hashes, damit das Plugin auch für mehrere Lichter funktioniert.
+
 ### Variablen Einlesen/Deklarieren
 
 use Time::Local;
@@ -13,96 +17,87 @@ my ($sec, $min, $hour, $day, $mon, $year, $wday, $yday) = localtime();
 my $now = sprintf ("%02d:%02d",$hour,$min);
 my ($lichtein_ga,$lichtdim_ga,$dimvalue,$start,$end);
 my ($sh,$sm,$eh,$em);
+my {$su, $eu, $time};
+my $debug = 0;
+my @lichter;
 &readConf;
 
 # Eigenen Aufruf-Zyklus auf 1x täglich setzen, hört ja auf GA
 $plugin_info{$plugname.'_cycle'} = 86400;
 # Plugin an Gruppenadresse "anmelden"
-$plugin_subscribe{$lichtein_ga}{$plugname} = 1;
-
-if ($start =~/(\w{1,})\:(\w{1,})/)
-{
-$sh = $1;
-$sm = $2;
+foreach $licht (@lichter) {
+ $plugin_subscribe{$licht->{gaEin}}{$plugname} = 1;
 }
 
-if ($end =~/(\w{1,})\:(\w{1,})/)
-{
-$eh = $1;
-$em = $2;
-}
+# Zeit nur einmal berechnen
+$time = time ();
 
-my $su = timelocal (0,$sm,$sh,$day,$mon,$year); #Start-Zeit in Unixzeit
-my $eu = timelocal (0,$em,$eh,$day,$mon,$year); #End-Zeit in Unixzeit
+foreach $licht (@lichter) {
+ if ($licht->{start} =~/(\w{1,})\:(\w{1,})/) {
+  $sh = $1;
+  $sm = $2;
+ }
+ 
+ if ($licht->{end} =~/(\w{1,})\:(\w{1,})/) {
+  $eh = $1;
+  $em = $2;
+ }
 
-my $time = time ();
+ $su = timelocal (0,$sm,$sh,$day,$mon,$year); #Start-Zeit in Unixzeit
+ $eu = timelocal (0,$em,$eh,$day,$mon,$year); #End-Zeit in Unixzeit
 
-if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $lichtein_ga && $msg{'value'} == '1' ) {
+ if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $licht->{gaEin} && $msg{'value'} == '1' ) {
 
 ###Startzeit vor Endzeit z.B. 14-18 Uhr
-	if ($sh <= $eh) ###Startzeit vor Endzeit z.B. 14-18 Uhr
-	{
-	
-	if ($time < $eu && $time > $su)
-	{
+  if ($sh <= $eh) { ###Startzeit vor Endzeit z.B. 14-18 Uhr
+   if ($time < $eu && $time > $su) {
 	#DIMMEN
-	knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
-	return "Gedimmt $now Uhr";
-	}else{}
+	knx_write($licht->{gaDimm},$licht->{valueDimm},5); # Dimmwert senden
+	if ($debug == 1) { plugin_log($plugname,"Gedimmt $now Uhr"); }
+   }
 	
-	if ($sm > $em && $sh == $eh) 
-	{
+   if ($sm > $em && $sh == $eh) {
 	#DIMMEN
-	knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
-	return "Gedimmt $now Uhr";
-	}else{}
-	
-	}
+	knx_write($licht->{gaDimm},$licht->{valueDimm},5); # Dimmwert senden
+	if ($debug == 1) { plugin_log($plugname,"Gedimmt $now Uhr"); }
+   }
+  }
 
 ### Startzeit nach Endzeit z.B. 18-7 Uhr
-	if ($sh > $eh) ### Startzeit nach Endzeit z.B. 18-7 Uhr
-	{
-	
-	if ($time > $su)
-	{
+  if ($sh > $eh) { ### Startzeit nach Endzeit z.B. 18-7 Uhr
+   if ($time > $su) {
 	#DIMMEN
-	knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
-	return "Gedimmt $now Uhr";
-	}else{}
-	
-	if ($time < $eu)
-	{
-	#DIMMEN
-	knx_write($lichtdim_ga,$dimvalue,5); # Dimmwert senden
-	return "Gedimmt $now Uhr";
-	}else{}
-	
-	}
+	knx_write($licht->{gaDimm},$licht->{valueDimm},5); # Dimmwert senden
+	if ($debug == 1) { plugin_log($plugname,"Gedimmt $now Uhr"); }
+   }
 
+   if ($time < $eu) {
+    #DIMMEN
+	knx_write($licht->{gaDimm},$licht->{valueDimm},5); # Dimmwert senden
+	if ($debug == 1) { plugin_log($plugname,"Gedimmt $now Uhr"); }
+   }
+  }
+ }
 }
 return;
 
 ### READ CONF ###
 sub readConf
 {
-    my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
-    if (! -f $confFile)
-    {
-        plugin_log($plugname, "no conf file [$confFile] found."); 
-    }
-    else
-    {
-        #plugin_log($plugname, "reading conf file [$confFile]."); 
-        open(CONF, $confFile);
-        my @lines = <CONF>;
-        close($confFile);
-        my $result = eval("@lines");
-        #($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
-        if ($@) 
-        {
-            plugin_log($plugname, "ERR: conf file [$confFile] returned:");
-            my @parts = split(/\n/, $@);
-            plugin_log($plugname, "--> $_") foreach (@parts);
-        }
-    }
+ my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
+ if (! -f $confFile) {
+  plugin_log($plugname, "no conf file [$confFile] found."); 
+ } else {
+  #plugin_log($plugname, "reading conf file [$confFile]."); 
+  open(CONF, $confFile);
+  my @lines = <CONF>;
+  close($confFile);
+  my $result = eval("@lines");
+  #($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+  if ($@) {
+   plugin_log($plugname, "ERR: conf file [$confFile] returned:");
+   my @parts = split(/\n/, $@);
+   plugin_log($plugname, "--> $_") foreach (@parts);
+  }
+ }
 }
