@@ -1,7 +1,6 @@
-#return;
-#$plugin_info{$plugname.'_cycle'} = 0;
 # Nachts Licht nur gedimmt einschalten.
 # Plugin hört auf GA des Ein-Befehles und schickt Dimmwert hinterher.
+# Autor: kleinklausi -> knx-user-forum.de
 # V1.0 2012-07-20 
 # Minutengenaues dimmen möglich
 # Auslagerung der Konfiguration in .conf file /etc/wiregate/plugin/generic/conf.d
