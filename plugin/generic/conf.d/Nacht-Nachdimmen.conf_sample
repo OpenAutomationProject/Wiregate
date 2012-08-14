@@ -6,11 +6,18 @@
 # Auslagerung der Konfiguration in .conf file /etc/wiregate/plugin/generic/conf.d
 # JuMi2006 -> knx-user-forum.de
 
+# Updates:
+# 20120814, mclb
+# - Umbau auf Liste von Hashes, damit das Plugin auch für mehrere Lichter funktioniert.
+
 ### Definitionen 
 ### Hier werden die Werte/Gruppenadressen definiert
-$lichtein_ga = "1/2/20";  	# Gruppenadresse Licht Ein/Aus
-$lichtdim_ga  = "1/2/23";   # Gruppenadresse Licht Dimmwert
-$dimvalue = 15;   			# Dimmwert
-$start = "22:00";   		# Stunde, ab der gedimmt werden soll
-$end = "6:30";   			# Stunde, ab der nicht mehr gedimmt werden soll
+$debug = 1;
+# gaEin:     Gruppenadresse Licht Ein/Aus
+# gaDimm:    Gruppenadresse Licht Dimmwert
+# valueDimm: Dimmwert
+# start:     Zeitpunkt, ab dem gedimmt werden soll (Format: hh:mm)
+# end:       Zeitpunkt, ab dem nicht mehr gedimmt werden soll (Format: hh:mm)
+push @lichter, { gaEin => "1/2/20", gaDimm => "1/2/23", valueDimm => 15, start => "22:00", end => "6:30" };
 ### Ende Definitionen
+
