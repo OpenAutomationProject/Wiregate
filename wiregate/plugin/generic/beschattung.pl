@@ -84,8 +84,6 @@ use constant SEPARATOR2 => '->';
 my $gv_lat;
 my $gv_lon;
 my $gv_elev;
-my $gv_gaHelligkeit;
-my $gv_gaSperre;
 my $gv_helligkeit;
 my $gv_azimuth;
 my $gv_elevation;
@@ -93,7 +91,6 @@ my $gv_beschattungEin;
 my $gv_zeitpunkt;
 my $gv_zeitdifferenz;
 my $gs_raffstore;
-my @gt_raffstores;
 my $gv_raffstore_dyn;
 my @gt_raffstores_dyn;
 my $gv_id;
@@ -117,18 +114,18 @@ my $gv_wochentag;
 my $gv_jahrestag;
 my $gv_sommerzeit;
 
-my $show_debug; # switches debug information that will be shown in the log
-
-
-#########################################################################################
-# Ab hier beginnt das Programm -> Sollte im Idealfall nicht mehr verändert werden müssen
-#########################################################################################
+# Definition und Initialisierung der konfigurierbaren Werte
+my $show_debug = 1; # switches debug information that will be shown in the log
+my $gv_gaHelligkeit = "";
+my $gv_gaSperre = "";
+my @gt_raffstores;
 
 # Read config file in conf.d
 my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
 if (! -f $confFile)
 {
   plugin_log($plugname, " no conf file [$confFile] found."); 
+  return "no conf file [$confFile] found.";
 }
 else
 {
