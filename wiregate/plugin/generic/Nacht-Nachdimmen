@@ -33,6 +33,8 @@ foreach my $licht (@lichter) {
 $time = time ();
 
 foreach my $licht (@lichter) {
+if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $licht->{gaEin} && $msg{'value'} == '1' ){
+ 
  if ($licht->{start} =~/(\w{1,})\:(\w{1,})/) {
   $sh = $1;
   $sm = $2;
@@ -43,10 +45,8 @@ foreach my $licht (@lichter) {
   $em = $2;
  }
 
- $su = timelocal (0,$sm,$sh,$day,$mon,$year); #Start-Zeit in Unixzeit
- $eu = timelocal (0,$em,$eh,$day,$mon,$year); #End-Zeit in Unixzeit
-
- if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $licht->{gaEin} && $msg{'value'} == '1' ) {
+$su = timelocal (0,$sm,$sh,$day,$mon,$year); #Start-Zeit in Unixzeit
+$eu = timelocal (0,$em,$eh,$day,$mon,$year); #End-Zeit in Unixzeit
 
 ###Startzeit vor Endzeit z.B. 14-18 Uhr
   if ($sh <= $eh) { ###Startzeit vor Endzeit z.B. 14-18 Uhr
