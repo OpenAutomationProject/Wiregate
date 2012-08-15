@@ -1,14 +1,15 @@
 # Nachts Licht nur gedimmt einschalten.
-# Plugin hört auf GA des Ein-Befehles und schickt Dimmwert hinterher.
+# Plugin hoert auf GA des Ein-Befehles und schickt Dimmwert hinterher.
 # Autor: kleinklausi -> knx-user-forum.de
+
 # V1.0 2012-07-20
-# Minutengenaues dimmen möglich
+# Minutengenaues dimmen m?glich
 # Auslagerung der Konfiguration in .conf file /etc/wiregate/plugin/generic/conf.d
 # JuMi2006 -> knx-user-forum.de
 
 # Updates:
-# 20120814, mclb
-# - Umbau auf Liste von Hashes, damit das Plugin auch für mehrere Lichter funktioniert.
+# 20120814, mclb -> knx-user-forum.de
+# - Umbau auf Liste von Hashes, damit das Plugin auch fuer mehrere Lichter funktioniert.
 
 ### Definitionen 
 ### Hier werden die Werte/Gruppenadressen definiert
@@ -18,6 +19,10 @@ $debug = 1;
 # valueDimm: Dimmwert
 # start:     Zeitpunkt, ab dem gedimmt werden soll (Format: hh:mm)
 # end:       Zeitpunkt, ab dem nicht mehr gedimmt werden soll (Format: hh:mm)
-push @lichter, { gaEin => "1/2/20", gaDimm => "1/2/23", valueDimm => 15, start => "22:00", end => "6:30" };
-### Ende Definitionen
 
+push @lichter, { name => "Flur OG", 	gaEin => "1/2/20", gaDimm => "1/2/23", valueDimm => 20, start => "00:00", end => "16:30" };
+push @lichter, { name => "Flur klein", 	gaEin => "1/1/20", gaDimm => "1/1/23", valueDimm => 35, start => "00:00", end => "16:30" };
+push @lichter, { name => "Hausflur", 	gaEin => "1/1/40", gaDimm => "1/1/43", valueDimm => 25, start => "00:00", end => "16:30" };
+
+
+### Ende Definitionen

@@ -1,38 +1,38 @@
 # Nachts Licht nur gedimmt einschalten.
-# Plugin hört auf GA des Ein-Befehles und schickt Dimmwert hinterher.
+# Plugin hoert auf GA des Ein-Befehles und schickt Dimmwert hinterher.
 # Autor: kleinklausi -> knx-user-forum.de
-# V1.0 2012-07-20 
-# Minutengenaues dimmen möglich
+
+# V1.0 2012-07-20
+# Minutengenaues dimmen m?glich
 # Auslagerung der Konfiguration in .conf file /etc/wiregate/plugin/generic/conf.d
-# update: JuMi2006 -> knx-user-forum.de
+# JuMi2006 -> knx-user-forum.de
 
 # Updates:
-# 20120814, mclb
-# - Umbau auf Liste von Hashes, damit das Plugin auch für mehrere Lichter funktioniert.
+# 20120814, mclb -> knx-user-forum.de
+# - Umbau auf Liste von Hashes, damit das Plugin auch fuer mehrere Lichter funktioniert.
 
 ### Variablen Einlesen/Deklarieren
 
 use Time::Local;
 my ($sec, $min, $hour, $day, $mon, $year, $wday, $yday) = localtime();
 my $now = sprintf ("%02d:%02d",$hour,$min);
-my ($lichtein_ga,$lichtdim_ga,$dimvalue,$start,$end);
 my ($sh,$sm,$eh,$em);
-my {$su, $eu, $time};
+my ($su, $eu, $time);
 my $debug = 0;
 my @lichter;
 &readConf;
 
-# Eigenen Aufruf-Zyklus auf 1x täglich setzen, hört ja auf GA
+# Eigenen Aufruf-Zyklus auf 1x t?glich setzen, h?rt ja auf GA
 $plugin_info{$plugname.'_cycle'} = 86400;
 # Plugin an Gruppenadresse "anmelden"
-foreach $licht (@lichter) {
+foreach my $licht (@lichter) {
  $plugin_subscribe{$licht->{gaEin}}{$plugname} = 1;
 }
 
 # Zeit nur einmal berechnen
 $time = time ();
 
-foreach $licht (@lichter) {
+foreach my $licht (@lichter) {
  if ($licht->{start} =~/(\w{1,})\:(\w{1,})/) {
   $sh = $1;
   $sm = $2;
@@ -53,13 +53,13 @@ foreach $licht (@lichter) {
    if ($time < $eu && $time > $su) {
 	#DIMMEN
 	knx_write($licht->{gaDimm},$licht->{valueDimm},5); # Dimmwert senden
-	if ($debug == 1) { plugin_log($plugname,"Gedimmt $now Uhr"); }
+	if ($debug == 1) { plugin_log($plugname,"$licht->{name} gedimmt um $now Uhr"); }
    }
 	
    if ($sm > $em && $sh == $eh) {
 	#DIMMEN
 	knx_write($licht->{gaDimm},$licht->{valueDimm},5); # Dimmwert senden
-	if ($debug == 1) { plugin_log($plugname,"Gedimmt $now Uhr"); }
+	if ($debug == 1) { plugin_log($plugname,"$licht->{name} gedimmt um $now Uhr"); }
    }
   }
 
@@ -68,13 +68,13 @@ foreach $licht (@lichter) {
    if ($time > $su) {
 	#DIMMEN
 	knx_write($licht->{gaDimm},$licht->{valueDimm},5); # Dimmwert senden
-	if ($debug == 1) { plugin_log($plugname,"Gedimmt $now Uhr"); }
+	if ($debug == 1) { plugin_log($plugname,"$licht->{name} gedimmt um $now Uhr"); }
    }
 
    if ($time < $eu) {
     #DIMMEN
 	knx_write($licht->{gaDimm},$licht->{valueDimm},5); # Dimmwert senden
-	if ($debug == 1) { plugin_log($plugname,"Gedimmt $now Uhr"); }
+	if ($debug == 1) { plugin_log($plugname,"$licht->{name} gedimmt um $now Uhr"); }
    }
   }
  }
