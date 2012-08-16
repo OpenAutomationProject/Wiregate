@@ -21,7 +21,7 @@ my $allowtime = &check_time;
 ### CHECK WARMWASSERBEREITUNG
 if (knx_read($ww_ga,300) == $ww_ga_val)
 {
-my $ww = 1;
+$ww = 1;
 }else{}
 
 ### MAIN / VERARBEITUNG
