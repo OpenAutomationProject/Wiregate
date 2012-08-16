@@ -1,0 +1,55 @@
+# Autor: makki -> http://knx-user-forum.de
+# Update: JuMi2006 -> http://knx-user-forum.de
+# Grafiken in RRD speichern
+
+# Info und Konfiguration in /etc/wiregate/plugin/generic/conf.d/RRD_creator.conf_sample
+# Eigene Konfiguration speichern unter /etc/wiregate/plugin/generic/conf.d/RRD_creator.conf
+# alternativ über Webmin -> Plugins -> Pluginname -> config
+
+# Beispiel fuer Temperaturwert (DPT9/EIS5)
+# push @rrds, { name => "Temperatur Küche", ga => "7/1/10", dpt => 9};
+
+# Abgerufen koennen die Grafiken durch Modifikation der Grafik-URL eines vorhandenen 
+# 1-Wire Sensors werden: z.B. 28.0D22CB010000_temp.rrd im letzten Beispiel durch
+# Temp_Kueche_knx3-1-46.rrd ersetzen. Gross/Kleinschreibung beachten!
+
+### EINSTELLBARE WERTE ###
+
+### Name des RRDs ###
+# name => "FREITEXT"
+# ACHTUNG: Keine Umlaute oder Sonderzeichen (/\: etc) und einmalig!
+###
+
+### Gruppenadresse ###
+# ga => "1/2/3"
+###
+
+### DPT ###
+# dpt => 9
+#     DPT 1 (1 bit) = EIS 1/7 (move=DPT 1.8, step=DPT 1.7)
+#     DPT 2 (1 bit controlled) = EIS 8 
+#     DPT 3 (3 bit controlled) = EIS 2 
+#     DPT 4 (Character) = EIS 13
+#     DPT 5 (8 bit unsigned value) = EIS 6 (DPT 5.1) oder EIS 14.001 (DPT 5.10)
+#     DPT 6 (8 bit signed value) = EIS 14.000
+#     DPT 7 (2 byte unsigned value) = EIS 10.000
+#     DPT 8 (2 byte signed value) = EIS 10.001
+#     DPT 9 (2 byte float value) = EIS 5
+#     DPT 10 (Time) = EIS 3
+#     DPT 11 (Date) = EIS 4
+#     DPT 12 (4 byte unsigned value) = EIS 11.000
+#     DPT 13 (4 byte signed value) = EIS 11.001
+#     DPT 14 (4 byte float value) = EIS 9
+#     DPT 15 (Entrance access) = EIS 12
+#     DPT 16 (Character string) = EIS 15
+###
+
+#### KONFIGURATION ####
+
+push @rrds, { name => "Helligkeit_EG_gr", 				ga => "3/1/49", dpt => 9};
+push @rrds, { name => "Helligkeit_EG_kl", 				ga => "3/1/29", dpt => 9};
+push @rrds, { name => "Helligkeit_OG", 					ga => "3/2/29", dpt => 9};
+push @rrds, { name => "WP_Heizungspumpe_Laufzeit",		ga => "0/5/2", dpt => 1};
+push @rrds, { name => "WP_Zirkulation_Laufzeit", 		ga => "0/5/5", dpt => 1};
+push @rrds, { name => "WP_Solepumpe_Laufzeit", 			ga => "0/5/3", dpt => 1};
+push @rrds, { name => "WP_Kompressor_Laufzeit", 		ga => "0/5/4", dpt => 1};
