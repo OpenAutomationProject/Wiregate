@@ -1,5 +1,5 @@
 ###Zirkulationspumpe
-#v0.1 2012-07-29
+#v0.2 2012-08-21
 #JuMi2006 - > http://knx-user-forum.de
 
 ### MAIN ### 
@@ -22,6 +22,7 @@ my $allowtime = &check_time;
 if (knx_read($ww_ga,300) == $ww_ga_val)
 {
 $ww = 1;
+#plugin_log($plugname, "WW-Bereitung");
 }else{}
 
 ### MAIN / VERARBEITUNG
@@ -29,17 +30,22 @@ if ($ww == 1)
     {
     #Zirkulation waehrend WW-Bereitung
     knx_write($zirk_ga,1,1.001);
+    #plugin_log($plugname, "WW-Bereitung");
     }
         else
             {
+	        #plugin_log($plugname, "Keine WW-Bereitung");
             if ($praesenz == 1 and
                 $allowtime == 1)
                 {
                 #PWM Zirkulation wenn Anwesenheit, im Zeitfenster und keine WW-Bereitung
-                & pwm;
+                & pwm;		
+				#plugin_log($plugname, "PWM");
                 }else{
                     #Kein Zirkulation wenn Abwesenheit, ausserhalb Zeitfenster und keine WW-Bereitung
                     knx_write($zirk_ga,0,1.001);
+					$plugin_info{$plugname.'_state'} = 'pwm-off';
+					#plugin_log($plugname, "keine Zirkulationsanforderung");
                     }
             }
 return;
@@ -90,6 +96,7 @@ my $time = time ();
 	}else{}
 	}
 return $allowtime;
+plugin_log($plugname, "Zeitfreigabe");
 }
 
 ### PWM ###
@@ -112,7 +119,10 @@ if ($plugin_info{$plugname.'_state'} eq 'pwm-off')                #status = aus
     $plugin_info{$plugname.'_state'} = 'pwm-on';
     #ANZEIT = jetzt
     $plugin_info{$plugname.'_stat-time'} = $time;
-    } else {}
+    } else {
+	#Senden wiederholen#
+	#knx_write($zirk_ga,0,1.001);
+	}
 } else {}
 
 
@@ -126,11 +136,13 @@ if ($plugin_info{$plugname.'_state'} eq 'pwm-on')                #status = an
     $plugin_info{$plugname.'_state'} = 'pwm-off';
     #AUSZEIT = JETZT
     $plugin_info{$plugname.'_stat-time'} = $time; 
-    } else {}
+    } else {
+	#Senden wiederholen#
+	#knx_write($zirk_ga,1,1.001);
+	}
 } else {}
 
-if (
-    ($plugin_info{$plugname.'_stat-time'} + $on_time + $off_time) <= $time)
+if (($plugin_info{$plugname.'_stat-time'} + $on_time + $off_time) <= $time)	#initialisierung
 {
     #ANSCHALTEN
     knx_write($zirk_ga,1,1.001);
