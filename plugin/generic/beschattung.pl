@@ -24,6 +24,8 @@
 # 20120808 - mclb - Lamellenbehandlung nur noch, wenn $gs_raffstore->{lamellenNachfuehrung} nicht NACHF_AUS ist
 # 20120808 - mclb - Neuen Header eingefügt (nun mit Hinweis auf GPL, damit auch Andere hier weiterentwickeln können
 # 20120808 - mclb - Umbenennung von beschattung_v2 auf beschattung
+# 20120821 - mclb - Definition einer Konstante hat gefehlt
+#            NACHF_100 gefixt
 #
 #############################################################################
 #
@@ -69,6 +71,7 @@ use constant FREIGABE_EIN => 'EIN';
 # Konstanten für Nachführung ein/aus
 use constant NACHF_AUS => 'AUS';
 use constant NACHF_EIN => 'EIN';
+use constant NACHF_100 => '100';
 # Konstanten für Raffstore-Attribute
 use constant AKTIV => 'A';
 use constant INAKTIV => 'I';
@@ -429,6 +432,8 @@ if ($gv_event eq EVENT_RESTART) {
       if ($gv_minuten % 5 == 0) {
 	   if ($gs_raffstore->{lamellenNachfuehrung} ne NACHF_AUS) {
         if ($gs_raffstore->{lamellenNachfuehrung} eq NACHF_100) {
+		 # Somit wird auf jeden Fall ganz zu gemacht.
+		 $gv_lamellePos = 0;
          $gv_lamellePosNeu = 100;
         } else {
          $gv_lamellePosNeu = (90 - $plugin_info{$plugname.'_elevation'})/90*100;
@@ -439,7 +444,7 @@ if ($gv_event eq EVENT_RESTART) {
          if ($gv_lamellePosNeu > 100) { $gv_lamellePosNeu = 100; }
         }
         # Nicht wegen jeder Kleinigkeit gleich nachstellen, erst nach einer gewissen Mindeständerung.
-        if (abs($gv_lamellePos - $gv_lamellePosNeu) > 2) {
+        if (abs($gv_lamellePos - $gv_lamellePosNeu) > 5) {
          knx_write($gs_raffstore->{gaLamellePos},$gv_lamellePosNeu,5.001);
         }
 	   }
