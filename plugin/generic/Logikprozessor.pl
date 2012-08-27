@@ -257,6 +257,7 @@ if($event=~/bus/)
 	}
 
 	# Aufruf der Logik-Engine
+	my $prevResult=$plugin_info{$plugname.'_'.$t.'_result'};
 	my $result=execute_logic($t, $receive, $ga, $in);
 
         # war Wiregate der Sender des Telegramms?
@@ -276,6 +277,11 @@ if($event=~/bus/)
 	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gespeichert "	if $debug;
 	    next;
 	}
+
+        if($logic{$t}{transmit_changes_only} && ($result eq $prevResult)) {
+	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result unverändert -> nichts zu senden " if $debug;
+	    next;
+        }
 
 	# Falls delay spezifiziert, wird ein "Wecker" gestellt, um in einem spaeteren Aufruf den Wert zu senden
 	if($logic{$t}{delay})
@@ -828,15 +834,17 @@ sub execute_logic
             %prowlParametersSource = ( event => $logic{$t}{prowl} );
         }
         
-        sendProwl((
-                debug => $debug,
-                priority => $prowlParametersSource{priority} || $settings{prowl}{priority},
-                event => $prowlParametersSource{event} || $settings{prowl}{event},
-                description => $prowlParametersSource{description} || $settings{prowl}{description},
-                application => $prowlParametersSource{application} || $settings{prowl}{application},
-                url => $prowlParametersSource{url} || $settings{prowl}{url},
-                apikey => $prowlParametersSource{url} || $settings{prowl}{apikey}
-            ));
+        if (defined %prowlParametersSource) {
+            sendProwl((
+                    debug => $debug,
+                    priority => $prowlParametersSource{priority} || $settings{prowl}{priority},
+                    event => $prowlParametersSource{event} || $settings{prowl}{event},
+                    description => $prowlParametersSource{description} || $settings{prowl}{description},
+                    application => $prowlParametersSource{application} || $settings{prowl}{application},
+                    url => $prowlParametersSource{url} || $settings{prowl}{url},
+                    apikey => $prowlParametersSource{url} || $settings{prowl}{apikey}
+                ));
+        }
     }
 
     return $result;
