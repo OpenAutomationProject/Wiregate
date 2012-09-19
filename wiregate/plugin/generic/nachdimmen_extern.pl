@@ -92,15 +92,15 @@ foreach $gv_freigabe_dyn (@gt_freigabe_dyn) {
 # Aus welchem Grund läuft das Plugin gerade
 my $gv_event=undef;
 if (!$plugin_initflag) {
- $gv_event = EVENT_RESTART;            # Restart des daemons / Reboot
+ $gv_event = EVENT_RESTART;           # Restart des daemons / Reboot
 } elsif ($plugin_info{$plugname.'_lastsaved'} > $plugin_info{$plugname.'_last'}) {
- $gv_event = EVENT_MODIFIED;        # Plugin modifiziert
+ $gv_event = EVENT_MODIFIED;          # Plugin modifiziert
 } elsif (%msg) {
- $gv_event = EVENT_BUS;                # Bustraffic
+ $gv_event = EVENT_BUS;               # Bustraffic
 } elsif ($fh) {
  $gv_event = EVENT_SOCKET;            # Netzwerktraffic
 } else {
- $gv_event = EVENT_CYCLE;            # Zyklus
+ $gv_event = EVENT_CYCLE;             # Zyklus
 }
 
 # Abarbeiten der Telegramme
@@ -109,13 +109,13 @@ if ($gv_event eq EVENT_BUS) {
  for ($gv_index=0; $gv_index<@gt_lichter; $gv_index++) {
   $gs_licht = $gt_lichter[$gv_index];
 
-  plugin_log($plugname, "1: ".$msg{'dst'}.", ".$gs_licht->{gaEin}.", ".$msg{'value'});
+  if ($debug == 1) { plugin_log($plugname, "1: ".$msg{'dst'}.", ".$gs_licht->{gaEin}.", ".$msg{'value'}); }
   if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gs_licht->{gaEin} and $msg{'value'} == 1) {
    plugin_log($plugname, "2: ".$gs_licht->{tagNacht});
    # Abarbeiten der Telegramme auf gaEin
    if ($gs_licht->{tagNacht} eq NACHT) {
-    if ($debug == 1) { plugin_log($plugname,"$gs_licht->{name} gedimmt auf $gs_licht->{valueDimm}% um $now Uhr"); }
-    knx_write($gs_licht->{gaDim}, $gs_licht->{valueDimm}, $gs_licht->{dptDimm});
+    knx_write($gs_licht->{gaDimm}, $gs_licht->{valueDimm}, $gs_licht->{dptDimm});
+    if ($debug == 1) { plugin_log($plugname,"$gs_licht->{name} gedimmt auf $gs_licht->{valueDimm}% um $now Uhr ($gs_licht->{dptDimm})"); }
    }
   } elsif ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gs_licht->{gaNacht}) {
    # Abarbeiten der Telegramme auf gaNacht
