@@ -27,9 +27,9 @@
 #    }
 #}
 
-# Tools und vorbesetzte Variablen fur die Logiken
+# Tools und vorbesetzte Variablen fuer die Logiken
 sub limit { my ($lo,$x,$hi)=@_; return $x<$lo?$lo:($x>$hi?$hi:$x); }
-my $date=`/bin/date +"%W,%a,%u,%m,%d,%Y,%j,%H,%M,%X"`;
+my $date=`/bin/date +"%W,%a,%u,%m,%d,%Y,%j,%H,%M,%T"`;
 plugin_log($plugname, "Datum/Uhrzeit konnte nicht lesbar.") unless $date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/;
 my $calendar_week=$1;
 my $day_of_week=$2;
@@ -640,7 +640,7 @@ sub set_next_call
 	       calendar_week=>$calendar_week,day_of_week=>$day_of_week_no};
     add_day_info($today);
 
-    my $time_of_day=`/bin/date +"%X"`;
+    my $time_of_day=`/bin/date +"%T"`;
 
     # Schedule-Form standardisieren (alle Eintraege in Listenform setzen und Wochentage durch Zahlen ersetzen)
     # dabei gleich schauen, ob HEUTE noch ein Termin ansteht
