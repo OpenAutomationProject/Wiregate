@@ -170,6 +170,21 @@ if($event=~/restart|modified/ || $config_modified)
 		plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$rec};
 	    }
 	}
+
+	if($logic{$t}{transmit_on_startup})
+	{
+	    # Berechnung und Senden beim Startup des Logikprozessors
+	    # Vorsicht: Logiken mit dieser Bedingung koennen durch knx_read-Requests den Logikprozessor deutlich (!) 
+	    # ueber die erlaubten 10s Ausfuehrungszeit eines Wiregate-Plugins bringen. 
+	    # In diesem Fall wird die Initialisierung des Logikprozessors unvollstaendig abgebrochen!
+	    # Empfehlung: nur solche Logiken mit transmit_on_startup versehen, deren Read-Requests auf schnell 
+	    # antwortende externe KNX-Geraete gehen oder sowieso durch den EIB-Cache beantwortet werden, 
+	    # also bspw. nicht auf andere Plugins warten.
+	    my $result=execute_logic($t, $receive, undef, undef);	
+	    my $ga=groupaddress($logic{$t}{transmit});
+	    $retval.="\$logic{$t}{transmit}(Logik) -> $ga:$result " if $debug;
+	    knx_write($ga, $result); # DPT aus eibga.conf		    
+	}	    
     }
 
     $retval.=$count." initialisiert";
@@ -214,7 +229,7 @@ if($event=~/bus/)
 	# Debuggingflag gesetzt
 	my $debug = $logic{debug} || $logic{$t}{debug}; 
 
-	# Sonderfall: Read- und Write-Telegramme auf der Transmit-Adresse?
+	# Sonderfall: Read- und Write-Telegramme auf der Transmit-Adresse
     	if($transmit_ga)
 	{    
 	    # Ein Read-Request auf einer Transmit-GA wird mit dem letzten Ergebnis beantwortet
@@ -222,11 +237,21 @@ if($event=~/bus/)
 	    if($msg{apci} eq "A_GroupValue_Read")
 	    {  
 		my $result=$plugin_info{$plugname.'_'.$t.'_result'};
+
 		if(defined $result)
 		{
 		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet. " if $debug;
 		    knx_write($ga, $result, undef, 0x40); # response, DPT aus eibga.conf		    
 		}
+		else
+		{
+		    # falls gespeichertes Ergebnis ungueltig, neuer Berechnungsversuch
+		    $result=execute_logic($t, groupaddress($logic{$t}{receive}), undef, undef);
+
+		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(Logik) -> $ga:$result gesendet. " if $debug;
+		    knx_write($ga, $result, undef, 0x40); # response, DPT aus eibga.conf		    
+		}	    
+		
 		next;
 	    }
 	    elsif(!$receive_ga) # Receive geht vor - bei Timer-Logiken ist receive_ga immer 0
@@ -716,8 +741,8 @@ sub execute_logic
     my ($t, $receive, $ga, $in)=@_; # Logikindex $t, Bustelegramm erhalten auf $ga mit Inhalt $in
     # $receive muss die direkten Gruppenadressen enthalten - Decodierung von Kuerzeln wird nicht vorgenommen
 
-	# Debuggingflag gesetzt
-	my $debug = $logic{debug} || $logic{$t}{debug}; 
+    # Debuggingflag gesetzt
+    my $debug = $logic{debug} || $logic{$t}{debug}; 
     
     # als erstes definiere das Input-Array fuer die Logik
     my $input=$in;
