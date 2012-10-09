@@ -9,6 +9,7 @@ $debug = 0;
 # id:        ID fürs Speichern der dynamischen Werte (Tag/Nacht)
 # name:      Name zur Ausgabe der Debug-Meldungen
 # gaEin:     Gruppenadresse Licht Ein/Aus
+# valueEin:  Wert für Ein
 # gaDimm:    Gruppenadresse Licht Dimmwert
 # valueDimm: Dimmwert
 # dptDimm:   DPT gaDimm
@@ -17,7 +18,7 @@ $debug = 0;
 # nachtAus:  Wert, der auf gaNacht gesendet werden muss, damit die Nachdimm-Funktion deaktiviert wird
 # dptNacht:  DPT gaNacht
 # tagNact:   Licht ist gerade im Tag-, oder Nacht-Modus
-push @gt_lichter, { id => "UG_WC", name => "WC", gaEin => "1/3/80", gaDimm => "1/2/80", valueDimm => "15", dptDimm => "5.001", gaNacht => "0/0/249", nachtEin => "1", nachtAus => "0", dptNacht => "1", tagNacht => TAG };
+push @gt_lichter, { id => "UG_WC", name => "WC", gaEin => "1/3/80", valueEin => 1, gaDimm => "1/2/80", valueDimm => "15", dptDimm => "5.001", gaNacht => "0/0/249", nachtEin => "1", nachtAus => "0", dptNacht => "1", tagNacht => TAG };
 
 ### Ende Definitionen
 
