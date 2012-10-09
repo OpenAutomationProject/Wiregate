@@ -17,6 +17,8 @@
 #
 # Änderungshistorie:
 # 20120821 - mclb - Erstellung des Plugins
+# 20121009 - mclb - Es kann nun auf beliebige Werte getriggert werden.
+#                   Z.B. bei Szene Nr. 5 die Lichter nachdimmen.
 #
 #############################################################################
 #
@@ -62,6 +64,7 @@ my $gv_freigabe_dyn;
 my @gt_freigabe_dyn;
 my $gv_index;
 my ($gv_id, $gv_tagNacht);
+my $gv_valueEin;
 &readConf;
 
 # Kein zyklischer Aufruf, wird nur aktiv bei entsprechendem Telegramm
@@ -110,7 +113,14 @@ if ($gv_event eq EVENT_BUS) {
   $gs_licht = $gt_lichter[$gv_index];
 
   if ($debug == 1) { plugin_log($plugname, "1: ".$msg{'dst'}.", ".$gs_licht->{gaEin}.", ".$msg{'value'}); }
-  if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gs_licht->{gaEin} and $msg{'value'} == 1) {
+  
+  if (exists $gs_licht->{valueEin}) {
+   $gv_valueEin = $gs_licht->{valueEin};
+  } else {
+   $gv_valueEin = 1;
+  }
+
+  if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gs_licht->{gaEin} and $msg{'value'} == $gv_valueEin) {
    plugin_log($plugname, "2: ".$gs_licht->{tagNacht});
    # Abarbeiten der Telegramme auf gaEin
    if ($gs_licht->{tagNacht} eq NACHT) {
