@@ -22,6 +22,7 @@ use warnings;
 use strict;
 use EBus;
 
+my $debug = 0;
 my $socknum = 303; # Eindeutige Nummer des Sockets +1
 my $send_ip = "localhost"; # Sendeport (UDP, siehe in Socket-Einstellungen)
 my $send_port = "50111"; # Sendeport (UDP, siehe in Socket-Einstellungen)
@@ -30,20 +31,30 @@ my $recv_port = "50110"; # Empfangsport (UDP, siehe in Socket-Einstellungen)
 
 ### Vaillant Konfiguration ###
 my @sets;
-push @sets, { name => "RT_soll", 	GA => "0/0/0", 		QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "01", DB2 => "" };
-push @sets, { name => "RT_min", 	GA => "0/0/0", 		QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "0A", DB2 => "" };
-push @sets, { name => "HK_mode",	GA => "0/5/102", 	QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "02", DB2 => "" };
-push @sets, { name => "HK_curve", 	GA => "0/0/0", 		QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "03", DB1 => "0B", DB2 => "", DB3 => "00" };
-push @sets, { name => "HK_party", 	GA => "0/0/0", 		QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "05", DB2 => "" };
-push @sets, { name => "HK_spar", 	GA => "0/0/0", 		QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "07", DB2 => "" };
-push @sets, { name => "AT_off", 	GA => "0/0/0", 		QQ => "00", ZZ => "50", PB => "B5", SB => "09", NN => "04", DB1 => "0E", DB2 => "36", DB3 => "00", DB4 => "", DB5 => "00" };
-push @sets, { name => "WW_load", 	GA => "0/5/101", 	QQ => "10", ZZ => "FE", PB => "B5", SB => "05", NN => "02", DB1 => "06", DB2 => "" };
-push @sets, { name => "WW_soll", 	GA => "0/0/0", 		QQ => "00", ZZ => "25", PB => "B5", SB => "09", NN => "05", DB1 => "0E", DB2 => "82", DB3 => "00", DB4 => "", DB5 => "" };
-push @sets, { name => "WW_min", 	GA => "0/0/0", 		QQ => "00", ZZ => "25", PB => "B5", SB => "09", NN => "05", DB1 => "0E", DB2 => "82", DB3 => "00", DB4 => "", DB5 => "" };
-push @sets, { name => "WW_mode", 	GA => "0/0/0", 		QQ => "00", ZZ => "25", PB => "B5", SB => "09", NN => "04", DB1 => "0E", DB2 => "2B", DB3 => "00", DB4 => ""};
-push @sets, { name => "HOL_date", 	GA => "0/0/0", 		QQ => "00", ZZ => "FE", PB => "B5", SB => "0B", NN => "08", DB1 => "01", DB2 => "Nr", DB3 => "ST", DB4 => "SM", DB5 => "SJ", DB6 => "ET", DB7 => "EM", DB8 => "EJ"};###FIXME DATATYP
-push @sets, { name => "HOL_temp", 	GA => "0/0/0", 		QQ => "00", ZZ => "FE", PB => "B5", SB => "05", NN => "02", DB1 => "2A", DB2 => ""};
-push @sets, { name => "HK_int", 	GA => "0/0/0", 		QQ => "10", ZZ => "08", PB => "B5", SB => "05", NN => "05", DB1 => "0E", DB2 => "7C", DB3 => "00", DB4 => "", DB5 => "FF" };
+push @sets, { name => "RT_soll", 	GA => "0/5/101", 	QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "01", DB2 => "" };
+push @sets, { name => "RT_min", 	GA => "0/5/102", 	QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "0A", DB2 => "" };
+
+push @sets, { name => "HK_mode",	GA => "0/5/110", 	QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "02", DB2 => "" };
+push @sets, { name => "HK_party", 	GA => "0/5/111", 	QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "05", DB2 => "" };
+push @sets, { name => "HK_spar", 	GA => "0/5/112", 	QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "02", DB1 => "07", DB2 => "" };
+
+push @sets, { name => "WW_mode", 	GA => "0/5/120", 	QQ => "00", ZZ => "25", PB => "B5", SB => "09", NN => "04", DB1 => "0E", DB2 => "2B", DB3 => "00", DB4 => ""};
+push @sets, { name => "WW_soll", 	GA => "0/5/121", 	QQ => "00", ZZ => "25", PB => "B5", SB => "09", NN => "05", DB1 => "0E", DB2 => "82", DB3 => "00", DB4 => "", DB5 => "" };
+push @sets, { name => "WW_min", 	GA => "0/5/122", 	QQ => "00", ZZ => "25", PB => "B5", SB => "09", NN => "05", DB1 => "0E", DB2 => "82", DB3 => "00", DB4 => "", DB5 => "" };
+push @sets, { name => "WW_load", 	GA => "0/5/123", 	QQ => "10", ZZ => "FE", PB => "B5", SB => "05", NN => "02", DB1 => "06", DB2 => "" };
+
+push @sets, { name => "HK_curve", 	GA => "0/5/131", 	QQ => "00", ZZ => "50", PB => "B5", SB => "05", NN => "03", DB1 => "0B", DB2 => "", DB3 => "00" };
+push @sets, { name => "AT_off", 	GA => "0/5/132", 	QQ => "00", ZZ => "50", PB => "B5", SB => "09", NN => "04", DB1 => "0E", DB2 => "36", DB3 => "00", DB4 => "", DB5 => "00" };
+push @sets, { name => "HK_int", 	GA => "0/5/133", 	QQ => "10", ZZ => "08", PB => "B5", SB => "05", NN => "05", DB1 => "0E", DB2 => "7C", DB3 => "00", DB4 => "", DB5 => "FF" };
+
+push @sets, { name => "HOL_temp", 	GA => "0/5/140", 	QQ => "00", ZZ => "FE", PB => "B5", SB => "05", NN => "02", DB1 => "2A", DB2 => ""};
+push @sets, { name => "HOL_date", 	GA => "0/5/141", 	QQ => "00", ZZ => "FE", PB => "B5", SB => "0B", NN => "08", DB1 => "01", DB2 => "Nr", DB3 => "ST", DB4 => "SM", DB5 => "SJ", DB6 => "ET", DB7 => "EM", DB8 => "EJ"};###FIXME DATATYP
+
+push @sets, { name => "ZH_hk", 	        GA => "0/5/151", 	QQ => "00", ZZ => "08", PB => "B5", SB => "09", NN => "04", DB1 => "0E", DB2 => "63", DB3 => "00", DB4 => "" };
+push @sets, { name => "ZH_ww", 	        GA => "0/5/152", 	QQ => "00", ZZ => "08", PB => "B5", SB => "09", NN => "04", DB1 => "0E", DB2 => "64", DB3 => "00", DB4 => "" };
+push @sets, { name => "ZH_int", 	GA => "0/5/153", 	QQ => "00", ZZ => "08", PB => "B5", SB => "09", NN => "04", DB1 => "0E", DB2 => "63", DB3 => "00", DB4 => "" }; #FIXME
+push @sets, { name => "ZH_hys", 	GA => "0/5/154", 	QQ => "00", ZZ => "08", PB => "B5", SB => "09", NN => "05", DB1 => "0E", DB2 => "7E", DB3 => "00", DB4 => "", DB5 => "00" }; #FIXME
+
 ### Ende Vaillant Konfiguration ###
 
 
@@ -52,7 +63,7 @@ push @sets, { name => "HK_int", 	GA => "0/0/0", 		QQ => "10", ZZ => "08", PB => 
 ###############
 
 ### Socket einrichten ###
-$plugin_info{$plugname.'_cycle'} = 300;
+$plugin_info{$plugname.'_cycle'} = 0;
 if (!$socket[$socknum]) { # socket erstellen
         $socket[$socknum] = IO::Socket::INET->new(LocalPort => $recv_port,
                                   Proto => "udp",
@@ -75,13 +86,13 @@ if (!$socket[$socknum]) { # socket erstellen
 foreach my $set (@sets) {
 $plugin_subscribe{$set->{GA}}{$plugname} = 1;   # An Gruppenadresse anmelden
 
-if ($msg{'dst'} eq $set->{GA})                  # Auf eintreffendes KNX-Telegramm reagiern + anhand der GA filtern
+if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $set->{GA} && defined $msg{'value'})   # Auf eintreffendes KNX-Telegramm reagiern + anhand der GA filtern
 
 {	
-plugin_log($plugname, "Befehlsgruppe: $set->{name}");   # Logging der Befehlsgruppe
 my $val = $msg{'value'};                                # Wert aus Telegramm filtern
 my $subname = $set->{name};                             # $subname bekommt den Namen der entsprecheden sub
 my $subref = \&$subname;                                # jetzt wird $subref die entsprechende sub zugewiesen
+plugin_log($plugname, "Befehlsgruppe: $set->{name} Value: $val"); # Logging der Befehlsgruppe
 my $command = addCRC(&$subref($val));                   # Befehls-Sub ausführen und CRC anhängen
 
 &send ($command);   # Befehl senden
@@ -92,15 +103,34 @@ my $command = addCRC(&$subref($val));                   # Befehls-Sub ausführen 
 ### S E N D E N ###
 ###################
 
-sub send
-{
-    my $cmd = shift;
-    my $raw = $cmd;
-    $raw =~ s/([0-9a-f]{2})/chr( hex( $1 ) )/gie;      # !!! Umwandlung des Hex-Strings
-    plugin_log($plugname, "send: $cmd");
-    syswrite($socket[$socknum], $raw); 
+sub send {
+if ($debug = 1) {plugin_log($plugname, "Sub Senden erreicht !");}
+my $cmd = shift;
+my $sync = 0;
+        while ($sync < 1)
+                {
+                        my $buf;
+                        recv($socket[$socknum],$buf,1,0); # unbuffered read from socket
+                        #read($socket[$socknum],$buf,1);
+                        my $bufhex = $buf;
+                        $bufhex =~ s/(.)/sprintf("%.2X",ord($1))/eg;
+                        if ($debug = 1) { plugin_log($plugname, "Buffer: $bufhex");}
+                        
+                                if ($bufhex eq "AA")    # AA = SYNC ... hier warten wir jetzt auf das SYNC Zeichen und senden dann
+                                {
+                                $sync = 1;
+                                if ($debug = 1) { plugin_log($plugname, "Sync Zeichen gelesen");}
+                                my $raw = $cmd;
+                                $raw =~ s/([0-9a-f]{2})/chr( hex( $1 ) )/gie;      # !!! Umwandlung des Hex-Strings
+                                if ($debug = 1) { plugin_log($plugname, "send: $cmd");}
+                                syswrite($socket[$socknum], $raw);
+                                last;   # Nun aber raus aus der Schleife
+                                }
+                                else
+                                {redo;}
+                }
+             
 }
-
 
 ################################
 ### V A I L L A N T  S U B S ###
