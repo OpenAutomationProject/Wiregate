@@ -247,11 +247,12 @@ my %text=(
 for my $f (keys %text)
 {
     my $t=$text{$f};
+    $t=~s/ /\%20/g;
     my $p=$f; $p=~s!/[^/]*$!!;
     my $m=$f; $m=~s!\.wav$!.mp3!;
     next if -f $f;
     system "mkdir", "-p", $p; 
-    system "wget", "http://translate.google.de/translate_tts?ie=UTF-8&q=$t", "--keep-session-cookies", "--user-agent=sag_ich_nicht", "-O", $m;
+    system "wget", "http://translate.google.de/translate_tts?ie=UTF-8&q=$t&tl=de", "--keep-session-cookies", "--user-agent=sag_ich_nicht", "-O", $m;
     system "mpg123", "-w", $f, $m;
     system "rm", "-f", "tmp.wav", "tmp2.wav";
     system "sox", $f, "tmp.wav", "silence", "1", "0.001", "0.2%", "1", "0.3", "0.1%";
