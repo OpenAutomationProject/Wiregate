@@ -939,14 +939,15 @@ sub groupaddress
 sub sendProwl {
     my (%parameters)=@_;
     my ($priority, $event, $description, $application, $url, $apikey);
-    
+
     # Parameter ermitteln
-    $priority = $parameters{priority} || 0;
-    $event = $parameters{event} || '[unbenanntes Ereignis]';
-    $description = $parameters{description} || '';
-    $application = $parameters{application} || 'WireGate KNX';
-    $url = $parameters{url} || '';
-    $apikey = $parameters{apikey} || '';
+    # dom, 2012-11-05: $settings auch hier auswerten. Damit kann sendProwl() direkt aus der Logik aufgerufen werden!
+    $priority = $parameters{priority} || $settings{prowl}{priority} || 0;
+    $event = $parameters{event} || $settings{prowl}{event} || '[unbenanntes Ereignis]';
+    $description = $parameters{description} || $settings{prowl}{description} || '';
+    $application = $parameters{application} || $settings{prowl}{application} || 'WireGate KNX';
+    $url = $parameters{url} || $settings{prowl}{url} || '';
+    $apikey = $parameters{apikey} || $settings{prowl}{apikey} || '';
     
     use LWP::UserAgent;
     use URI::Escape;
