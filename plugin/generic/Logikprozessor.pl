@@ -142,9 +142,12 @@ if($event=~/restart|modified/ || $config_modified)
 	}
 
 	# transmit-Adresse abonnieren
-	my $transmit=groupaddress $logic{$t}{transmit};
-	$plugin_subscribe{$transmit}{$plugname}=1;
-	plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
+	if (defined $logic{$t}{transmit})
+	{
+    my $transmit=groupaddress($logic{$t}{transmit});
+    $plugin_subscribe{$transmit}{$plugname}=1;
+    plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
+	}
 
 	# Zaehlen und Logeintrag
 	$count++;
@@ -157,7 +160,7 @@ if($event=~/restart|modified/ || $config_modified)
 	}
 
 	# Nun alle receive-Adressen abonnieren (eine oder mehrere)
-	my $receive=groupaddress $logic{$t}{receive};
+	my $receive=groupaddress($logic{$t}{receive});
 
 	next unless $receive;
 	
@@ -182,7 +185,7 @@ if($event=~/restart|modified/ || $config_modified)
 
 	# Berechnung und Senden beim Startup des Logikprozessors
 	my $result=execute_logic($t, undef, undef);	
-	my $ga=groupaddress $logic{$t}{transmit};
+	my $ga=groupaddress($logic{$t}{transmit});
 	plugin_log($plugname, "\$logic{$t}{transmit}(Logik) -> $ga:$result") if $debug;
 	knx_write($ga, $result); # DPT aus eibga.conf		    
     }	    
@@ -752,8 +755,8 @@ sub execute_logic
     my $input=$in;
 
     # alle receive-GAs
-    my $receive=groupaddress $logic{$t}{receive};
-    my $fetch=groupaddress $logic{$t}{fetch};
+    my $receive=groupaddress($logic{$t}{receive});
+    my $fetch=groupaddress($logic{$t}{fetch});
 
     if(defined $fetch)
     {
