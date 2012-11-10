@@ -98,8 +98,7 @@ if($event=~/restart|modified/ || $config_modified)
 
     for my $t (keys %logic)
     {
-	next if $t eq 'debug';
-	$t=~s/^_//g;
+	next if $t eq 'debug' || $t=~/^_/;
 
 	# Debuggingflag gesetzt
 	my $debug = $logic{debug} || $logic{$t}{debug}; 
@@ -114,6 +113,12 @@ if($event=~/restart|modified/ || $config_modified)
 	if(defined $logic{$t}{translate} && ref $logic{$t}{translate} && ref $logic{$t}{translate} ne 'CODE')
 	{
 	    plugin_log($plugname, "Config err: \$logic{$t}{translate} ist weder Skalar noch CODE-Referenz (sub {...}).");
+	    next;
+	}
+
+	if(defined $logic{$t}{fetch} && ref $logic{$t}{fetch} && ref $logic{$t}{fetch} ne 'ARRAY')
+	{
+	    plugin_log($plugname, "Config err: \$logic{$t}{fetch} ist weder Skalar noch ARRAY-Referenz ([...]).");
 	    next;
 	}
 
@@ -137,7 +142,7 @@ if($event=~/restart|modified/ || $config_modified)
 	}
 
 	# transmit-Adresse abonnieren
-	my $transmit=groupaddress($logic{$t}{transmit});
+	my $transmit=groupaddress $logic{$t}{transmit};
 	$plugin_subscribe{$transmit}{$plugname}=1;
 	plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
 
@@ -149,43 +154,38 @@ if($event=~/restart|modified/ || $config_modified)
 	if($logic{$t}{timer})
 	{
 	    set_next_call($t, $debug);
-	    next;
 	}
 
-	# fuer Nicht-Timer-Logiken: alle receive-Adressen abonnieren (eine oder mehrere)
-	my $receive=groupaddress($logic{$t}{receive});
+	# Nun alle receive-Adressen abonnieren (eine oder mehrere)
+	my $receive=groupaddress $logic{$t}{receive};
 
 	next unless $receive;
 	
-	unless(ref $receive)
-	{ 
-	    $plugin_subscribe{$receive}{$plugname}=1; 
-	    plugin_log($plugname, "\$logic{$t}: Receive-GA $receive nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$receive};
-	}
-	else
-	{
-	    for my $rec (@{$receive})
-	    {
-		$plugin_subscribe{$rec}{$plugname}=1;
-		plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$rec};
-	    }
-	}
+	$receive=[$receive] unless ref $receive;
 
-	if($logic{$t}{transmit_on_startup})
+	for my $rec (@{$receive})
 	{
-	    # Berechnung und Senden beim Startup des Logikprozessors
-	    # Vorsicht: Logiken mit dieser Bedingung koennen durch knx_read-Requests den Logikprozessor deutlich (!) 
-	    # ueber die erlaubten 10s Ausfuehrungszeit eines Wiregate-Plugins bringen. 
-	    # In diesem Fall wird die Initialisierung des Logikprozessors unvollstaendig abgebrochen!
-	    # Empfehlung: nur solche Logiken mit transmit_on_startup versehen, deren Read-Requests auf schnell 
-	    # antwortende externe KNX-Geraete gehen oder sowieso durch den EIB-Cache beantwortet werden, 
-	    # also bspw. nicht auf andere Plugins warten.
-	    my $result=execute_logic($t, $receive, undef, undef);	
-	    my $ga=groupaddress($logic{$t}{transmit});
-	    $retval.="\$logic{$t}{transmit}(Logik) -> $ga:$result " if $debug;
-	    knx_write($ga, $result); # DPT aus eibga.conf		    
-	}	    
+	    $plugin_subscribe{$rec}{$plugname}=1;
+	    plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$rec};
+	}
     }
+
+#    plugin_log($plugname, "Initialisierungsblock beendet");   
+
+    # ab hier wuerde uns ein Timeout nicht mehr so stark treffen...
+    for my $t (keys %logic)
+    {
+	next if $t eq 'debug' || $t=~/^_/;
+	next unless $logic{$t}{transmit_on_startup};
+
+	my $debug = $logic{debug} || $logic{$t}{debug}; 
+
+	# Berechnung und Senden beim Startup des Logikprozessors
+	my $result=execute_logic($t, undef, undef);	
+	my $ga=groupaddress $logic{$t}{transmit};
+	plugin_log($plugname, "\$logic{$t}{transmit}(Logik) -> $ga:$result") if $debug;
+	knx_write($ga, $result); # DPT aus eibga.conf		    
+    }	    
 
     $retval.=$count." initialisiert";
 }
@@ -201,8 +201,7 @@ if($event=~/bus/)
     # welche translate-Logik ist aufgerufen?
     for my $t (keys %logic)
     {
-	next if $t eq 'debug';
-	$t=~s/^_//g;
+	next if $t eq 'debug' || $t=~/^_/;
 
 	my $transmit=groupaddress($logic{$t}{transmit});
 	my $transmit_ga = ($ga eq $transmit);
@@ -210,7 +209,7 @@ if($event=~/bus/)
 	my $receive=groupaddress($logic{$t}{receive});
 	my $receive_ga=0; 
 
-	if(defined $receive && !$logic{$t}{timer})
+	if(defined $receive)
 	{
 	    unless(ref $logic{$t}{receive})
 	    {
@@ -233,30 +232,32 @@ if($event=~/bus/)
     	if($transmit_ga)
 	{    
 	    # Ein Read-Request auf einer Transmit-GA wird mit dem letzten Ergebnis beantwortet
+	    # ausser das Flag recalc_on_request ist gesetzt
 	    # Read-Requests auf die receive-Adressen werden gar nicht beantwortet
 	    if($msg{apci} eq "A_GroupValue_Read")
 	    {  
 		my $result=$plugin_info{$plugname.'_'.$t.'_result'};
 
-		if(defined $result)
+		if(!defined $result || $logic{$t}{recalc_on_request})
+		{
+		    # falls gespeichertes Ergebnis ungueltig, neuer Berechnungsversuch
+		    $result=execute_logic($t, undef, undef) 
+			unless defined $logic{$t}{recalc_on_request} && $logic{$t}{recalc_on_request}==0;
+
+		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(Logik) -> $ga:$result gesendet. " if $debug && defined $result;
+		    knx_write($ga, $result, undef, 0x40) if defined $result; # response, DPT aus eibga.conf		    
+		}	    
+		else
 		{
 		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet. " if $debug;
 		    knx_write($ga, $result, undef, 0x40); # response, DPT aus eibga.conf		    
 		}
-		else
-		{
-		    # falls gespeichertes Ergebnis ungueltig, neuer Berechnungsversuch
-		    $result=execute_logic($t, groupaddress($logic{$t}{receive}), undef, undef);
-
-		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(Logik) -> $ga:$result gesendet. " if $debug;
-		    knx_write($ga, $result, undef, 0x40); # response, DPT aus eibga.conf		    
-		}	    
 		
 		next;
 	    }
-	    elsif(!$receive_ga) # Receive geht vor - bei Timer-Logiken ist receive_ga immer 0
+	    elsif(!$receive_ga) # Wenn eine GA sowohl in transmit als auch receive vorkommt, geht receive vor 
 	    {
-		if(defined $in) # Write/Response-Telegramm: das waren moeglicherweise wir selbst, also nicht antworten
+		if(defined $in) # Write/Response-Telegramm auf transmit: das waren moeglicherweise wir selbst, also nicht antworten
 		{
 		    $plugin_info{$plugname.'_'.$t.'_result'}=$in; # einfach Input ablegen
 		}
@@ -283,7 +284,7 @@ if($event=~/bus/)
 
 	# Aufruf der Logik-Engine
 	my $prevResult=$plugin_info{$plugname.'_'.$t.'_result'};
-	my $result=execute_logic($t, $receive, $ga, $in);
+	my $result=execute_logic($t, $ga, $in);
 
         # war Wiregate der Sender des Telegramms?
         # Zirkelaufruf mit wiederholt gleichen Ergebnissen ausschliessen
@@ -360,7 +361,7 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	{
 	    # ...es sei denn, es ist eine timer-Logik. Die muss jetzt ausgefuehrt werden
 	    # Aufruf der Logik-Engine
-	    $result=execute_logic($t, groupaddress($logic{$t}{receive}), undef, undef);
+	    $result=execute_logic($t, undef, undef);
 	    $retval.="\$logic{$t} -> $transmit:".
 		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer) " if $debug;
 	    
@@ -387,11 +388,14 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 # bspw wegen eines Plugin-Timeouts waehrend der Berechnung
 for my $t (keys %logic)
 {
-    next if $t eq 'debug' || !defined $logic{$t}{timer};
+    next if $t eq 'debug' || $t=~/^_/;
+    next unless defined $logic{$t}{timer};
     
     my $timer=$plugin_info{$plugname.'__'.$t.'_timer'};
 
     next if defined $timer && $timer>time();
+
+    plugin_log($plugname, "\$logic{$t}: Timer nicht korrekt gesetzt ($plugin_info{$plugname.'__'.$t.'_timer'}), berechne erneut");
 
     # Debuggingflag gesetzt
     my $debug = $logic{debug} || $logic{$t}{debug}; 
@@ -715,20 +719,21 @@ sub set_next_call
 	if($nextcall=~/^([0-9]+)\:([0-9]+)/)
 	{
 	    my $seconds=3600*($1-substr($time_of_day,0,2))+60*($2-substr($time_of_day,3,2))-substr($time_of_day,6,2);
-	    plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall."); # if $debug;
+	    plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall.");# if $debug;
 
 	    my $timer=$systemtime+$seconds+3600*24*$days_until_nextcall;
 	    $plugin_info{$plugname.'__'.$t.'_timer'}=$timer;
+#	    plugin_log($plugname, "\$plugin_info{$plugname.'__'.$t.'_timer'}=$plugin_info{$plugname.'__'.$t.'_timer'}=$timer ?");# if $debug;
 	}
 	else
 	{
-	    plugin_log($plugname, "Ungueltige Uhrzeit des naechsten Aufrufs der Timer-Logik '$t'$daytext."); # if $debug;
+	    plugin_log($plugname, "Ungueltige Uhrzeit des naechsten Aufrufs der Timer-Logik '$t'$daytext.");# if $debug;
 	}
     }
     else
     {
 	plugin_log($plugname, "Logik '$t' wird nicht mehr aufgerufen (alle in time=>... festgelegten Termine sind verstrichen).") 
-	    if $logic{$t}{timer}; # if $debug;
+	    if $logic{$t}{timer};# && $debug;
 
 	delete $plugin_info{$plugname.'__'.$t.'_timer'}; 
     }
@@ -738,8 +743,7 @@ sub set_next_call
 # Im wesentlichen Vorbesetzen von input und state, Aufrufen der Logik, knx_write, Zurueckschreiben von state
 sub execute_logic
 {
-    my ($t, $receive, $ga, $in)=@_; # Logikindex $t, Bustelegramm erhalten auf $ga mit Inhalt $in
-    # $receive muss die direkten Gruppenadressen enthalten - Decodierung von Kuerzeln wird nicht vorgenommen
+    my ($t, $ga, $in)=@_; # Logikindex $t, Bustelegramm erhalten auf $ga mit Inhalt $in
 
     # Debuggingflag gesetzt
     my $debug = $logic{debug} || $logic{$t}{debug}; 
@@ -747,12 +751,31 @@ sub execute_logic
     # als erstes definiere das Input-Array fuer die Logik
     my $input=$in;
 
+    # alle receive-GAs
+    my $receive=groupaddress $logic{$t}{receive};
+    my $fetch=groupaddress $logic{$t}{fetch};
+
+    if(defined $fetch)
+    {
+	if(!defined $receive)
+	{
+	    $receive=$fetch;
+	}
+	else
+	{
+	    # Arrays machen, falls es noch keines ist
+	    $fetch=[$fetch] unless ref $fetch; 
+	    $receive=[$receive] unless ref $receive; 
+	    push @{$receive}, @{$fetch};
+	}
+    }
+
     # Array-Fall: bereite Input-Array fuer Logik vor
     if(!ref $receive)
     {
 	# wenn ga gesetzt, steht der Input-Wert in $in
 	# wenn receive undefiniert, gibt es keine receive-GA
-	$in=$input=knx_read($receive, 300) if !$ga && $receive;
+	$in=$input=knx_read($receive, (defined $logic{$t}{eibd_cache}?$logic{$t}{eibd_cache}:300)) if !$ga && $receive;
     }
     else
     {
@@ -765,7 +788,8 @@ sub execute_logic
 	    }
 	    else
 	    {
-		push @{$input}, knx_read($rec, 300);
+		$in=knx_read($rec, (defined $logic{$t}{eibd_cache}?$logic{$t}{eibd_cache}:300));
+		push @{$input}, $in;
 	    }
 	}
     }
