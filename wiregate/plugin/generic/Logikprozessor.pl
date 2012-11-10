@@ -951,6 +951,7 @@ sub sendProwl {
     
     use LWP::UserAgent;
     use URI::Escape;
+    use Encode;
  
     # Falls nur ein einziger skalarer API key geliefert wurde, muss dieser in 
     # ein Array gehüllt werden
@@ -967,9 +968,9 @@ sub sendProwl {
 
         $requestURL = sprintf("https://prowl.weks.net/publicapi/add?apikey=%s&application=%s&event=%s&description=%s&priority=%d&url=%s",
       	    uri_escape($singleApikey),
-    	    uri_escape($application),
-    	    uri_escape($event),
-    	    uri_escape($description),
+    	    uri_escape(encode("utf8", $application)),
+    	    uri_escape(encode("utf8", $event)),
+    	    uri_escape(encode("utf8", $description)),
     	    uri_escape($priority),
     	    uri_escape($url));
   
