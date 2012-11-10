@@ -30,7 +30,7 @@
 # Tools und vorbesetzte Variablen fuer die Logiken
 sub limit { my ($lo,$x,$hi)=@_; return $x<$lo?$lo:($x>$hi?$hi:$x); }
 my $date=`/bin/date +"%W,%a,%u,%m,%d,%Y,%j,%H,%M,%T"`;
-plugin_log($plugname, "Datum/Uhrzeit nicht lesbar: '$date'") unless $date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/;
+plugin_log($plugname, "Datum/Uhrzeit nicht lesbar: '$date'.") unless $date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/;
 my $calendar_week=$1;
 my $day_of_week=$2;
 my $day_of_week_no=$3;
@@ -142,12 +142,9 @@ if($event=~/restart|modified/ || $config_modified)
 	}
 
 	# transmit-Adresse abonnieren
-	if (defined $logic{$t}{transmit})
-	{
-    my $transmit=groupaddress($logic{$t}{transmit});
-    $plugin_subscribe{$transmit}{$plugname}=1;
-    plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
-	}
+	my $transmit=groupaddress $logic{$t}{transmit};
+	$plugin_subscribe{$transmit}{$plugname}=1;
+	plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
 
 	# Zaehlen und Logeintrag
 	$count++;
@@ -160,7 +157,7 @@ if($event=~/restart|modified/ || $config_modified)
 	}
 
 	# Nun alle receive-Adressen abonnieren (eine oder mehrere)
-	my $receive=groupaddress($logic{$t}{receive});
+	my $receive=groupaddress $logic{$t}{receive};
 
 	next unless $receive;
 	
@@ -185,12 +182,15 @@ if($event=~/restart|modified/ || $config_modified)
 
 	# Berechnung und Senden beim Startup des Logikprozessors
 	my $result=execute_logic($t, undef, undef);	
-	my $ga=groupaddress($logic{$t}{transmit});
-	plugin_log($plugname, "\$logic{$t}{transmit}(Logik) -> $ga:$result") if $debug;
-	knx_write($ga, $result); # DPT aus eibga.conf		    
+	if(defined $result)
+	{
+	    my $ga=groupaddress $logic{$t}{transmit};
+	    knx_write($ga, $result); # DPT aus eibga.conf		    
+	    plugin_log($plugname, "\$logic{$t}{transmit}(Logik) -> $ga:$result") if $debug;
+	}
     }	    
 
-    $retval.=$count." initialisiert";
+    $retval.=$count." initialisiert, ";
 }
 
 if($event=~/bus/)
@@ -247,8 +247,11 @@ if($event=~/bus/)
 		    $result=execute_logic($t, undef, undef) 
 			unless defined $logic{$t}{recalc_on_request} && $logic{$t}{recalc_on_request}==0;
 
-		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(Logik) -> $ga:$result gesendet. " if $debug && defined $result;
-		    knx_write($ga, $result, undef, 0x40) if defined $result; # response, DPT aus eibga.conf		    
+		    if(defined $result)
+		    {
+			$retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(Logik) -> $ga:$result gesendet. " if $debug;
+			knx_write($ga, $result, undef, 0x40) if defined $result; # response, DPT aus eibga.conf		    
+		    }
 		}	    
 		else
 		{
@@ -321,8 +324,11 @@ if($event=~/bus/)
 	}
 	else
 	{
-	    knx_write($transmit, $result);
-	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet " if $debug;
+	    if(defined $result)
+	    {
+		knx_write($transmit, $result);
+		$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet " if $debug;
+	    }
 
 	    # Cool-Periode starten
 	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{cool} if defined $logic{$t}{cool};
@@ -755,8 +761,8 @@ sub execute_logic
     my $input=$in;
 
     # alle receive-GAs
-    my $receive=groupaddress($logic{$t}{receive});
-    my $fetch=groupaddress($logic{$t}{fetch});
+    my $receive=groupaddress $logic{$t}{receive};
+    my $fetch=groupaddress $logic{$t}{fetch};
 
     if(defined $fetch)
     {
