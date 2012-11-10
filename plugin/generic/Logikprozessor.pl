@@ -30,7 +30,7 @@
 # Tools und vorbesetzte Variablen fuer die Logiken
 sub limit { my ($lo,$x,$hi)=@_; return $x<$lo?$lo:($x>$hi?$hi:$x); }
 my $date=`/bin/date +"%W,%a,%u,%m,%d,%Y,%j,%H,%M,%T"`;
-plugin_log($plugname, "Datum/Uhrzeit konnte nicht lesbar.") unless $date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/;
+plugin_log($plugname, "Datum/Uhrzeit nicht lesbar: '$date'") unless $date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/;
 my $calendar_week=$1;
 my $day_of_week=$2;
 my $day_of_week_no=$3;
