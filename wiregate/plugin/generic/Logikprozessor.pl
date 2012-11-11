@@ -50,6 +50,8 @@ my $night=!$day;
 my $systemtime=time();
 my $date=sprintf("%02d/%02d",$month,$day_of_month);
 
+sub groupaddress;
+
 # Konfigurationsfile einlesen
 my $eibd_backend_address='1.1.254';
 my %logic=();
@@ -142,9 +144,12 @@ if($event=~/restart|modified/ || $config_modified)
 	}
 
 	# transmit-Adresse abonnieren
-	my $transmit=groupaddress $logic{$t}{transmit};
-	$plugin_subscribe{$transmit}{$plugname}=1;
-	plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
+	if (defined($logic{$t}{transmit}))
+	{
+    my $transmit=groupaddress $logic{$t}{transmit};
+    $plugin_subscribe{$transmit}{$plugname}=1;
+    plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
+  }
 
 	# Zaehlen und Logeintrag
 	$count++;
