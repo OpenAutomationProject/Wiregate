@@ -6,7 +6,7 @@
 # Variablen definieren
 
 my $base_time = 15 ; 		#in Minuten
-my $regler_ga = "0/0/0"; 	#Stellwert vom Regler -> Achtung in Zeile 19 "DPT" durch den richtigen DPT ersetzen
+my $regler_ga = "0/0/0"; 	#Stellwert vom Regler -> Achtung in Zeile 19 DPT-Bug ??? durch den richtigen DPT ersetzen
 my $send_ga = "0/0/0";		#GA vom Schaltaktor
 
 
@@ -16,7 +16,7 @@ my $send_ga = "0/0/0";		#GA vom Schaltaktor
 $plugin_subscribe{$regler_ga}{$plugname} = 1;
 $plugin_info{$plugname.'_cycle'} = 60;
 my $time = time();
-my $on_perc = knx_read($regler_ga,DPT); #hier wird der Stellwert in % gelesen;
+my $on_perc = knx_read($regler_ga,0,5.001); #hier wird der Stellwert in % gelesen;
 
 my $on_time = (($base_time/100)*$on_perc);
 my $off_time = ($base_time - $on_time);
