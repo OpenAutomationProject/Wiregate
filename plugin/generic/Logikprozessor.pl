@@ -144,15 +144,12 @@ if($event=~/restart|modified/ || $config_modified)
 	}
 
 	# transmit-Adresse abonnieren
-	if (defined($logic{$t}{transmit}))
+	if (defined $logic{$t}{transmit})
 	{
-    my $transmit=groupaddress $logic{$t}{transmit};
-    $plugin_subscribe{$transmit}{$plugname}=1;
-    plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
-  }
-
-	# Zaehlen und Logeintrag
-	$count++;
+	    my $transmit=groupaddress $logic{$t}{transmit};
+	    $plugin_subscribe{$transmit}{$plugname}=1;
+	    plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
+	}
 
 	# Timer-Logiken reagieren nicht auf Bustraffic auf den receive-Adressen
 	# fuer Timer-Logiken: ersten Call berechnen
@@ -162,17 +159,24 @@ if($event=~/restart|modified/ || $config_modified)
 	}
 
 	# Nun alle receive-Adressen abonnieren (eine oder mehrere)
-	my $receive=groupaddress $logic{$t}{receive};
-
-	next unless $receive;
-	
-	$receive=[$receive] unless ref $receive;
-
-	for my $rec (@{$receive})
+	if(defined $logic{$t}{receive})
 	{
-	    $plugin_subscribe{$rec}{$plugname}=1;
-	    plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$rec};
+	    my $receive=groupaddress $logic{$t}{receive};
+
+	    if($receive)
+	    {	
+		$receive=[$receive] unless ref $receive;
+		
+		for my $rec (@{$receive})
+		{
+		    $plugin_subscribe{$rec}{$plugname}=1;
+		    plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$rec};
+		}
+	    }
 	}
+
+	# Zaehlen und Logeintrag
+	$count++;
     }
 
 #    plugin_log($plugname, "Initialisierungsblock beendet");   
@@ -187,7 +191,7 @@ if($event=~/restart|modified/ || $config_modified)
 
 	# Berechnung und Senden beim Startup des Logikprozessors
 	my $result=execute_logic($t, undef, undef);	
-	if(defined $result && defined $logic{$t}{transmit} && length($logic{$t}{transmit}))
+	if(defined $result && defined $logic{$t}{transmit})
 	{
 	    my $ga=groupaddress $logic{$t}{transmit};
 	    knx_write($ga, $result); # DPT aus eibga.conf		    
@@ -329,7 +333,7 @@ if($event=~/bus/)
 	}
 	else
 	{
-	    if(defined $result && defined $transmit && length($transmit))
+	    if(defined $result && defined $transmit)
 	    {
 		knx_write($transmit, $result);
 		$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet " if $debug;
