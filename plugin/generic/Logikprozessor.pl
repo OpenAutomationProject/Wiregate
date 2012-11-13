@@ -187,7 +187,7 @@ if($event=~/restart|modified/ || $config_modified)
 
 	# Berechnung und Senden beim Startup des Logikprozessors
 	my $result=execute_logic($t, undef, undef);	
-	if(defined $result)
+	if(defined $result && defined $logic{$t}{transmit} && length($logic{$t}{transmit}))
 	{
 	    my $ga=groupaddress $logic{$t}{transmit};
 	    knx_write($ga, $result); # DPT aus eibga.conf		    
@@ -329,7 +329,7 @@ if($event=~/bus/)
 	}
 	else
 	{
-	    if(defined $result)
+	    if(defined $result && defined $transmit && length($transmit))
 	    {
 		knx_write($transmit, $result);
 		$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet " if $debug;
