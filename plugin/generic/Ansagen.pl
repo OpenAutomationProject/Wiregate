@@ -578,7 +578,7 @@ sub speak
 
 		    $retval.="$channel:Radiosender '$val'='$station'";
 		}
-		else
+		elsif($val)
 		{
 		    $retval.="Unbekannter Radiosender '$val'";
 		}
