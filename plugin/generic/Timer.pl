@@ -6,10 +6,10 @@
 ### Konfiguration ###
 #####################
 
-my $ga  = "0/0/201"; 	#GA
-my $delay = 5;          #Delay in Sekunden
-my $start_value = 0;	#Timerstart bei 1 -> 1 (Aus-Timer)
-						#Timerstart bei 0 -> 0 (An-Timer)
+my $ga  = "3/2/28"; 	#GA
+my $delay = 9000;          #Delay in Sekunden
+my $start_value = 1;	#Timerstart bei 1 -> 1 (Aus-Timer)
+			#Timerstart bei 0 -> 0 (An-Timer)
 			
 ##########################
 ### Ende Konfiguration ###
@@ -24,12 +24,12 @@ if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $ga)
     if ($val_in == $start_value)   # wenn Start von GA erkannt
     {
     plugin_log($plugname,"Timer aktiv");
-    $plugin_info{$plugname.'_delay_active'} = 1;# setzt eine Variable zur Fehlervermeidung
+    $plugin_info{$plugname.'_timer_active'} = 1;# setzt eine Variable zur Fehlervermeidung
     $plugin_info{$plugname.'_last'} = time;
     $plugin_info{$plugname.'_cycle'} = $delay;  # Plugin-Wiederholung nach X Sekunden
     }
     
-    if ($val_in == ~$start_value)   # wenn Stop von GA erkannt
+    if ($val_in == !$start_value)   # wenn Stop von GA erkannt
     {
     $plugin_info{$plugname.'_last'} = time;
     $plugin_info{$plugname.'_cycle'} = 0;  		
