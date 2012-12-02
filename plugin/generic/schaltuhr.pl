@@ -1,11 +1,12 @@
 # Plugin zum Zeit abhängigem schalten von GA's (Schaltuhr)
-# Version 0.6 BETA 29.02.2012
+# Version 0.8 BETA 03.10.2012
 # Copyright: swiss (http://knx-user-forum.de/members/swiss.html)
 # License: GPL (v2)
 # Aufbau möglichst so, dass man unterhalb der Einstellungen nichts verändern muss!
 # -Erweitert um Sonnenauf / - untergang von ZeitlerW (http://knx-user-forum.de/members/zeitlerw.html)
 # -Inspiriert von kleinklausi's Rolladen - Plugin
 
+my @Schaltzeiten;
 
 ####################
 ###Einstellungen:###
@@ -14,22 +15,23 @@
 # Die Standortdaten 
 # Die Koordinaten des Hauses. Sehr einfach ?ber http://www.getlatlon.com/ zu ermitteln.
 my ($lat, $lon) = (
-    50.27816466477597, # Breitengrad in Grad
-    11.64325475692749  # L?ngengrad in Grad
+    51.66787081407156, # Breitengrad in Grad
+    13.64227294921875  # L?ngengrad in Grad
     );
 
 #Winkel für Beginn der Dämmerung
 # siehe auch: http://search.cpan.org/~rkhill/Astro-Sunrise-0.91/Sunrise.pm#DESCRIPTION 
 my $winkel=-3;
-my @Schaltzeiten;
 
 
 #Pro Schaltpunkt einfach den unten stehenden Eintrag kopieren und anpassen.
 #Sollen Schaltzeiten astronomisch geschaltet werden, so muss bei Astro 'a' für Sonnenaufgang
 #und 'u' für Sonnenuntergang eingetragen werden. Der Stunden und Minutenwert wird dann ignoriert.
 
-push @Schaltzeiten, { name => "weckzeit", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 0, Stunden => 05, Minuten => 45, Wert => 1, DPT => 1, ga => '1/5/4', KW => '', Monat => '', Astro => '' };
-
+push @Schaltzeiten, { name => "test", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 0, Stunden => 21, Minuten => 10, Wert => 1, DPT => 1, ga => '1/0/0', KW => '', Monat => '', Astro => '' };
+push @Schaltzeiten, { name => "test1", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 0, Stunden => 21, Minuten => 11, Wert => 0, DPT => 1, ga => '1/0/0', KW => '', Monat => '', Astro => '' };
+push @Schaltzeiten, { name => "test2", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 0, Stunden => 21, Minuten => 10, Wert => 1, DPT => 1, ga => '1/0/25', KW => '', Monat => '', Astro => '' };
+push @Schaltzeiten, { name => "test3", montag => 1, dienstag => 1, mittwoch => 1, donnerstag => 1, freitag => 1, samstag => 0, sonntag => 0, Stunden => 21, Minuten => 12, Wert => 0, DPT => 1, ga => '1/0/25', KW => '', Monat => '', Astro => '' };
 
 
 ######################
@@ -47,6 +49,8 @@ $plugin_info{$plugname.'_cycle'} = 20;
 #Hier wird ein Array angelegt, um die Wochentagsnummer von localtime zu übersetzen
 my @Wochentag = ('sonntag', 'montag', 'dienstag', 'mittwoch', 'donnerstag', 'freitag', 'samstag');
 
+my @sunrise=split(/:/,sun_rise($lon,$lat,$winkel));
+my @sunset=split(/:/,sun_set($lon,$lat,$winkel));
 my $sec; #Sekunde
 my $min; # Minute
 my $hour; #Stunde
@@ -63,37 +67,56 @@ $mon += 1;
 
 my $kw = getWeekNumber($year, $mon, $mday);
 
-foreach my $element (@Schaltzeiten) {
-	if (knx_read($element->{ga},0,$element->{DPT}) ne $element->{Wert}) {
-	        if ($element->{Astro} ne '') {
-	            if ($element->{Astro} eq 'a') {
-	                $element->{Stunden}=$sunrise[0];
-	                $element->{Minuten}=$sunrise[1];
-	            } elsif ($element->{Astro} eq 'u') {
-	                                $element->{Stunden}=$sunset[0];
-	                                $element->{Minuten}=$sunset[1];
-	            }
-		}
-		if ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} ne '') {
-			if ($element->{KW} == $kw) {
-				knx_write($element->{ga},$element->{Wert},$element->{DPT});
-				next;
-			} else {
-				next;
-			}
-		} elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{Monat} ne '') {
-			if ($element->{Monat} == $mon) {
-				knx_write($element->{ga},$element->{Wert},$element->{DPT});
-				next;
-			} else {
-				next;
-			}
-		} elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} eq '' && $element->{Monat} eq '') {
-			knx_write($element->{ga},$element->{Wert},$element->{DPT});
-			next;
-		}
-	}	
-next;
+if(($plugin_info{$plugname.'_time'}+60) <= $plugin_info{$plugname.'_last'}){
+    foreach my $element (@Schaltzeiten) {
+             if ($element->{Astro} ne '') {
+                 if ($element->{Stunden} ne '' or $element->{Minuten} ne '') {
+                    if ($element->{Astro} eq 'a') {
+                        $element->{Stunden}+=$sunrise[0];
+                        $element->{Minuten}+=$sunrise[1];
+                    } elsif ($element->{Astro} eq 'u') {
+                                        $element->{Stunden}+=$sunset[0];
+                                        $element->{Minuten}+=$sunset[1];
+                    }
+                 }else{
+                    if ($element->{Astro} eq 'a') {
+                        $element->{Stunden}=$sunrise[0];
+                        $element->{Minuten}=$sunrise[1];
+                    } elsif ($element->{Astro} eq 'u') {
+                                        $element->{Stunden}=$sunset[0];
+                                        $element->{Minuten}=$sunset[1];
+                    }                
+                 }
+              
+              }
+            if ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} ne '') {
+            $plugin_info{$plugname.'_time'} = time();
+                if ($element->{KW} == $kw) {
+                    knx_write($element->{ga},$element->{Wert},$element->{DPT});
+                    plugin_log($plugname,'Schaltpunkt: ' . $element->{name} . ' ausgeführt. Wert: ' . $element->{Wert} . ' an Gruppenadresse ' . $element->{ga} . ' gesendet');
+                    next;
+                } else {
+                    next;
+                }
+            } elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{Monat} ne '') {
+                $plugin_info{$plugname.'_time'} = time();
+                if ($element->{Monat} == $mon) {
+                    knx_write($element->{ga},$element->{Wert},$element->{DPT});
+                    plugin_log($plugname,'Schaltpunkt: ' . $element->{name} . ' ausgeführt. Wert: ' . $element->{Wert} . ' an Gruppenadresse ' . $element->{ga} . ' gesendet');
+                    next;
+                } else {
+                    next;
+                }
+            } elsif ($element->{$Wochentag[$wday]} == 1 && $element->{Stunden} == $hour && $element->{Minuten} == $min && $element->{KW} eq '' && $element->{Monat} eq '') {
+                $plugin_info{$plugname.'_time'} = time();
+                knx_write($element->{ga},$element->{Wert},$element->{DPT});
+                plugin_log($plugname,'Schaltpunkt: ' . $element->{name} . ' ausgeführt. Wert: ' . $element->{Wert} . ' an Gruppenadresse ' . $element->{ga} . ' gesendet');
+                next;
+            }   
+    next;
+    }
+}else{
+ return;
 }
 
 sub getWeekNumber {
