@@ -216,7 +216,7 @@ foreach my $Zeit (@Zeiten)
         plugin_log($plugname, sprintf "Sending at[$baseZone %02d:%02d:%02d],Value[$Zeit->{Wert}],GA[$Zeit->{GA}]",
                    $basStu,$basMin,$basSec);
 
-    knx_write($Zeit->{GA},$Zeit->{Wert}, $Zeit->{DPT});   
+    (defined ($Zeit->{GA}) && knx_write($Zeit->{GA},$Zeit->{Wert}, $Zeit->{DPT}));
 } # foreach (@Zeiten)
 
 $plugin_info{"$plugname.$version.lastMinute"} = $curMin;
