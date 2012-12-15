@@ -648,8 +648,8 @@ sub standardize_and_expand_single_schedule
 		if($t1<=$now && $t2>$now)
 		{
 		    $t1+=int(($now-$t1)/$period+1)*$period;
-		    $t1+=$period while $t1<=$now; # darf eigentlich nicht sein
 		    push @{$newtime}, sprintf("%02d:%02d",$t1/60,$t1%60) if $t1<=$t2;
+		    plugin_log($plugname, "now=$now, t1=$t1, t2=$t2") if defined $logic{debug} || defined $logic{$t}{debug};
 		}
 		
 # alter Code: hier wurde noch jede Zeitangabe expandiert (rechenzeitintensiv bei Schedules mit kurzem Intervall)	
@@ -690,7 +690,7 @@ sub set_next_call
 	       calendar_week=>$calendar_week,day_of_week=>$day_of_week_no};
     add_day_info($today);
 
-    my $time_of_day=`/bin/date +"%T"`;
+    my $time_of_day=sprintf("%02d:%02d",$hour,$minute);
 
     # Schedule-Form standardisieren (alle Eintraege in Listenform setzen und Wochentage durch Zahlen ersetzen)
     # dabei gleich schauen, ob HEUTE noch ein Termin ansteht
