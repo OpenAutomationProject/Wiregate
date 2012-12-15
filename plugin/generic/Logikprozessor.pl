@@ -7,25 +7,7 @@
 
 #$plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
-# eibgaconf fixen falls nicht komplett indiziert
-# Kann ab Wiregate PL32 entfallen
-#if(!exists $eibgaconf{ZV_Uhrzeit})
-#{
-#    for my $ga (grep /^[0-9\/]+$/, keys %eibgaconf)
-#    {
-#	$eibgaconf{$ga}{ga}=$ga;
-#	my $name=$eibgaconf{$ga}{name};
-#	next unless defined $name;
-#	$eibgaconf{$name}=$eibgaconf{$ga};
-#
-#	next unless $name=~/^\s*(\S+)/;
-#	my $short=$1;
-#	$short='ZV_'.$1 if $eibgaconf{$ga}{name}=~/^Zeitversand.*(Uhrzeit|Datum)/;
-#
-#	$eibgaconf{$ga}{short}=$short;
-#	$eibgaconf{$short}=$eibgaconf{$ga};
-#    }
-#}
+use POSIX qw(floor);
 
 # Tools und vorbesetzte Variablen fuer die Logiken
 sub limit { my ($lo,$x,$hi)=@_; return $x<$lo?$lo:($x>$hi?$hi:$x); }
@@ -84,6 +66,10 @@ my $config_modified = ($configtime < $plugin_info{$plugname.'_configtime'}-1);
 # Plugin-Code
 my $retval='';
 
+# Im Falle eines Timeouts soll der Logikprozessor in 10s neu gestartet werden
+$plugin_info{$plugname."_cycle"}=10;  
+
+# Unterscheidung Aufrufgrund
 if($event=~/restart|modified/ || $config_modified) 
 {
     # alle Variablen loeschen
@@ -626,9 +612,9 @@ sub standardize_and_expand_single_schedule
 	}
     }
     
-    # Expandieren periodischer Zeitangaben, das sind Zeitangaben der Form
-    # time=>'08:00+30min' - ab 08:00 alle 30min
-    # time=>'08:00+5min-09:00' - ab 08:00 alle 5min mit Ende 09:00
+    # Zeitangabe im Tag
+    # Um Rechenzeit zu sparen - am Ende interessiert uns nur der erste Zeitpunkt am Tag und der erste nach der aktuellen Tageszeit
+    # - errechnen wir auch nur diese beiden Zeitpunkte
     if(grep /\+/, @{$s->{time}}) 
     {
 	my $newtime=[];
@@ -636,6 +622,7 @@ sub standardize_and_expand_single_schedule
 	{
 	    unless($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])\+([1-9][0-9]*)(m|h|min)(?:\-([0-9][0-9]):([0-9][0-9]))?$/)
 	    {
+		# Einzelne Zeitangaben wie '07:30'
 		if($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])$/)
 		{
 		    push @{$newtime}, sprintf("%02d:%02d",$2, $3);
@@ -648,12 +635,28 @@ sub standardize_and_expand_single_schedule
 	    }
 	    else
 	    {
+		# Expandieren periodischer Zeitangaben, das sind Zeitangaben der Form
+		# time=>'08:00+30min' - ab 08:00 alle 30min
+		# time=>'08:00+5min-09:00' - ab 08:00 alle 5min mit Ende 09:00
 		my ($head,$t1,$period,$t2)=($1,$2*60+$3,$4*($5 eq 'h' ? 60 : 1),(defined $6 ? ($6*60+$7) : 24*60));	    
-		
-		for(my $tm=$t1; $tm<=$t2; $tm+=$period)
+		my $now=$hour*60+$minute;
+	
+		# erster Zeitpunkt am Tag
+		push @{$newtime}, sprintf("%02d:%02d",$t1/60,$t1%60);
+
+		# erster Zeitpunkt nach aktueller Tageszeit
+		if($t1<$now && $t2>$now)
 		{
-		    push @{$newtime}, sprintf("%02d:%02d",$tm/60,$tm%60);
+		    $t1+=floor(($now-$t1)/$period+1)*$period;
+		    $t1+=$period if $t1<$now; # darf eigentlich gar nicht sein, aber zur Sicherheit...
+		    push @{$newtime}, sprintf("%02d:%02d",$t1/60,$t1%60) if $t1<$t2;
 		}
+		
+# alter Code: hier wurde noch jede Zeitangabe expandiert (rechenzeitintensiv bei Schedules mit kurzem Intervall)	
+#		for(my $tm=$t1; $tm<=$t2; $tm+=$period)
+#		{
+#		    push @{$newtime}, sprintf("%02d:%02d",$tm/60,$tm%60);
+#		}
 	    }
 	}
 	@{$s->{time}} = sort @{$newtime};
@@ -737,7 +740,7 @@ sub set_next_call
 	if($nextcall=~/^([0-9]+)\:([0-9]+)/)
 	{
 	    my $seconds=3600*($1-substr($time_of_day,0,2))+60*($2-substr($time_of_day,3,2))-substr($time_of_day,6,2);
-	    plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall.");# if $debug;
+	    plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall.") if $debug;
 
 	    my $timer=$systemtime+$seconds+3600*24*$days_until_nextcall;
 	    $plugin_info{$plugname.'__'.$t.'_timer'}=$timer;
