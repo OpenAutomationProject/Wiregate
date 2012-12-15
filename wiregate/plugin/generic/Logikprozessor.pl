@@ -639,17 +639,17 @@ sub standardize_and_expand_single_schedule
 		# time=>'08:00+30min' - ab 08:00 alle 30min
 		# time=>'08:00+5min-09:00' - ab 08:00 alle 5min mit Ende 09:00
 		my ($head,$t1,$period,$t2)=($1,$2*60+$3,$4*($5 eq 'h' ? 60 : 1),(defined $6 ? ($6*60+$7) : 24*60));	    
-		my $now=$hour*60+$minute;
+		my $now=int($hour)*60+$minute;
 	
 		# erster Zeitpunkt am Tag
 		push @{$newtime}, sprintf("%02d:%02d",$t1/60,$t1%60);
 
 		# erster Zeitpunkt nach aktueller Tageszeit
-		if($t1<$now && $t2>$now)
+		if($t1<=$now && $t2>$now)
 		{
-		    $t1+=floor(($now-$t1)/$period+1)*$period;
-		    $t1+=$period if $t1<$now; # darf eigentlich gar nicht sein, aber zur Sicherheit...
-		    push @{$newtime}, sprintf("%02d:%02d",$t1/60,$t1%60) if $t1<$t2;
+		    $t1+=int(($now-$t1)/$period+1)*$period;
+		    $t1+=$period while $t1<=$now; # darf eigentlich nicht sein
+		    push @{$newtime}, sprintf("%02d:%02d",$t1/60,$t1%60) if $t1<=$t2;
 		}
 		
 # alter Code: hier wurde noch jede Zeitangabe expandiert (rechenzeitintensiv bei Schedules mit kurzem Intervall)	
