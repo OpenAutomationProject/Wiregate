@@ -234,6 +234,8 @@ if($event=~/bus/)
 	    # Read-Requests auf die receive-Adressen werden gar nicht beantwortet
 	    if($msg{apci} eq "A_GroupValue_Read")
 	    {  
+		next if $logic{$t}{ignore_read_requests};
+
 		my $result=$plugin_info{$plugname.'_'.$t.'_result'};
 
 		if(!defined $result || $logic{$t}{recalc_on_request})
