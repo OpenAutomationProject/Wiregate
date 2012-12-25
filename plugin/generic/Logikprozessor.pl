@@ -5,7 +5,7 @@
 # Wiregate-Plugin
 # (c) 2012 Fry under the GNU Public License
 
-#$plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
+# $plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
 use POSIX qw(floor);
 
@@ -27,7 +27,7 @@ my $weekend=($day_of_week_no>=6);
 my $weekday=!$weekend;
 my $holiday=is_holiday($year,$day_of_year);
 my $workingday=(!$weekend && !$holiday);
-my $day=($hour>7 && $hour<23);
+my $day=($hour>=7 && $hour<23);
 my $night=!$day;
 my $systemtime=time();
 my $date=sprintf("%02d/%02d",$month,$day_of_month);
@@ -386,7 +386,7 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
     }
     else # noch nicht faelliger Timer
     {
-	$nexttimer=$plugin_info{$timer} if !defined $nexttimer || $plugin_info{$timer}<$nexttimer;
+	$nexttimer=$timer if !defined $nexttimer || $plugin_info{$timer}<$plugin_info{$nexttimer};
     }
 }
 
@@ -415,10 +415,12 @@ unless(defined $nexttimer)
 }
 else
 {
-    my $cycle=int($nexttimer-time());
+    my $cycle=int($plugin_info{$nexttimer}-time());
     $cycle=1 if $cycle<1;
     $plugin_info{$plugname."_cycle"}=$cycle;
-    $retval.="Cycle (Timer) gestellt auf ".$cycle."s" if $logic{debug};
+    $nexttimer=~s/^$plugname\__//;
+    $nexttimer=~s/_timer$//;    
+    $retval.="Naechster Timer: $nexttimer" if $logic{debug};
 }
 
 # experimentell - wir helfen der Garbage Collection etwas nach...
