@@ -154,7 +154,7 @@ if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wire
     print SIM "\t\t".'$retval.="knx_write($ga,$val,$dpt); ";'."\n";
 
     print SIM "\t\t".'$ga=$eibgaconf{$ga}{ga};'."\n" if $use_shorts;	
-#    print SIM "\t\t".'knx_write($ga, $val, $dpt);'."\n";
+    print SIM "\t\t".'knx_write($ga, $val, $dpt);'."\n";
     print SIM "\t}\n";
     print SIM "\t".'$line++; $line=0 unless $line<=$#script;'."\n";
     print SIM "\t".'$cycle=$script[$line][0]-(time()-$starttime)%(7*24*3600);'."\n";
