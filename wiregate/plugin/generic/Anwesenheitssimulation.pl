@@ -139,7 +139,7 @@ if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wire
     print SIM "# Nun das oben definierte Skript ausfuehren\n";
     print SIM 'my $retval="";'."\n";
     print SIM 'my $cycle=1;'."\n";
-    print SIM 'delete $plugin_info{$plugname."_line"} if !$plugin_initflag || ($plugin_info{$plugname."_lastsaved"}<=$plugin_info{$plugname."_last"});'."\n";
+    print SIM 'delete $plugin_info{$plugname."_line"} if !$plugin_initflag || ($plugin_info{$plugname."_lastsaved"}>$plugin_info{$plugname."_last"});'."\n";
     print SIM 'my $line=$plugin_info{$plugname."_line"};'."\n\n";
     print SIM 'if(defined $line && $line<=$#script)'."\n";
     print SIM "{\n";
