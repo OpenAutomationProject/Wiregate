@@ -7,7 +7,7 @@
 
 # $plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
-use POSIX qw(floor);
+use POSIX qw(floor strftime);
 
 # Tools und vorbesetzte Variablen fuer die Logiken
 sub limit { my ($lo,$x,$hi)=@_; return $x<$lo?$lo:($x>$hi?$hi:$x); }
