@@ -45,12 +45,26 @@ my $date=sprintf("%02d/%02d",$month,$day_of_month);
 
 sub groupaddress;
 
+# Konfigfile seit dem letzten Mal geaendert?
+my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
+$conf.='.conf' unless $conf=~s/\.pl$/.conf/;
+my $configtime=24*60*60*(-M $conf);
+my $config_modified = ($configtime < $plugin_info{$plugname.'_configtime'}-1);
+
+# Aufrufgrund ermitteln
+my $event=undef;
+if (!$plugin_initflag) 
+{ $event='restart'; } # Restart des daemons / Reboot 
+elsif ($plugin_info{$plugname.'_lastsaved'} > $plugin_info{$plugname.'_last'})
+{ $event='modified'; } # Plugin modifiziert
+elsif (%msg) { $event='bus'; return if !$config_modified && $msg{apci} eq "A_GroupValue_Response"; } # Bustraffic
+elsif ($fh) { $event='socket'; } # Netzwerktraffic
+else { $event='cycle'; } # Zyklus
+
 # Konfigurationsfile einlesen
 my $eibd_backend_address='1.1.254';
 my %logic=();
 my %settings=();
-my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
-$conf.='.conf' unless $conf=~s/\.pl$/.conf/;
 open FILE, "<$conf" || return "no config found";
 $/=undef;
 my $lines = <FILE>;
@@ -59,20 +73,6 @@ $lines =~ s/((?:prowl|\'prowl\'|\"prowl\")\s*=>\s*sub\s*\{)/$1 my \(\%context\)=
 close FILE;
 eval($lines);
 return "config error: $@" if $@;
-
-# Aufrufgrund ermitteln
-my $event=undef;
-if (!$plugin_initflag) 
-{ $event='restart'; } # Restart des daemons / Reboot 
-elsif ($plugin_info{$plugname.'_lastsaved'} > $plugin_info{$plugname.'_last'})
-{ $event='modified'; } # Plugin modifiziert
-elsif (%msg) { $event='bus'; } # Bustraffic
-elsif ($fh) { $event='socket'; } # Netzwerktraffic
-else { $event='cycle'; } # Zyklus
-
-# Konfigfile seit dem letzten Mal geaendert?
-my $configtime=24*60*60*(-M $conf);
-my $config_modified = ($configtime < $plugin_info{$plugname.'_configtime'}-1);
 
 # Plugin-Code
 my $retval='';
@@ -140,12 +140,21 @@ if($event=~/restart|modified/ || $config_modified)
 	    plugin_log($plugname, "Config err: \$logic{$t}: delay und timer festgelegt, ignoriere delay");
 	}
 
-	# transmit-Adresse abonnieren
-	if (defined $logic{$t}{transmit})
+	# transmit-Adresse(n) abonnieren
+	if(defined $logic{$t}{transmit})
 	{
 	    my $transmit=groupaddress $logic{$t}{transmit};
-	    $plugin_subscribe{$transmit}{$plugname}=1;
-	    plugin_log($plugname, "\$logic{$t}: Transmit-GA $transmit nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$transmit};
+
+	    if($transmit)
+	    {	
+		$transmit=[$transmit] unless ref $transmit;
+
+		for my $trm (@${transmit})
+		{
+		    $plugin_subscribe{$trm}{$plugname}=1;
+		    plugin_log($plugname, "\$logic{$t}: Transmit-GA $trm nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$trm};
+		}
+	    }
 	}
 
 	# Timer-Logiken reagieren nicht auf Bustraffic auf den receive-Adressen
@@ -188,11 +197,21 @@ if($event=~/restart|modified/ || $config_modified)
 
 	# Berechnung und Senden beim Startup des Logikprozessors
 	my $result=execute_logic($t, undef, undef);	
+
 	if(defined $result && defined $logic{$t}{transmit})
 	{
-	    my $ga=groupaddress $logic{$t}{transmit};
-	    knx_write($ga, $result); # DPT aus eibga.conf		    
-	    plugin_log($plugname, "\$logic{$t}{transmit}(Logik) -> $ga:$result") if $debug;
+	    my $transmit=groupaddress $logic{$t}{transmit};
+
+	    if($transmit)
+	    {	
+		$transmit=[$transmit] unless ref $transmit;
+
+		for my $trm (@${transmit})
+		{
+		    knx_write($trm, $result); # DPT aus eibga.conf		    
+		    plugin_log($plugname, "\$logic{$t}{transmit}(Logik) -> $trm:$result") if $debug;
+		}
+	    }
 	}
     }	    
 
@@ -201,7 +220,7 @@ if($event=~/restart|modified/ || $config_modified)
 
 if($event=~/bus/)
 {
-    return if $msg{apci} eq "A_GroupValue_Response";
+    return $retval if $msg{apci} eq "A_GroupValue_Response";
 
     my $ga=$msg{dst};
     my $in=$msg{value};
@@ -213,7 +232,20 @@ if($event=~/bus/)
 	next if $t eq 'debug' || $t=~/^_/;
 
 	my $transmit=groupaddress($logic{$t}{transmit});
-	my $transmit_ga = ($ga eq $transmit);
+	my $transmit_ga=0;
+
+	if(defined $transmit)
+	{
+	    unless(ref $logic{$t}{transmit})
+	    {
+		$transmit_ga=1 if $ga eq $transmit;
+		$transmit=[$transmit];
+	    }
+	    else
+	    {
+		$transmit_ga=1 if grep /^$ga$/, @{$transmit};
+	    }
+	}
 
 	my $receive=groupaddress($logic{$t}{receive});
 	my $receive_ga=0; 
@@ -237,7 +269,7 @@ if($event=~/bus/)
 	# Debuggingflag gesetzt
 	my $debug = $logic{debug} || $logic{$t}{debug}; 
 
-	# Sonderfall: Read- und Write-Telegramme auf der Transmit-Adresse
+	# Sonderfall: Read- und Write-Telegramme auf einer Transmit-Adresse
     	if($transmit_ga)
 	{    
 	    # Ein Read-Request auf einer Transmit-GA wird mit dem letzten Ergebnis beantwortet
@@ -334,8 +366,11 @@ if($event=~/bus/)
 	{
 	    if(defined $result && defined $transmit)
 	    {
-		knx_write($transmit, $result);
-		$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gesendet " if $debug;
+		for my $trm (@${transmit})
+		{
+		    knx_write($trm, $result); # DPT aus eibga.conf		    
+		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $trm:$result gesendet " if $debug;
+		}
 	    }
 
 	    # Cool-Periode starten
@@ -363,7 +398,6 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	my $debug = $logic{debug} || $logic{$t}{debug}; 
 	
 	# Transmit-GA
-	my $transmit=groupaddress($logic{$t}{transmit});
 	my $toor=$logic{$t}{transmit_only_on_request};
 	my $result=undef;
 
@@ -371,7 +405,7 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	{
 	    # zu sendendes Resultat = zuletzt berechnetes Ergebnis der Logik
 	    $result=$plugin_info{$plugname.'_'.$t.'_result'};
-	    $retval.="\$logic{$t} -> $transmit:".
+	    $retval.="\$logic{$t}{transmit}(memory):".
 		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (delayed) " if $debug;
 	}
 	else
@@ -379,7 +413,7 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	    # ...es sei denn, es ist eine timer-Logik. Die muss jetzt ausgefuehrt werden
 	    # Aufruf der Logik-Engine
 	    $result=execute_logic($t, undef, undef);
-	    $retval.="\$logic{$t} -> $transmit:".
+	    $retval.="\$logic{$t}{transmit}(Logik):".
 		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer) " if $debug;
 	    
 	}
@@ -387,9 +421,20 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	# Timer loeschen bzw. neu setzen
 	set_next_call($t, $debug);
 
-	if(defined $result && !$toor)
+	if(defined $result && !$toor && defined $logic{$t}{transmit})
 	{
-	    knx_write($transmit, $result);
+	    my $transmit=groupaddress $logic{$t}{transmit};
+
+	    if($transmit)
+	    {	
+		$transmit=[$transmit] unless ref $transmit;
+
+		for my $trm (@${transmit})
+		{
+		    knx_write($trm, $result); # DPT aus eibga.conf		    
+		    plugin_log($plugname, "\$logic{$t}{transmit}(Logik) -> $trm:$result") if $debug;
+		}
+	    }
 
 	    # Cool-Periode starten
 	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{cool} if defined $logic{$t}{cool};
@@ -408,15 +453,13 @@ for my $t (keys %logic)
     next if $t eq 'debug' || $t=~/^_/;
     next unless defined $logic{$t}{timer};
     
-    my $timer=$plugin_info{$plugname.'__'.$t.'_timer'};
+    my $ttime=$plugin_info{$plugname.'__'.$t.'_timer'};
 
-    next if defined $timer && $timer>time();
+    next if defined $ttime && $ttime>$systemtime;
 
-    plugin_log($plugname, "\$logic{$t}: Timer nicht korrekt gesetzt ($plugin_info{$plugname.'__'.$t.'_timer'}), berechne erneut");
+    plugin_log($plugname, "\$logic{$t}: Timer in der Vergangenheit (".strftime("%D %X",$ttime)."<".strftime("%D %X",time()).", Delta ".($ttime-time())."), berechne erneut");
 
-    # Debuggingflag gesetzt
-    my $debug = $logic{debug} || $logic{$t}{debug}; 
-    set_next_call($t, $debug);
+    set_next_call($t, $logic{debug} || $logic{$t}{debug});
 }
 
 # Cycle auf naechsten Aufruf setzen
@@ -429,9 +472,12 @@ else
     my $cycle=int($plugin_info{$nexttimer}-time());
     $cycle=1 if $cycle<1;
     $plugin_info{$plugname."_cycle"}=$cycle;
-    $nexttimer=~s/^$plugname\__//;
-    $nexttimer=~s/_timer$//;    
-    $retval.="Naechster Timer: $nexttimer" if $logic{debug};
+    if($logic{debug})
+    {
+	$nexttimer=~s/^$plugname\__//;
+	$nexttimer=~s/_timer$//;    
+	$retval.="Naechster Timer: $nexttimer";
+    }
 }
 
 # experimentell - wir helfen der Garbage Collection etwas nach...
@@ -756,9 +802,8 @@ sub set_next_call
 	    my $seconds=3600*($1-substr($time_of_day,0,2))+60*($2-substr($time_of_day,3,2))-substr($time_of_day,6,2);
 	    plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall.") if $debug;
 
-	    my $timer=$systemtime+$seconds+3600*24*$days_until_nextcall;
-	    $plugin_info{$plugname.'__'.$t.'_timer'}=$timer;
-#	    plugin_log($plugname, "\$plugin_info{$plugname.'__'.$t.'_timer'}=$plugin_info{$plugname.'__'.$t.'_timer'}=$timer ?");# if $debug;
+	    my $ttime=$systemtime+$seconds+3600*24*$days_until_nextcall;
+	    $plugin_info{$plugname.'__'.$t.'_timer'}=$ttime;
 	}
 	else
 	{
