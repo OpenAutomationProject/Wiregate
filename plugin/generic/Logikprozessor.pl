@@ -149,7 +149,7 @@ if($event=~/restart|modified/ || $config_modified)
 	    {	
 		$transmit=[$transmit] unless ref $transmit;
 
-		for my $trm (@${transmit})
+		for my $trm (@{$transmit})
 		{
 		    $plugin_subscribe{$trm}{$plugname}=1;
 		    plugin_log($plugname, "\$logic{$t}: Transmit-GA $trm nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$trm};
@@ -206,10 +206,21 @@ if($event=~/restart|modified/ || $config_modified)
 	    {	
 		$transmit=[$transmit] unless ref $transmit;
 
-		for my $trm (@${transmit})
+		for my $trm (@{$transmit})
 		{
 		    knx_write($trm, $result); # DPT aus eibga.conf		    
-		    plugin_log($plugname, "\$logic{$t}{transmit}(Logik) -> $trm:$result") if $debug;
+		}
+
+		if($debug)
+		{
+		    if(ref $logic{$t}{transmit})
+		    {
+			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result";
+		    }
+		    else
+		    {
+			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ";
+		    }
 		}
 	    }
 	}
@@ -366,10 +377,21 @@ if($event=~/bus/)
 	{
 	    if(defined $result && defined $transmit)
 	    {
-		for my $trm (@${transmit})
+		for my $trm (@{$transmit})
 		{
 		    knx_write($trm, $result); # DPT aus eibga.conf		    
-		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $trm:$result gesendet " if $debug;
+		}
+
+		if($debug)
+		{
+		    if(ref $logic{$t}{transmit})
+		    {
+			$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet ";
+		    }
+		    else
+		    {
+			$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ";
+		    }
 		}
 	    }
 
@@ -429,10 +451,21 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	    {	
 		$transmit=[$transmit] unless ref $transmit;
 
-		for my $trm (@${transmit})
+		for my $trm (@{$transmit})
 		{
 		    knx_write($trm, $result); # DPT aus eibga.conf		    
-		    plugin_log($plugname, "\$logic{$t}{transmit}(Logik) -> $trm:$result") if $debug;
+		}
+
+		if($debug)
+		{
+		    if(ref $logic{$t}{transmit})
+		    {
+			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result";
+		    }
+		    else
+		    {
+			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ";
+		    }
 		}
 	    }
 
