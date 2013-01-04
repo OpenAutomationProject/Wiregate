@@ -140,10 +140,12 @@ if($event=~/restart|modified/ || $config_modified)
 	    plugin_log($plugname, "Config err: \$logic{$t}: delay und timer festgelegt, ignoriere delay");
 	}
 
+	my $transmit=$logic{$t}{transmit};
+
 	# transmit-Adresse(n) abonnieren
-	if(defined $logic{$t}{transmit})
+	if(defined $transmit)
 	{
-	    my $transmit=groupaddress $logic{$t}{transmit};
+	    $transmit=groupaddress $transmit;
 
 	    if($transmit)
 	    {	
@@ -152,7 +154,7 @@ if($event=~/restart|modified/ || $config_modified)
 		for my $trm (@{$transmit})
 		{
 		    $plugin_subscribe{$trm}{$plugname}=1;
-		    plugin_log($plugname, "\$logic{$t}: Transmit-GA $trm nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$trm};
+		    plugin_log($plugname, "\$logic{$t}: Transmit-GA $trm nicht in %eibgaconf gefunden") unless exists $eibgaconf{$trm};
 		}
 	    }
 	}
@@ -164,10 +166,13 @@ if($event=~/restart|modified/ || $config_modified)
 	    set_next_call($t, $debug);
 	}
 
+	my $receive=$logic{$t}{receive};
+
 	# Nun alle receive-Adressen abonnieren (eine oder mehrere)
-	if(defined $logic{$t}{receive})
+	if(defined $receive)
 	{
-	    my $receive=groupaddress $logic{$t}{receive};
+	    $receive=groupaddress $receive;
+	    my @doubles=();
 
 	    if($receive)
 	    {	
@@ -176,9 +181,17 @@ if($event=~/restart|modified/ || $config_modified)
 		for my $rec (@{$receive})
 		{
 		    $plugin_subscribe{$rec}{$plugname}=1;
-		    plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden") if $debug && !exists $eibgaconf{$rec};
+		    plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden") unless exists $eibgaconf{$rec};
+
+		    if($debug)
+		    {
+			my $qrec=quotemeta $rec;
+			push @doubles, $rec if grep /^$qrec$/, @{$transmit};			
+		    }
 		}
 	    }
+
+	    plugin_log($plugname, "\$logic{$t}: Warnung: ".(join",", @doubles)." sowohl Receive- als auch Transmit-GA.") if $debug && @doubles;
 	}
 
 	# Zaehlen und Logeintrag
@@ -371,7 +384,7 @@ if($event=~/bus/)
 	{
 	    $plugin_info{$plugname.'__'.$t.'_timer'}=$systemtime+$logic{$t}{delay};
 	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{delay}+$logic{$t}{cool} if defined $logic{$t}{cool};
-	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result, zu senden in ".$logic{$t}{delay}."s " if $debug;
+	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> delay ".$logic{$t}{delay}."s " if $debug;
 	}
 	else
 	{
