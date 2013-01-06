@@ -181,7 +181,7 @@ EOF
     print SIM "\t\t".'$ga=$eibgaconf{$ga}{ga};'."\n" if $use_shorts;
 
     print SIM <<'EOF';
-		# knx_write($ga, $val, $dpt);
+		knx_write($ga, $val, $dpt);
 	}
 	$line++; $line=0 unless $line<=$#script;
 	$cycle=$script[$line][0]-(time()-$starttime)%(7*24*3600);
