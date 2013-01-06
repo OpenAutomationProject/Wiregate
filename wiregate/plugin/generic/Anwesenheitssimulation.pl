@@ -7,8 +7,6 @@
 
 #$plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
-my $source="eib.log.2";
-
 # Eine Gruppenadresse zum Starten und Stoppen der Anwesenheitssimulation. Diese ist vom Typ DPT 1 (Switch)
 my $erzeugen=$eibgaconf{SI_erzeugen}{ga};
 # alternativ einfach 
@@ -57,6 +55,9 @@ return unless $msg{apci} eq "A_GroupValue_Write";
 # Wir haben ein Schreibtelegramm. Telegramminhalt ermitteln
 my $in=int($msg{value});
 
+# Rueckgabewert
+my $retval=undef;
+
 # Muss ein Skript erzeugt werden?
 if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wiregate/plugin/$simscript"))
 {
@@ -64,9 +65,17 @@ if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wire
     delete $plugin_info{$simscript.'_line'};
     system "rm", "-f", "/etc/wiregate/plugin/generic/$simscript"; 
 
-    # Vorlage in $source vorhanden? Ggf. entpacken, ansonsten aussteigen
-    system "/bin/gunzip /var/log/$source\.gz" if -f "/var/log/$source\.gz" && ! -f "/var/log/$source";
-    return "/var/log/$source (.gz) nicht vorhanden, breche ab!" unless -f "/var/log/$source";
+    # Vorlage in eib.log-Archiven vorhanden? Ggf. entpacken, ansonsten aussteigen
+    my @gzsources=grep m!/var/log/eib\.log\.[0-9]\.gz$!, </var/log/eib.log.*.gz>;
+    for my $source (@gzsources)
+    {
+	$source=~s/\.gz$//;
+	system "/bin/gunzip /var/log/$source\.gz" if -f "/var/log/$source\.gz" && ! -f "/var/log/$source";
+    }
+    # Quelldateien in lexikalisch umgekehrter Reihenfolge sortieren
+    my @sources=sort { $b cmp $a } grep m!/var/log/eib\.log(\.[0-9])?$!, </var/log/eib.log*>; 
+
+    $retval=join ",", @sources;
 
     # loesche evtl. vorhandenes Skript
     system "rm", "-f", "/etc/wiregate/plugin/$simscript"; 
@@ -79,14 +88,29 @@ if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wire
 
     # Konstruktion des GA-Filters als Regex
     @gafilter=grep m![0-9]+/[0-9]+/[0-9]+!, map $eibgaconf{$_}{ga}, @gafilter;
-    my $gapat=",(".(join "|", map quotemeta($_), @gafilter)."),";
-
-    open IN, "</var/log/$source"; 
+    my $gapat=",(?:".(join "|", map quotemeta($_), @gafilter)."),";
 
     $/="\n";
 
-    while($_=<IN>) 
+    for(;;)
     { 
+	if(eof IN) 
+	{
+	    last unless @sources;
+	    close IN;
+
+	    while(@sources)
+	    {
+		my $source=shift @sources;
+		open IN, "<$source";
+		last unless eof IN;
+	    }
+
+	    next;
+	}
+
+	$_=<IN>;
+
 	next unless /$gapat/;
 
 	chomp;
@@ -98,8 +122,6 @@ if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wire
 
 	$ga=$eibgaconf{$ga}{short} if $use_shorts && defined $eibgaconf{$ga}{short};
 
-	my $comment="";
-	
 	# "absolute" Zeit innerhalb der Woche in Sekunden ermitteln
 	my $daynum=365*$year+$first[$month]+$day+2; $year-- if $month<=2; $daynum+=int($year/4) - int($year/100) + int($year/400); 
 	my $time=(($daynum*24+$hour-1)*60+$min)*60+$sec-$starttime;
@@ -115,12 +137,12 @@ if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wire
 	{
 	    $starttime=$time;
 	    $time=0;
-	    # erzeuge eine neue Anwesenheitssimulation aus $source 
+	    # erzeuge eine neue Anwesenheitssimulation aus @sources
 	    open SIM, ">/etc/wiregate/plugin/$simscript.tmp";
 
 	    # Skript-Header einfuegen
 	    print SIM "#!/usr/bin/perl -w\n\n";
-	    print SIM "# Das Folgende wurde aus /var/log/$source extrahiert. Zeitangaben in den Zeilen entsprechen der Quelle.\n";
+	    print SIM "# Das Folgende wurde aus /var/log/eib.log.* extrahiert. Zeitangaben in den Zeilen entsprechen der Quelle.\n";
 	    print SIM "my \$starttime = $starttime;\n";
 	    print SIM "my \@script = (\n";
 	    print SIM "[$time,'$year-$month-$day $hour:$min:$sec', ";
@@ -132,7 +154,7 @@ if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wire
 
     close IN;
 
-    return "/var/log/$source (.gz) enthielt keine einzige gueltige Zeile nach Filterung!" unless defined $lasttime;
+    return "Quelldateien $retval enthalten keine einzige verwendbare Zeile, $simscript konnte nicht erstellt werden!" unless defined $lasttime;
 
     print SIM "]);\n\n";
 
@@ -174,9 +196,7 @@ if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wire
 
     system "mv", "/etc/wiregate/plugin/$simscript.tmp", "/etc/wiregate/plugin/$simscript";
 
-#    system "/bin/gzip /var/log/$source" if ! -f "/var/log/$source\.gz" && -f "/var/log/$source";
-
-    return "Anwesenheitssimulation erzeugt" if $incoming eq $eibgaconf{SI_erzeugen}{ga};
+    return "Anwesenheitssimulation $simscript wurde aus folgenden Quelldateien erstellt: $retval" if $incoming eq $eibgaconf{SI_erzeugen}{ga};
 }
 
 if($incoming eq $starten)
@@ -187,12 +207,20 @@ if($incoming eq $starten)
     { 
 	system "cp", "/etc/wiregate/plugin/$simscript", "/etc/wiregate/plugin/generic/$simscript"; 
 	system "touch", "/etc/wiregate/plugin/generic/$simscript"; 
-	return "Anwesenheitssimulation gestartet"; 
+
+	if(defined $retval)
+	{
+	    return "Anwesenheitssimulation $simscript wurde aus folgenden Quelldateien erstellt und gestartet: $retval";
+	}
+	else
+	{
+	    return "Anwesenheitssimulation $simscript gestartet"; 
+	}
     }
     else
     { 
 	system "rm", "-f", "/etc/wiregate/plugin/generic/$simscript"; 
-	return "Anwesenheitssimulation gestoppt"; 
+	return "Anwesenheitssimulation $simscript gestoppt"; 
     }
 }
 
