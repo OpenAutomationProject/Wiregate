@@ -292,6 +292,11 @@ if($event=~/bus/)
 
 	# Debuggingflag gesetzt
 	my $debug = $logic{debug} || $logic{$t}{debug}; 
+	my $ignore_read_requests=$logic{$t}{ignore_read_requests};
+
+	# bei mehreren transmit-Adressen per Default Read-Requests ignorieren (wird idR so erwuenscht sein)
+	$ignore_read_requests = ref !$logic{$t}{transmit} && !$logic{$t}{recalc_on_request} && !$logic{$t}{transmit_only_on_request} 
+	  unless defined $ignore_read_requests;
 
 	# Sonderfall: Read- und Write-Telegramme auf einer Transmit-Adresse
     	if($transmit_ga)
@@ -301,7 +306,7 @@ if($event=~/bus/)
 	    # Read-Requests auf die receive-Adressen werden gar nicht beantwortet
 	    if($msg{apci} eq "A_GroupValue_Read")
 	    {  
-		next if $logic{$t}{ignore_read_requests};
+		next if $ignore_read_requests;
 
 		my $result=$plugin_info{$plugname.'_'.$t.'_result'};
 
@@ -327,6 +332,8 @@ if($event=~/bus/)
 	    }
 	    elsif(!$receive_ga) # Wenn eine GA sowohl in transmit als auch receive vorkommt, geht receive vor 
 	    {
+		next if $ignore_read_requests; # Speichern hat keinen Zweck, wenn wir spaeter sowieso nicht auf read-requests reagieren
+
 		if(defined $in) # Write/Response-Telegramm auf transmit: das waren moeglicherweise wir selbst, also nicht antworten
 		{
 		    $plugin_info{$plugname.'_'.$t.'_result'}=$in; # einfach Input ablegen
@@ -435,22 +442,20 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 	# Transmit-GA
 	my $toor=$logic{$t}{transmit_only_on_request};
 	my $result=undef;
+	my $reason='';
 
 	unless($logic{$t}{timer})
 	{
-	    # zu sendendes Resultat = zuletzt berechnetes Ergebnis der Logik
+	    # zu sendendes Resultat = zuletzt berechnetes Ergebnis der Logik (delay)
 	    $result=$plugin_info{$plugname.'_'.$t.'_result'};
-	    $retval.="\$logic{$t}{transmit}(memory):".
-		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (delayed) " if $debug;
+	    $reason='delayed';
 	}
 	else
 	{
 	    # ...es sei denn, es ist eine timer-Logik. Die muss jetzt ausgefuehrt werden
 	    # Aufruf der Logik-Engine
 	    $result=execute_logic($t, undef, undef);
-	    $retval.="\$logic{$t}{transmit}(Logik):".
-		       (defined $result?$result.($toor?" gespeichert":" gesendet"):"nichts zu senden")." (Timer) " if $debug;
-	    
+	    $reason='Timer';
 	}
 
 	# Timer loeschen bzw. neu setzen
@@ -473,11 +478,11 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 		{
 		    if(ref $logic{$t}{transmit})
 		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result";
+			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet ($reason) ";
 		    }
 		    else
 		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ";
+			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ($reason) ";
 		    }
 		}
 	    }
