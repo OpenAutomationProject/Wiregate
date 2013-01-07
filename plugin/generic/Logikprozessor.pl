@@ -295,7 +295,7 @@ if($event=~/bus/)
 	my $ignore_read_requests=$logic{$t}{ignore_read_requests};
 
 	# bei mehreren transmit-Adressen per Default Read-Requests ignorieren (wird idR so erwuenscht sein)
-	$ignore_read_requests = ref !$logic{$t}{transmit} && !$logic{$t}{recalc_on_request} && !$logic{$t}{transmit_only_on_request} 
+	$ignore_read_requests = ref $logic{$t}{transmit} && !$logic{$t}{recalc_on_request} && !$logic{$t}{transmit_only_on_request} 
 	  unless defined $ignore_read_requests;
 
 	# Sonderfall: Read- und Write-Telegramme auf einer Transmit-Adresse
