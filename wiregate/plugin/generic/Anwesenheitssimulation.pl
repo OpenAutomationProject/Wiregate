@@ -158,54 +158,48 @@ if($incoming eq $erzeugen || ($incoming eq $starten && $in==1 && ! -f "/etc/wire
 
     print SIM "]);\n\n";
 
-    print SIM <<'EOF';
-# Nun das oben definierte Skript ausfuehren
-my $retval="";
-my $cycle=1;
-delete $plugin_info{$plugname."_line"} if !$plugin_initflag || ($plugin_info{$plugname."_lastsaved"}>$plugin_info{$plugname."_last"});
-my $line=$plugin_info{$plugname."_line"};
-my $cooler=0;
+    print SIM "# Nun das oben definierte Skript ausfuehren\n";
+    print SIM 'my $retval="";'."\n";
+    print SIM 'my $cycle=1;'."\n";
+    print SIM 'delete $plugin_info{$plugname."_line"} if !$plugin_initflag || ($plugin_info{$plugname."_lastsaved"}>$plugin_info{$plugname."_last"});'."\n";
+    print SIM 'my $line=$plugin_info{$plugname."_line"};'."\n";
+    print SIM 'my $cooler=0;'."\n\n";
 
-if(defined $line && $line<=$#script)
-{
-	my @action=@{$script[$line]};
-	shift @action;
-	my $timestamp=shift @action;
-	$retval.="Wiederhole $timestamp: ";
-	while (@action && $cooler++<100)
-	{
-		my $ga=shift @action; my $val=shift @action; my $dpt=shift @action;
-		$retval.="knx_write($ga,$val,$dpt); ";
-EOF
-
+    print SIM 'if(defined $line && $line<=$#script)'."\n";
+    print SIM '{'."\n";
+    print SIM "\t".'my @action=@{$script[$line]};'."\n";
+    print SIM "\t".'shift @action;'."\n";
+    print SIM "\t".'my $timestamp=shift @action;'."\n";
+    print SIM "\t".'$retval.="Wiederhole $timestamp: ";'."\n";
+    print SIM "\t".'while (@action && $cooler++<100)'."\n";
+    print SIM "\t".'{'."\n";
+    print SIM "\t\t".'my $ga=shift @action; my $val=shift @action; my $dpt=shift @action;'."\n";
+    print SIM "\t\t".'$retval.="knx_write($ga,$val,$dpt); ";'."\n";
     print SIM "\t\t".'$ga=$eibgaconf{$ga}{ga};'."\n" if $use_shorts;
+    print SIM "\t\t".'# knx_write($ga, $val, $dpt);'."\n";
+    print SIM "\t".'}'."\n";
+    print SIM "\t".'$line++; $line=0 unless $line<=$#script;'."\n";
+    print SIM "\t".'$cycle=$script[$line][0]-(time()-$starttime)%(7*24*3600);'."\n";
+    print SIM '}'."\n";
+    print SIM 'else'."\n";
+    print SIM '{'."\n";
+    print SIM "\t".'for($line=0;$line<=$#script;$line++)'."\n";
+    print SIM "\t".'{'."\n";
+    print SIM "\t\t".'$cycle=$script[$line][0]-(time()-$starttime)%(7*24*3600);'."\n";
+    print SIM "\t\t".'last if $cycle>=0;'."\n";
+    print SIM "\t".'}'."\n";
+    print SIM "\t".'if($line>$#script)'."\n";
+    print SIM "\t".'{'."\n";
+    print SIM "\t\t".'$line=0;'."\n";
+    print SIM "\t\t".'$cycle=($script[$line][0]-(time()-$starttime))%(7*24*3600);'."\n";
+    print SIM "\t".'}'."\n";
+    print SIM '}'."\n\n";
 
-    print SIM <<'EOF';
-		knx_write($ga, $val, $dpt);
-	}
-	$line++; $line=0 unless $line<=$#script;
-	$cycle=$script[$line][0]-(time()-$starttime)%(7*24*3600);
-}
-else
-{
-	for($line=0;$line<=$#script;$line++) 
-	{
-	    $cycle=$script[$line][0]-(time()-$starttime)%(7*24*3600);
-	    last if $cycle>=0;
-	}
-	if($line>$#script)
-	{
-	    $line=0;
-	    $cycle=($script[$line][0]-(time()-$starttime))%(7*24*3600);
-	}
-}
-
-$cycle=1 if $cycle<=0;
-$plugin_info{$plugname."_cycle"}=$cycle;
-$retval.="(->".$cycle."s bis ".$script[$line][1].")";
-$plugin_info{$plugname."_line"}=$line;
-return $retval;
-EOF
+    print SIM '$cycle=1 if $cycle<=0;'."\n";
+    print SIM '$plugin_info{$plugname."_cycle"}=$cycle;'."\n";
+    print SIM '$retval.="(->".$cycle."s bis ".$script[$line][1].")";'."\n";
+    print SIM '$plugin_info{$plugname."_line"}=$line;'."\n";
+    print SIM 'return $retval;'."\n";
 
     close SIM;
 
