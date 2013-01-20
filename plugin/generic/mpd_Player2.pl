@@ -1,6 +1,6 @@
 # Plugin um eine mpd Instanz mit mehreren Outputs zu steuern, inkl. verschiedener Playlists
 # und verschiedenen lautstärken der unterschiedlichen Ausgängen von Tastern oder sonstigen EIB Geraeten zu kontrollieren
-# Version 0.3    25.11.2011
+# Version 0.5    20.1.2013
 # Copyright: vlamers (http://knx-user-forum.de/members/vlamers.html)
 # License: GPL (v2)
 # Aufbau m&#65533;glichst so, dass man unterhalb der Einstellungen nichts ver&#65533;ndern muss!
