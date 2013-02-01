@@ -1,6 +1,6 @@
 # Timer
-# v 0.2 
-# 2013-01-31 JuMi2006 -> http://knx-user-forum.de
+# v 0.3 
+# 2013-02-01 JuMi2006 -> http://knx-user-forum.de
 
 #####################
 ### Konfiguration ###
@@ -17,11 +17,12 @@ my $start_value = 1;    #Timerstart bei 1 -> 1 (Aus-Timer)
 
 $plugin_info{$plugname.'_cycle'} = 60;
 $plugin_subscribe{$ga}{$plugname} = 1;    
-my $val_in = knx_read($ga,300,1);
 my $time = time;
 
 if ($msg{'apci'} eq "A_GroupValue_Write" && $msg{'dst'} eq $ga)
-{      
+{
+    my $val_in = knx_read($ga,0,1);
+    
     if ($val_in == $start_value)   # wenn Start von GA erkannt
     {
     plugin_log($plugname,"Timer aktiv");
