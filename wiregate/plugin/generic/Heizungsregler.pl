@@ -4,69 +4,87 @@
 # Wiregate-Plugin
 # (c) 2012 Fry under the GNU Public License
 
-# $plugin_info{$plugname.'_cycle'}=0; return "deaktiviert";
+#$plugin_info{$plugname.'_cycle'}=0; return "deaktiviert";
 
-use POSIX qw(floor);
+use POSIX qw(floor strftime);
 use Math::Round qw(nearest);
 
 my $use_short_names=1; # 1 fuer GA-Kuerzel (erstes Wort des GA-Namens), 0 fuer die "nackte" Gruppenadresse
 
+# Konfigfile seit dem letzten Mal geaendert?
+my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
+$conf.='.conf' unless $conf=~s/\.pl$/.conf/;
+my $configtime=24*60*60*(-M $conf);
+my $config_modified = ($configtime < $plugin_info{$plugname.'_configtime'}-1);
+
 # Aufrufgrund ermitteln
 my $event=undef;
 if (!$plugin_initflag) 
-{ $event='restart'; } # Restart des daemons / Reboot
-#elsif ((stat('/etc/wiregate/plugin/generic/' . $plugname))[9] > time()-2) 
-# ab PL30:
+{ $event='restart'; } # Restart des daemons / Reboot 
 elsif ($plugin_info{$plugname.'_lastsaved'} > $plugin_info{$plugname.'_last'})
 { $event='modified'; } # Plugin modifiziert
-elsif (%msg) { $event='bus'; } # Bustraffic
-#elsif ($fh) { $event='socket'; } # Netzwerktraffic
+elsif (%msg) 
+{ 
+    $event='bus'; 
+    unless($plugin_subscribe{$msg{dst}}{$plugname})
+    {
+	$event='cycle';
+    }
+    else
+    {
+	return if !$config_modified && $msg{apci} eq "A_GroupValue_Response"; 
+    }
+} # Bustraffic
+elsif ($fh) { $event='socket'; } # Netzwerktraffic
 else { $event='cycle'; } # Zyklus
 
 # Konfigurationsfile einlesen
-my $conf=$plugname; $conf=~s/\.pl$/.conf/;
-$conf="/etc/wiregate/plugin/generic/conf.d/$conf";
 my %house=();
 my $err=read_from_house_config();
 return $err if $err;
 
 # Initialisierung
-my %dyn=();
+my %dyn=recall_from_plugin_info();
 my $retval='';
 my $t=time();
 
 if($event=~/restart|modified/)
 {
-    # Cleanup aller Variablen
+    # alle Variablen loeschen
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
+	next if $k=~/^$plugname\_last/;
 	delete $plugin_info{$k};
     }
+    store_to_plugin_info(\%dyn);
 
-    # Alle Controller-GAs abonnieren, Reglerstati initialisieren
+    $plugin_info{$plugname.'_configtime'}=$configtime;
+
+    # Alle Controller-GAs abonnieren
     for my $r (grep ref($house{$_}), keys %house)
     {
+	next unless defined $house{$r}{control};
+
 	$plugin_subscribe{groupaddress($house{$r}{control})}{$plugname}=1;
-	RESET($r);
+	$plugin_subscribe{groupaddress($house{$r}{optimize})}{$plugname}=1 if defined $house{$r}{optimize};
+	$plugin_subscribe{groupaddress($house{$r}{reset})}{$plugname}=1 if defined $house{$r}{reset};
     }
 
     $plugin_info{$plugname.'_cycle'}=$house{cycle}; 
 
-    store_to_plugin_info(\%dyn);
-
-    $retval.='initialisiert.';
+    $retval.='initialisiert: ';
     $event='cycle';
 }
-
-%dyn=recall_from_plugin_info();
 
 # Zyklischer Aufruf - Regelung
 if($event=~/cycle/)
 { 
     my $Vreq=undef;
     my $anynews=0;
-    for my $r (grep ref($house{$_}), keys %house)
+
+    for my $r (sort grep ref($house{$_}), keys %house)
     {
+#	plugin_log($plugname, "\$dyn{$r}{mode}==$dyn{$r}{mode}");
 	if($dyn{$r}{mode} eq 'ON')
 	{
 	    # PID-Regler
@@ -100,54 +118,76 @@ if($event=~/cycle/)
 }
 elsif($event=~/bus/)
 {
-    if($msg{apci} eq 'A_GroupValue_Response')
-    {
-	for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
-	for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
-	return;
-    }
-
     # Aufruf durch GA - neue Wunschtemperatur
     my $ga=$msg{dst};
 
     # erstmal den betroffenen Raum finden
-    my @rms=(grep ref($house{$_}) && groupaddress($house{$_}{control}) eq $ga, keys %house);
-    my $r=shift @rms;
-
-    # $r ist undef falls obige Schleife fertig durchlaufen wurde
-    if(defined $r)
+    my @controls=(sort grep ref($house{$_}) && groupaddress($house{$_}{control}) eq $ga, keys %house);
+    my @optimizes=(sort grep ref($house{$_}) && groupaddress($house{$_}{optimize}) eq $ga, keys %house);
+    my @resets=(sort grep ref($house{$_}) && groupaddress($house{$_}{reset}) eq $ga, keys %house);    
+    
+    # Unbekannte GA de-abonnieren
+    unless(@controls || @optimizes || @resets)
     {
+	# GA-Abonnement loeschen
+	delete $plugin_subscribe{$ga}{$plugname};
+	plugin_log($plugname, "received $ga -> unsubscribed");
+
+	return;
+    }
+
+    @resets=@optimizes=() unless $msg{apci} eq 'A_GroupValue_Write' && defined $msg{value} && $msg{value}==1;
+
+    # nun der Reihe nach auf alle angekoppelten Aktionen reagieren
+    while(@controls || @optimizes || @resets)
+    {
+	my $r=undef;
+	my $action=undef;
+
+	if(@controls)
+	{
+	    $r=shift @controls;
+	    $action='control';
+	}
+	elsif(@resets)
+	{
+	    $r=shift @resets;
+	    $action='reset';
+	}
+	elsif(@optimizes)
+	{
+	    $r=shift @optimizes;
+	    $action='optimize';
+	}
+	
+	# $r ist undef falls obige Schleife fertig durchlaufen wurde
+	last unless defined $r;
+
+	# Wert des Telegramms, Modus des Reglers abholen
 	my $T0=0;
-	$T0 = $msg{value} if defined $msg{value};
+	$T0 = $msg{value} if $action eq 'control' && defined $msg{value};
 	my $mode=$dyn{$r}{mode};
 
 	# Jemand moechte einen Sollwert wissen
-	if($msg{apci} eq 'A_GroupValue_Read')
+	if($action eq 'control' && $msg{apci} eq 'A_GroupValue_Read')
 	{
 	    $T0=$dyn{$r}{T0};
 	    $T0=$dyn{$r}{T0old} if $dyn{mode} eq 'OPTIMIZE';
-	    knx_write($ga,$T0,9.001); 
-	    for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
-	    for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
+	    knx_write($ga,$T0,9.001,0x40);
 	    return;
 	}
 	
 	# spezielle Temperaturwerte sind 0=>OFF und -1=>OPTIMIZE
-	if($T0==0)
+	if($action eq 'reset' || ($action eq 'control' && $T0==0))
 	{
 	    RESET($r); 
 	    writeactuators($r,0); 
 	    $dyn{$r}{mode}='OFF';
 	    $retval.="$r\->OFF";
 	}
-	elsif($T0==-1)
+	elsif($action eq 'optimize' || ($action eq 'control' && $T0==-1))
 	{
-	    if($dyn{$r}{mode} eq 'OPTIMIZE') # Entprellen
-	    {
-		for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
-		for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
-		return;
-	    }
+	    return if $dyn{$r}{mode} eq 'OPTIMIZE'; # Entprellen
 		
 	    # Initialisierung der Optimierungsfunktion
 	    $dyn{$r}{mode}='OPTIMIZE';
@@ -157,14 +197,9 @@ elsif($event=~/bus/)
 
 	    $retval.=sprintf "$r\->OPT", $T;
 	}
-	else # neue Wunschtemperatur
+	elsif($action eq 'control') # neue Wunschtemperatur
 	{
-	    if($dyn{$r}{T0} == $T0) # Entprellen
-	    {
-		for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
-		for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
-		return;
-	    }   
+	    return if $dyn{$r}{T0} == $T0; # Entprellen
 
 	    RESET($r) if $mode eq 'OPTIMIZE'; # Optimierung unterbrochen
 	    $dyn{$r}{mode}='ON'; # ansonsten uebrige Werte behalten
@@ -173,21 +208,12 @@ elsif($event=~/bus/)
 	    $retval.=sprintf "$r\->%.1f(%.1f)%d%%", $T, $T0, 100*$U;
 	}
     }
-    else  
-    {
-	# GA-Abonnement loeschen
-	delete $plugin_subscribe{$ga}{$plugname};
-	print "Storniere $eibgaconf{$ga}{short}\n";
-    }
 }
 
 # Speichere Statusvariablen aller Regler
 store_to_plugin_info(\%dyn);
 
-for my $k (keys %house) { delete $house{$k}; } # Hilfe fuer die Garbage Collection
-for my $k (keys %dyn) { delete $dyn{$k}; } # Hilfe fuer die Garbage Collection
-
-return $retval eq '' ? undef : $retval;
+return $retval eq '' ? 'Heizungsregler: nothing to do... event='.$event : $retval;
 
 
 ########## Datenpersistenz - Speichern und Einlesen ###############
@@ -202,8 +228,9 @@ sub store_to_plugin_info
     {
 	# Skalare
 	my @keylist=grep !/^(temps|times|Uvals)$/, keys %{$dyn->{$r}};
-	map { $_=sprintf("'$_'=>'%.2f'",$dyn->{$r}{$_}) } @keylist;   
-	$plugin_info{$plugname.'_'.$r} = join ',', @keylist;
+	my $pi=join ',', map { $_="'$_'=>'$dyn->{$r}{$_}'" } @keylist;   
+	$plugin_info{$plugname.'_'.$r} = $pi;
+#	plugin_log($plugname,$r."< ".$pi) if $r eq 'D2';
 
 	# Arrays
 	for my $v (qw(temps times Uvals))
@@ -229,7 +256,9 @@ sub recall_from_plugin_info
 	if(defined $plugin_info{$plugname.'_'.$r})
 	{
 	    my $pi=$plugin_info{$plugname.'_'.$r};
-	    while($pi=~m/\'(.*?)\'=>\'(.*?)\'/g) { $dyn{$r}{$1}=$2 }
+#	    plugin_log($plugname,$r."> ".$pi) if $r eq 'D2';
+
+	    while($pi=~m/\'(.*?)\'=>\'(.*?)\'/g) { $dyn{$r}{$1}=$2; }
 	}
 
 	for my $v (qw(temps times Uvals))
@@ -254,7 +283,7 @@ sub read_from_house_config
     my @lines = <CONFIG>;
     close CONFIG;
     eval("@lines");
-    return "config error" if $@;
+    return "config error: $@" if $@;
 }
 
 sub store_to_house_config
@@ -265,7 +294,7 @@ sub store_to_house_config
     print CONFIG "\$house{$r}{pid}={";
     for my $k (sort keys %{$house{$r}{pid}})
     {
-	print CONFIG sprintf "$k=>%.2f, ", $house{$r}{pid}{$k} unless $k eq 'date';
+	print CONFIG sprintf "$k=>%f, ", $house{$r}{pid}{$k} unless $k eq 'date';
 	print CONFIG "$k=>'$house{$r}{pid}{date}'," if $k eq 'date';
     }
     print CONFIG "};\n";
@@ -301,8 +330,8 @@ sub readsensors
 		{
 		    unless(defined $T{$type}{$s})
 		    {
-			$T{$type}{$s}=knx_read($s,$house{cycle},$dpt);
-			delete $T{$type}{$s} unless defined $T{$type}{$s};
+			$T{$type}{$s}=knx_read($s,5*$house{cycle},$dpt);
+			delete $T{$type}{$s} unless defined $T{$type}{$s} && $T{$type}{$s}!=85;
 		    }
 		}
 	    }
@@ -317,7 +346,7 @@ sub readsensors
 	    {
 		if($type eq 'window')
 		{
-		    $R{$type}=1 if int($T{$type}{$k})==1;
+		    $R{$type}=1 if int($T{$type}{$k})==0;
 		}
 		else
 		{
@@ -347,7 +376,7 @@ sub readsensors
     {
 	if(!defined $R{$type} && defined $house{$type})
 	{
-	    $R{$type} = knx_read(groupaddress($house{$type}),$house{cycle},9);
+	    $R{$type} = knx_read(groupaddress($house{$type}),5*$house{cycle},9);
 	    delete $R{$type} unless $R{$type};
 	}
     }
@@ -361,6 +390,8 @@ sub readsensors
     # und wenn alle Stricke reissen, bleibt der vorkonfigurierte Wert
     $R{spread}=$house{spread} unless defined $R{spread};
 
+    plugin_log($plugname, $r.": ".(join " ", map "$_=$R{$_}", qw(sensor inflow floor outflow spread window)));
+
     return @R{qw(sensor inflow floor outflow spread window)};
 }
 
@@ -369,9 +400,8 @@ sub writeactuators
     my $r=shift; # Raum mit Substruktur
     my $U=shift; # Ventileinstellung
 
-#    plugin_log($plugname, "Trying to write $r, $U");
-    
-    my @substructures=values %{$house{$r}->{circ}} if defined $house{$r}->{circ};
+    my @substructures=();
+    @substructures=values %{$house{$r}->{circ}} if defined $house{$r}->{circ};
     push @substructures, $house{$r};
 
     for my $ss (@substructures)
@@ -386,7 +416,6 @@ sub writeactuators
 	    }
 	}
     }
-#    plugin_log($plugname, "Done trying to write $r, $U");
 }
 
 ########## PID-Regler #####################
@@ -413,7 +442,7 @@ sub PID
     return ($T,$T0,$U,0) unless $T && $spread; 
 
     # Regelparameter einlesen
-    my ($Tv,$Tn,$lim,$prop,$refspread)=(5,30,1,1,10); # Defaults
+    my ($Tv,$Tn,$lim,$prop,$refspread)=(30,30,1,1,10); # Defaults
 
     ($Tv,$Tn,$lim,$prop,$refspread)
 	=@{$house{$r}{pid}}{qw(Tv Tn lim prop refspread)}
@@ -479,6 +508,7 @@ sub PID
    
     # und alles zusammen, skaliert mit der aktuellen Spreizung
     $U = ($P + $IS + $DF) * $coeff;
+    plugin_log($plugname, sprintf("$r: %.1f(%.1f) U = P+I+D = %d%+d%+d = %d",$T,$T0,100*$P*$coeff,100*$IS*$coeff,100*$DF*$coeff,100*$U));
     
     # Stellwert begrenzen auf 0-1
     $U=1 if $U>1; 
@@ -525,6 +555,8 @@ sub OPTIMIZE
     # Praktische Abkuerzungen fuer Statusvariablen
     my ($mode,$phase,$T0old) = @{$dyn{$r}}{qw(mode phase T0old)};
 
+    plugin_log($plugname, "D2: phase=$phase") if $r eq 'D2';
+
     # Falls Fenster offen  -> Abbruch, Heizung aus und Regler resetten
     if($window)
     {
@@ -541,7 +573,7 @@ sub OPTIMIZE
 	    # Wir nutzen die "cooling"-Periode sowieso nicht.
 	    # Also Parameter ins Konfig-File schreiben.
 	    my ($Tn, $Tv, $prop, $refspread) = @{$dyn{$r}}{qw(Tn Tv prop refspread)};
-	    my $date=`/bin/date +"%F %X"`; chomp $date;
+	    my $date=strftime("%F %X",localtime);
 	    my $lim=0.5; 
 	    $house{$r}{pid}={Tv=>$Tv, Tn=>$Tn, lim=>$lim, prop=>$prop, refspread=>$refspread, date=>$date};
 	    store_to_house_config($r);
@@ -568,14 +600,13 @@ sub OPTIMIZE
 	    mode=>$mode, phase=>'HEAT', 
 	    T0old=>$T0old, told=>0, optstart=>$t, 
 	    maxpos=>0, maxslope=>0, 
-	    sumspread=>$spread, temps=>[0], times=>[$T]
+	    sumspread=>$spread, temps=>[$T], times=>[0]
 	};
 	
 	return sprintf("%.1f(HEAT)%.1f ",$T,$spread);
     }
 
-    my ($optstart, $sumspread, $told, $temps, $times) 
-	= @{$dyn{$r}}{qw(optstart sumspread told temps times)};
+    my ($optstart, $sumspread, $told, $temps, $times) = @{$dyn{$r}}{qw(optstart sumspread told temps times)};
 
     my $tp=$t-$optstart;
 
@@ -615,13 +646,17 @@ sub OPTIMIZE
 	$SXY+=$times->[$i]*$temps->[$i];
     }
     
-    my $slope = ($S1*$SXY - $SX*$SY)/($S1*$SY2 - $SY*$SY);
+    my $slope = ($S1*$SXY - $SX*$SY)/($S1*$SY2 - $SY*$SY) * 3600;
     
     if($phase eq 'HEAT')
     {
 	my ($maxpos, $maxslope) = @{$dyn{$r}}{qw(maxpos maxslope)};
+
+	plugin_log($plugname, "D2: maxpos=$maxpos maxslope=$maxslope slope=$slope") if $r eq 'D2';
 	
-	if($slope<=0 || $maxslope<=0 || $slope>=0.7*$maxslope)
+	if($maxslope==0) { $maxslope=0.5; }
+	
+	if($slope<=0 || $maxslope<=0 || $slope>=0.6*$maxslope)
 	{
 	    my $retval='';
 	    
@@ -629,15 +664,15 @@ sub OPTIMIZE
 	    {
 		$maxslope = $slope; 
 		$maxpos = nearest(1,$#{$temps}-$S1/2);
-		$retval=sprintf "%.2fKph",$slope*60*60;
+		$retval=sprintf "%.2fKph/max=%.2fKph)",$slope,$maxslope;
 	    }
 	    elsif($slope>0)
 	    {
-		$retval=sprintf "%.2fKph=%d%%", $slope*60*60, 100*$slope/$maxslope;
+		$retval=sprintf "%.2fKph=%d%%", $slope, 100*$slope/$maxslope;
 	    }
 	    else
 	    {
-		$retval=sprintf "%.2fKph",$slope*60*60;
+		$retval=sprintf "%.2fKph/max=%.2fKph)",$slope,$maxslope;
 	    }
 	    
 	    # Statusvariablen zurueckschreiben
@@ -696,15 +731,15 @@ sub OPTIMIZE
 	my $refspread = $sumspread/scalar(@{$times});
 	my $DX = $Xplateau - $X0; 
 	my $Ks = $DX/$refspread; 
-	my $Tu = $t1 - 2*($tp-$told) - ($X1-$X0)/$maxslope; 
-	my $Tg = $DX/$maxslope;
+	my $Tu = $t1 - 2*($tp-$told) - 3600*($X1-$X0)/$maxslope; 
+	my $Tg = 3600*$DX/$maxslope;
 	
 	# Optimierung der PID-Parameter nach Chien/Hrones/Reswick
 	# (siehe zB Wikipedia). Wir nehmen aber etwas andere Koeffizienten, 
 	# das fuehrt zu ruhigerem Regelverhalten...
 	
 	# Proportionalbereich prop=1/Kp, kleineres prop ist aggressiver
-	my $prop = $maxslope*$Tu/(0.3*$refspread); 
+	my $prop = $maxslope*$Tu/(0.3*$refspread)/3600; 
 	
 	# Nachstellzeit des Integralteils, kleiner ist aggressiver
 	my $Tn = $Tg/60; 
@@ -747,7 +782,7 @@ sub OPTIMIZE
     # aber wir setzen $lim hier als Konstante
     my ($Tn, $Tv, $prop, $refspread, $tcool)
 	= @{$dyn{$r}}{qw(Tn Tv prop refspread tcool)};
-    my $date=`/bin/date +"%F %X"`; chomp $date;
+    my $date=strftime("%F %X",localtime);
     my $lim=0.5; 
     $house{$r}{pid}={Tv=>$Tv, Tn=>$Tn, lim=>$lim, prop=>$prop, refspread=>$refspread, date=>$date};
     store_to_house_config($r);
