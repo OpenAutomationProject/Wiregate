@@ -1,8 +1,8 @@
-# Plugin zum Senden eines Befehles [1] auf eine GA abhaengig von der aktiven Weckzeit aus dem Chumby.
+﻿# Plugin zum Senden eines Befehles [1] auf eine GA abhaengig von der aktiven Weckzeit aus dem Chumby.
 #
 # basiert auf chumby_weckzeit.pl von swiss (http://knx-user-forum.de/members/swiss.html)
 #
-# Version 0.1 BETA 13.02.1013
+# Version 0.1 BETA 17.02.1013
 # Copyright: jensgulow (http://knx-user-forum.de/members/jensgulow.html)
 # License: GPL (v2)
 # Aufbau moeglichst so, dass man unterhalb der Einstellungen nichts veraendern muss!
@@ -12,7 +12,7 @@
 ###Einstellungen:###
 ####################
 
-my $chumby_ip 	= "192.168.0.121"; 						# Hier die IP-Adresse des Chumby eintragen.
+my $chumby_ip 	= "xxx.xxx.xxx.xxx"; 						# Hier die IP-Adresse des Chumby eintragen.
 
 my $trigger_ga 	= "12/0/0";								# Auf diese GA wird zum aktiven Weckzeitpunkt eine [1] gesandt.
 
