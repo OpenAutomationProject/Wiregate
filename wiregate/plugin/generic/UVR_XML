@@ -1,0 +1,233 @@
+#!/usr/bin/perl
+use strict;
+
+# ******************************************************************************
+# by Hendrik Friedel (henfri) basierend auf Plugin von micha218 erweitert um XML-Einlesen
+# Vielen Dank für die Hilfe von swiss beim XML.
+# Das Plugin liest Werte der UVR 1611 über BL-Net ein, legt sie in RRDs ab und 
+# sendet sie auf den Bus.
+# Im Onlineschema des BL-Net müssen die Variabeln der zu lesenden Ein-/Ausgänge
+# innerhalb der Tags [UVR1611DATEN] [/UVR1611DATEN] eingetragen sein. Dies kann
+# z.B. im META Tag "Description" manuell vor dem Übertragen mit dem Memory
+# Manager hinzugefügt werden.
+# Beispiel:
+# <!-- [UVR1611DATEN]$n1a0|$n1a1|$n1a2|$n1d0|$n1d1[/UVR1611DATEN] -->
+# Info zum Schema: http://doku.uvr1611.at/doku.php/de/onlineschema/onlineschema 
+# Der String wird im Plugin-Log angegeben. Bitte daraus in die HTML kopieren. 
+# Konfiguration:
+# Das Plugin benötigt als Input lediglich die XML des TA-Designer (http://www.ta.co.at/download/datenblaumltter/volumenstromgeber-fts-vfs-vsg/fts-dl/index.php?option=com_jdownloads&Itemid=103&task=viewcategory&catid=153)
+# Hierzu bitte im Designer alle Größen, die eingelesen werden sollen per Drag&Drop in das Schema ziehen. 
+# Die Positionierung der Elemente ist nicht relevant -es bietet sich aber an, gleich die Visualisierung 
+# mit zu erstellen.
+# Die Gruppenadressen und DPT werden ebenfalls im TA-Designer definiert.
+# Hierzu wird der "Test-Text" (Doppelklick auf Feld) genutzt.
+# 1/2/3;9.001 (GA;DPT)
+# Die Daten werden zugleich in einen RRD gespeichert. Der Name entspricht der Bezeichnung in der XML
+# In der Plugin-Datei (dem Code, dieser Datei) muss nur die URL ($uvrURL) angepasst werden
+# *****************VORSICHT***************************
+# ****Die XML darf keine Sonderzeichen enthalten******
+# *****************VORSICHT***************************
+# Idee zur Vereinfachung: in der XML haben alle Zeilen eine ID/sind nummeriert.
+# Diese IDs sind auch in der HTML vorhanden (div-Elemente)
+# Hierüber können die Daten zugeordnet werden, ohne dass der String in die HTML eingefügt werden muss.
+# ******************************************************************************
+
+my $uvrUrl = 'http://192.168.178.5/GRAFIK1.htm';
+
+my @rrdName;
+my @knxGA;
+my @knxDPT;
+
+# Alternative Konfiguration ohne XML:
+# my @knxGA = ('1/6/100','1/6/101','1/6/102','1/7/100','1/7/101');
+# my @knxDPT = (9.001,9.001,9.001,1.001,1.001);
+# my @rrdName = ('aussen_temp','innen_temp','vorlauf_temp','ventilHzRL_bool','anforderungBrenner_bool');
+
+
+
+# vorübergehedes disablen des Plugins:
+# return "disabled";
+
+# plugin nicht zyklisch ausführen
+# $plugin_info{$plugname.'_cycle'} = 0;
+# plugin zyklisch ausführen
+$plugin_info{$plugname.'_cycle'} = $wg_config{''}{'rrd_interval'};
+
+# Eine KNX GA abonnieren: Plugin wird aufgerufen, sobald ein Paket an diese GA
+# kommt. Der Inhalt des Pakets steht dann in $msg.
+# $plugin_subscribe{'7/0/15'}{$plugname} = 1;
+
+
+#Ab hier nichts mehr ändern. Läuft automatisch
+my %umlaute = ("ä" => "ae", "Ä" => "Ae", "ü" => "ue", "Ü" => "Ue", "ö" => "oe", "Ö" => "Oe", "ß" => "ss" );
+my $umlautkeys = join ("|", keys(%umlaute));
+my $i = 0;
+
+
+if (@knxGA) {
+  plugin_log($plugname, 'Manuelle Konfiguration ohne XML via Variablen im Plugin-Code')
+} else
+{
+# XML darf keine ÄÖÜ so wie andere Sonderzeichen oder das scharfe doppel S enthalten!!!!
+
+
+
+use XML::Simple;
+use Encode qw(encode decode);
+
+my $xml = new XML::Simple;
+
+my $xml_file = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
+
+my @objekt;
+my @tmpText;
+my $tmpStr;
+my $value;
+my $htmlStr='';
+my $GAStr='';
+my $rrdNameStr='';
+my $DPTStr='';
+
+
+
+
+my $xmlStr= do {
+    local $/ = undef;
+    open my $fh, "<", $xml_file
+        or die "could not open $xml_file: $!";
+    <$fh>;
+};
+
+$xmlStr=~ s/($umlautkeys)/$umlaute{$1}/g;
+
+$value = $xml->XMLin(encode("utf8","$xmlStr"),GroupTags=>{RequestedTerminations=>'String'})->{Seiten}->{Seite_0}->{Objekte}; #lese alle Elemente zwischen <Objekte> und </Objekte> aus der xml
+
+while ((my $key) = each %{$value}) {        
+    my $can_subindex = $value->{$key}->{can_subindex};
+    my $can_index = $value->{$key}->{can_index};
+    my $can_knoten = $value->{$key}->{can_knoten};            
+        
+    $can_subindex = sprintf ("%x" , $can_subindex); #Mache aus Integer HEX
+    $can_index = sprintf ("%x" , $can_index); #Mache aus Integer HEX
+    $can_knoten = sprintf ("%x" , $can_knoten); #Mache aus Integer HEX
+        
+    my $hilfsvariabel = substr($can_index,0,2); #Speichere die ersten beiden Stellen von can_index
+    $can_index = substr($can_index,2) . $hilfsvariabel; #Stelle die ersten beiden Stellen hinten an
+        
+    $objekt[$i] = '$X'.$can_index.'0'.$can_subindex.'0'.$can_knoten; # $ausgabe enthält den gewünschten Wert
+    
+
+    $tmpStr = $value->{$key}->{Bezeichnung};
+    #$tmpStr  =~ tr/:s+/__/;
+    @tmpText = split(/.dat: /,$tmpStr);
+    $tmpStr = @tmpText[1];
+    #Replace Umlaute
+    $tmpStr =~ s/($umlautkeys)/$umlaute{$1}/g;
+    #Convert RRD Names to be compatible to Filename
+    $tmpStr =~ s/[^A-Za-z0-9\-\.]/_/g;
+    $rrdName[$i] = 'UVR_'.$tmpStr;   
+    
+    $tmpStr = $value->{$key}->{Text};
+    plugin_log($plugname, 'DEBUG tmpStr Text'.$tmpStr);
+    @tmpText = split(/\;/,$tmpStr);
+    $knxGA[$i] = @tmpText[0]; 
+    $knxDPT[$i] =  @tmpText[1];    
+    plugin_log($plugname, 'DEBUG GA_DPT'.$knxGA[$i].'_'.$knxDPT[$i]);
+    $htmlStr = $htmlStr.'|'.$objekt[$i]; 
+    $GAStr = $GAStr.'|'.$knxGA[$i];
+    $DPTStr = $DPTStr.'|'.$knxDPT[$i];
+    $rrdNameStr = $rrdNameStr.'|'.$rrdName[$i];
+    $i++;
+}
+
+#Convert HTML-String for Online-Schema to UpperCase
+$htmlStr=~ tr/A-Za-z/a-zA-Z/;
+
+
+plugin_log($plugname, 'Konfiguration eingelesen.');
+plugin_log($plugname, 'Namen:'.$rrdNameStr);
+plugin_log($plugname, 'Gruppenadressen:'.$GAStr);
+plugin_log($plugname, 'DPTs:'.$DPTStr);
+plugin_log($plugname, 'UVR Variablen:'.$htmlStr);
+$htmlStr='<!-- [UVR1611DATEN]'.$htmlStr.'[/UVR1611DATEN] -->';
+plugin_log($plugname, 'Der String in der HTML sollte so aussehen:');
+plugin_log($plugname, $htmlStr);
+}
+
+
+
+
+
+# Falls keine Zahl vom BL-Net übertragen wird sollten folgende Werte als boolean true (1) erkannt werden
+my @booleanTrue = ('EIN','ON','ein','true');
+my $tempValue;
+
+use LWP::Simple;
+my $urlContent = get($uvrUrl);
+return 'UVR-Datenabfrage fehlgeschlagen für $uvrUrl' unless defined $urlContent;
+$urlContent =~ /\[UVR1611DATEN\](.+)\[\/UVR1611DATEN\]/;
+  plugin_log($plugname, 'Rueckgabe aus HTML');
+  plugin_log($plugname, $1 );
+my @uvrVars = split(/\|/,$1);
+my $counter = 0;
+my $rrd_counter = 0;
+my $knx_counter = 0;
+
+my $dbgOut;
+
+foreach (@knxGA){
+  plugin_log($plugname, '------Bearbeite Nr'.$counter.' Name='.$rrdName[$counter].'-------');
+  $tempValue = $uvrVars[$counter+1]; 
+  plugin_log($plugname, 'RückgabeUVR='.$tempValue);
+  $tempValue =~ s/EIN/1/g;
+  $tempValue =~ s/\&nbsp;//g;
+  $tempValue =~ s/AUS/0/g;
+  $tempValue =~ s/\,/./g; # , durch . ersetzen
+  $tempValue =~ s/([-+]?[0-9]*\.[0-9]+|[0-9]+)//g;
+  $tempValue = $1;
+  plugin_log($plugname, 'Nachbehandelter Text='.$tempValue);
+  if ($tempValue !~ /[+-]?\d+[.,]?d*/) {
+     plugin_log($plugname, 'Nachbehandelter Text ist keine Zahl');
+    foreach my $x (@booleanTrue) {
+      if ($tempValue eq $x) {
+        $tempValue = '1';
+         plugin_log($plugname, 'tempValue wird 1 zugewiesen');
+        last;
+      }
+    }
+    if ($tempValue ne '1') {
+      $tempValue = '0';
+       plugin_log($plugname, 'tempValue wird 0 zugewiesen');
+    }
+  }
+  if(($_ ne '')&&($_ ne 'xxx')){
+    knx_write($_, $tempValue, $knxDPT[$counter]);
+    plugin_log($plugname, "knx_write($_, $tempValue, $knxDPT[$counter])");
+    $knx_counter++;
+    }
+  if($rrdName[$counter] ne ''){
+    update_rrd($rrdName[$counter],'',$tempValue);
+    plugin_log($plugname, "update_rrd($rrdName[$counter],'',$tempValue)");
+    $rrd_counter++;
+    }
+   #plugin_log($plugname, $dbgOut.'--- '.$counter.':'.$rrdName[$counter].'*'.$uvrVars[$counter].'*'.$tempValue.'*'.$_.'*'.$knxDPT[$counter]);
+  $counter++;
+  }
+  
+# plugin_log($plugname, "@uvrVars -- @knxGA");
+return $counter." Werte von UVR abgefragt, ".$rrd_counter." Werte als RRD gespeichert und ".$knx_counter." Werte an KNX gesendet";
+
+# Copyright (C) 2012 Michael Schneider
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>
