@@ -1,0 +1,58 @@
+#!/usr/bin/perl
+use strict;
+use LWP::Simple;
+# ******************************************************************************
+# Das Plugin schaltet Ausgänge der UVR1611
+# Finden der URL über
+# http://IP-Der-1611/580600.htm
+# ******************************************************************************
+
+####################
+###Einstellungen:###
+####################
+
+my $uvr_ip;# = '192.168.1.5';
+my @GAs;
+&readConf;
+
+######################
+##ENDE Einstellungen##
+######################
+
+plugin_log($plugname,'Startet ');
+$plugin_info{$plugname.'_cycle'} = 86400; 
+plugin_log($plugname,'Grund des Aufruf: ' . $msg{'apci'}. '  '. $msg{'dst'}. '  '. $msg{'value'} );
+
+foreach my $curr_ga (@GAs) 
+{
+     $plugin_subscribe{$curr_ga->{ga}}{$plugname} = 1; #An Gruppenadresse anmelden 
+     plugin_log($plugname,'Subscribe: ' . $curr_ga->{ga} );
+    if (($msg{'apci'} eq "A_GroupValue_Write") and ($msg{'dst'} eq ($curr_ga->{ga})) and ($msg{'value'}eq($curr_ga->{value}))) {	
+        get( "http://".$uvr_ip."/".$curr_ga->{URL});
+	plugin_log($plugname,'Call: ' .  "http://".$uvr_ip."/".$curr_ga->{URL} );
+     }
+
+}
+
+return;
+
+### READ CONF ###
+sub readConf
+{
+ my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
+ if (! -f $confFile) {
+  plugin_log($plugname, "no conf file [$confFile] found."); 
+ } else {
+  #plugin_log($plugname, "reading conf file [$confFile]."); 
+  open(CONF, $confFile);
+  my @lines = <CONF>;
+  close($confFile);
+  my $result = eval("@lines");
+  #($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+  if ($@) {
+   plugin_log($plugname, "ERR: conf file [$confFile] returned:");
+   my @parts = split(/\n/, $@);
+   plugin_log($plugname, "--> $_") foreach (@parts);
+  }
+ }
+}
