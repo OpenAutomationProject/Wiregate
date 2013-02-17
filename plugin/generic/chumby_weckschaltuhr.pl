@@ -1,8 +1,8 @@
-﻿# Plugin zum Senden eines Befehles [1] auf eine GA abhaengig von der aktiven Weckzeit aus dem Chumby.
+﻿# Plugin zum Senden eines Befehles auf eine GA abhaengig von der aktiven Weckzeit aus dem Chumby.
 #
 # basiert auf chumby_weckzeit.pl von swiss (http://knx-user-forum.de/members/swiss.html)
 #
-# Version 0.1 BETA 17.02.1013
+# Version 0.2 BETA 17.02.1013
 # Copyright: jensgulow (http://knx-user-forum.de/members/jensgulow.html)
 # License: GPL (v2)
 # Aufbau moeglichst so, dass man unterhalb der Einstellungen nichts veraendern muss!
@@ -12,12 +12,13 @@
 ###Einstellungen:###
 ####################
 
-my $chumby_ip 	= "xxx.xxx.xxx.xxx"; 						# Hier die IP-Adresse des Chumby eintragen.
+my $chumby_ip 	= "xxx.xxx.xxx.xxx"; 					# Hier die IP-Adresse des Chumby eintragen.
 
-my $trigger_ga 	= "12/0/0";								# Auf diese GA wird zum aktiven Weckzeitpunkt eine [1] gesandt.
+my $trigger_ga 	= "12/0/0";								# Auf diese GA wird zum aktiven Weckzeitpunkt eine $value_trigger_ga gesandt.
 
-my @do_not_use 	= ("Night","DAY week","DAY weekend"); 	# Diese Einträge der alarms sollen NICHT bearbeitet werden!
-my $anzahl_elemente = @do_not_use;						# Anzahl  der Einträge in @do_not_use (nicht verändern!)
+my $value_trigger_ga = "1";								# Dieser Wert wird an $trigger_ga gesandt.
+
+my $DPT_trigger_ga = "1.001";							# DPT des gesendeten Wertes.
 
 ######################
 ##ENDE Einstellungen##
@@ -60,31 +61,26 @@ if($status =~ /bytes from/)
 	die "Fehler beim Aufrufen der URL: $url. Bitte mit Anleitung ueberpruefen." unless defined $xml;
 	my $alarms = XMLin($xml)->{alarm};		# Die alarms-Datei parsen
 	
-
-	SCHALTZEITPUNKT: while ((my $key) = each %{$alarms}) 
-	{
-	for(my $i=0; $i<$anzahl_elemente; $i++)
-		{
-	if ($alarms->{$key} ne $do_not_use[$i])
-		{
+SCHALTZEITPUNKT: while ((my $key) = each %{$alarms})
+{
 		### Fall "daily" als eingetragene Wecktage ###
-		if ($alarms->{$key}->{enabled} == 1 && $alarms->{$key}->{time} == $perltime && $alarms->{$key}->{when} eq 'daily')
+		if ($alarms->{$key}->{enabled} == 1 && $alarms->{$key}->{time} == $perltime && $alarms->{$key}->{when} eq 'daily' && $alarms->{$key}->{auto_dismiss} == '0')
 						{
-						knx_write($trigger_ga,1,1.001);
-				        plugin_log($plugname, "geschalten, da Weckzeitpunkt erreicht. Sende [1] an $trigger_ga.");
+						knx_write($trigger_ga,$value_trigger_ga,$DPT_trigger_ga);
+				        plugin_log($plugname, "geschalten, da Weckzeitpunkt erreicht. Sende [$value_trigger_ga] an $trigger_ga.");
 						last SCHALTZEITPUNKT;
 						}
 
 		### Fall "Once on xx/xx/xxxx" als eingetragener einmaliger Wecktag ###
-		elsif ($alarms->{$key}->{enabled} == 1 && $alarms->{$key}->{time} == $perltimemin && $alarms->{$key}->{when} eq 'once')
+		elsif ($alarms->{$key}->{enabled} == 1 && $alarms->{$key}->{time} == $perltimemin && $alarms->{$key}->{when} eq 'once' && $alarms->{$key}->{auto_dismiss} == '0')
 						{
-						knx_write($trigger_ga,1,1.001);
-						plugin_log($plugname, "geschalten, da Weckzeitpunkt erreicht. Sende [1] an $trigger_ga.");
+						knx_write($trigger_ga,$value_trigger_ga,$DPT_trigger_ga);
+						plugin_log($plugname, "geschalten, da Weckzeitpunkt erreicht. Sende [$value_trigger_ga] an $trigger_ga.");
 						last SCHALTZEITPUNKT;
 						}
 					
 		### Fall "dowxxxxxxx" als eingetragene Wecktage (individuelle Einstellung "day of week" ###
-		elsif ($alarms->{$key}->{enabled} == 1 && $alarms->{$key}->{time} == $perltime)
+		elsif ($alarms->{$key}->{enabled} == 1 && $alarms->{$key}->{time} == $perltime && $alarms->{$key}->{auto_dismiss} == '0')
 				{
 				if ($alarms->{$key}->{when} =~ /dow(\d{7})/)
 					{
@@ -95,17 +91,15 @@ if($status =~ /bytes from/)
 							$zeichen[$j] = substr($wdaybinaer,$j,1);
 							if ($zeichen[$j] == 1 && $j eq $wday)
 								{
-								knx_write($trigger_ga,1,1.001);
-								plugin_log($plugname, "geschalten, da Weckzeitpunkt erreicht. Sende [1] an $trigger_ga.");
+								knx_write($trigger_ga,$value_trigger_ga,$DPT_trigger_ga);
+								plugin_log($plugname, "geschalten, da Weckzeitpunkt erreicht. Sende [$value_trigger_ga] an $trigger_ga.");
 								last SCHALTZEITPUNKT;
 								}
 							}
 					}
 				}
 			next;
-		}
-		}
-	}
+}
 
 	return "Status OK";
 			
