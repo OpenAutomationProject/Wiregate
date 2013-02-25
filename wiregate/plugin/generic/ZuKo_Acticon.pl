@@ -1,67 +1,45 @@
 ### Plugin Zutrittskontrolle Fa. ACTICON
+# 2013-02-25 v2 ohne socat mit netcat
+my $ip = "192.168.6.1";
+my $port = "3300";
 
 $plugin_info{$plugname.'_cycle'} = 60; # Aufruf/Abfragezyklus in sek.
 my $watchdog_ga = "13/5/1"; # GA für Watchdog, wenn keine Abfrage läuft
 my %users; # Hash für die User
 # Hash mit der Zuordnung ID -> Gruppenadresse
-$users{'1208123123'} = "13/5/10"; # EMA (scharf?)
-$users{'1319123567'} = "12/0/1"; #Mustermann, Heinz
-# sieht so aus: EMA,|          |c0c0c0|1208123123
-
-
-# intern, nicht aendern: siehe socat:
-# /usr/bin/socat tcp-connect:192.168.6.1:3300,forever,crlf udp-datagram:localhost:50105,bind=localhost:50106,reuseaddr
-my $socknum = 38;
-my $send_ip = "localhost";
-my $send_port = "50106";
-my $recv_ip = "localhost";
-my $recv_port = "50105";
+$users{'1234123488'} = "13/5/10"; # EMA (scharf?)
+$users{'1234123472'} = "12/0/1"; #Huber
+# usw.
 
 #######################
 ### ENDE DEFINITION ###
 #######################
 
 # Hauptverarbeitung
-if (!$socket[$socknum]) { # socket erstellen
-    $socket[$socknum] = IO::Socket::INET->new(LocalPort => $recv_port,
-                              Proto => "udp",
-                              LocalAddr => $recv_ip,
-                              PeerPort  => $send_port,
-                              PeerAddr  => $send_ip,
-                              ReuseAddr => 1
-                               )
-             or return ("open of $recv_ip : $recv_port failed: $!");
-    $socksel->add($socket[$socknum]); # add socket to select
-    $plugin_socket_subscribe{$socket[$socknum]} = $plugname; # subscribe plugin
-    syswrite($socket[$socknum],"SWT#ANW_ZE\r\n");
-    return "opened Socket $socknum";    
-} 
 
-if ($fh) { # incoming data
-    my $buf;
-    recv($fh,$buf,255,0); # recv, not <$fh> as we receive mostly crap with NULL!
+my @result = `echo "SWT#ANW_ZE" | nc -q 1 $ip $port`;
+foreach my $buf (@result) { # incoming data
+    my $len = length($buf);
     $buf =~ s/\x0+//g; # clean out null-bytes:
-    return if(!$buf); # crap received, skip null-byte packets
+    $plugin_info{$plugname.'_setlen'} += $len;
+    next if(!$buf); # crap received, skip null-byte packets
+    $buf =~ s/\r|\n//g; # remove CR/LF
     if ($buf =~ /START-SEND/) {
+        $plugin_info{$plugname.'_setlen'} = $len;
+        $plugin_info{$plugname.'_startT'} = time(); # runtime-calc
+        $plugin_info{$plugname.'_lastSuccess'} = time();
         knx_write($watchdog_ga, 1, 1);
-        return; # "Start";
     }
-    return if ($buf =~ /STOP-SEND/);
-    chomp($buf); # remove CR/LF
+    if ($buf =~ /STOP-SEND/) {
+        return "$buf took: " . int(time() - $plugin_info{$plugname.'_startT'} . " len: $plugin_info{$plugname.'_setlen'}");
+    }
     my $bufhex = $buf;
     $bufhex =~ s/(.)/sprintf("0x%x ",ord($1))/eg;
-    
-    my @anwesend = split('\|',$buf);
-    knx_write($users{$anwesend[3]}, 1, 1);
 
-    return;
-    #return "FH recv $buf ($bufhex)";
-} else { # zyklischer Aufruf
-    # Send command 
-    syswrite($socket[$socknum],"SWT#ANW_ZE\r\n");
-    # reset local $buf 
-    return; #  "cycle";
+    my @anwesend = split('\|',$buf);
+    #plugin_log($plugname, "Nummer: $anwesend[3] GA: $users{$anwesend[3]}");
+    knx_write($users{$anwesend[3]}, 1, 1);
 }
 
-return "dunno we never get here?";
+return "dunno";
 
