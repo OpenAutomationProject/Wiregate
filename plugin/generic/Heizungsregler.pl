@@ -330,7 +330,10 @@ sub readsensors
 		{
 		    unless(defined $T{$type}{$s})
 		    {
-			$T{$type}{$s}=knx_read($s,5*$house{cycle},$dpt);
+			# wir lesen mit 1000s aus dem Cache, denn die Temp-Sensoren sind sowieso auf 1wire
+			# (und antworten daher nicht innerhalb der Plugin-Laufzeit).
+			# Achtung: sowohl Fensterkontakte als auch Temp-Sensoren sollten zyklisch senden!
+			$T{$type}{$s}=knx_read($s,5*$house{cycle},$dpt,1000); 
 			delete $T{$type}{$s} unless defined $T{$type}{$s} && $T{$type}{$s}!=85;
 		    }
 		}
@@ -390,7 +393,7 @@ sub readsensors
     # und wenn alle Stricke reissen, bleibt der vorkonfigurierte Wert
     $R{spread}=$house{spread} unless defined $R{spread};
 
-    plugin_log($plugname, $r.": ".(join " ", map "$_=$R{$_}", qw(sensor inflow floor outflow spread window)));
+    #plugin_log($plugname, $r.": ".(join " ", map "$_=$R{$_}", qw(sensor inflow floor outflow spread window)));
 
     return @R{qw(sensor inflow floor outflow spread window)};
 }
@@ -444,9 +447,18 @@ sub PID
     # Regelparameter einlesen
     my ($Tv,$Tn,$lim,$prop,$refspread)=(30,30,1,1,10); # Defaults
 
-    ($Tv,$Tn,$lim,$prop,$refspread)
-	=@{$house{$r}{pid}}{qw(Tv Tn lim prop refspread)}
-        if defined $house{$r}{pid};
+    if(defined $house{$r}{pid})
+    {
+	($Tv,$Tn,$lim,$prop,$refspread)=@{$house{$r}{pid}}{qw(Tv Tn lim prop refspread)};
+    }
+    else
+    {
+	$Tv=$house{Tv} if defined $house{Tv};
+	$Tn=$house{Tn} if defined $house{Tn};
+	$lim=$house{lim} if defined $house{lim};
+	$prop=$house{prop} if defined $house{prop};
+	$refspread=$house{refspread} if defined $house{refspread};
+    }
 
     $Tv*=60; $Tn*=60; # in Sekunden umrechnen
 
@@ -468,6 +480,8 @@ sub PID
 	    mode=>$mode, T0=>$T0, Told=>$T, told=>$t, IS=>$IS, DF=>$DF, 
 	    temps=>$temps, times=>$times, Uvals=>$Uvals, U=>$U
 	};
+
+	plugin_log($plugname, "$r: WINDOW");
 	
 	writeactuators($r,$U); 
 	return ($T,$T0,$U,0); 
@@ -569,9 +583,9 @@ sub OPTIMIZE
 	}
 	else
 	{
-	    # Tn, Tv, prop und refspread wurden am Ende der HEAT-Periode bereits berechnet
-	    # Wir nutzen die "cooling"-Periode sowieso nicht.
-	    # Also Parameter ins Konfig-File schreiben.
+	    # Tn, Tv, prop und refspread wurden am Ende der HEAT-Periode bereits berechnet.
+	    # Wir nutzen die "cooling"-Periode sowieso nicht fuer die Berechnung der Parameter.
+	    # Also Parameter jetzt (Beginn "cooling") schon ins Konfig-File schreiben.
 	    my ($Tn, $Tv, $prop, $refspread) = @{$dyn{$r}}{qw(Tn Tv prop refspread)};
 	    my $date=strftime("%F %X",localtime);
 	    my $lim=0.5; 
@@ -708,7 +722,7 @@ sub OPTIMIZE
 	    RESET($r);
 	    $dyn{$r}{mode}='ON'; # ansonsten uebrige Werte behalten
 	    $dyn{$r}{T0}=$T0old;
-	    return "FAILED:POS2";
+	    return "FAILED:POS2 ";
 	} 
 	$pos2 = nearest(1,$pos2-$S1/2);	
 	
@@ -755,7 +769,7 @@ sub OPTIMIZE
 	    $dyn{$r}{T0}=$T0old;
 	    $dyn{$r}{Told}=$T;
 	    
-	    return "FAILED:NEG";
+	    return "FAILED:NEG ";
 	}
 
 	# Statusvariablen zurueckschreiben
