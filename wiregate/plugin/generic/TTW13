@@ -1,0 +1,460 @@
+#############################################################################
+# Accessing Tecalor TTW13 water/water heat pump with WPMiw over CAN
+# (identical to Stiebel Eltron WPW heat pumps)
+# 
+# v0.1 by Christian Schleiffer
+#
+# Use at your own risk and under terms of GPLv2
+#############################################################################
+#
+# Changelog
+# v0.1 - basic functionality, monitoring of TTW113
+#
+#
+#
+#############################################################################
+
+
+# notes...
+# trigger for updates? (601,7,60015A05000000)
+
+# ===== BEGIN Configuration =====
+
+# connect to the heat pumpt via USBtin interface and socat
+my $can_receive_address  = "localhost:50050";
+my $can_send_address     = "localhost:50051";
+my $socknum         	 = 33;
+
+# parameter read rate [s]
+my $param_read_cycle = 15;
+
+# Set heating mode
+my $ga_heating_mode_standby = "";				# DPT 1.001		 
+my $ga_heating_mode_automatic = "";				# DPT 1.001
+my $ga_heating_mode_day = "";					# DPT 1.001
+my $ga_heating_mode_night = "";					# DPT 1.001
+my $ga_heating_mode_hotwater = "";				# DPT 1.001
+# Status reporting of heating mode
+my $ga_status_heating_mode_standby = "";		# DPT 1.001		 
+my $ga_status_heating_mode_automatic = "";		# DPT 1.001
+my $ga_status_heating_mode_day = "";			# DPT 1.001
+my $ga_status_heating_mode_night = "";			# DPT 1.001
+my $ga_status_heating_mode_hotwater = "";		# DPT 1.001
+my $ga_status_heating_mode = "";				# DPT 14.000
+
+# Sensor readings
+my $ga_temperature_outside = "";				# DPT 9.001 ('Außentemperatur')
+my $ga_temp_mixer = "";							# DPT 9.001 ('Temperatur Mischer')
+my $ga_setpoint_mixer = "";						# DPT 9.001 ('Solltemperatur Mischer')
+my $ga_temp_water = "";							# DPT 9.001 ('Temperatur Heißwasser')
+my $ga_setpoint_water = "";						# DPT 9.001 ('Solltemperatur Heißwasser')
+my $ga_temp_return = "";						# DPT 9.001 ('Temperatur Rücklauf')
+my $ga_setpoint_return = "";					# DPT 9.001 ('Solltemperatur Rücklauf')
+my $ga_temp_source = "";						# DPT 9.001 ('Temperatur Quelle')
+my $ga_setpoint_source = "";					# DPT 9.001 ('Solltemperatur Quelle')
+my $ga_setpoint_buffer_stage = "";				# DPT 9.001 ('Solltemperatur Puffer')
+my $ga_setpoint_flow = "";
+my $ga_temp_flow = "";							# DPT 9.001 ('Ist-Temperatur Vorlauf')
+my $ga_max_temp_flow_heating = "";				# DPT 9.001 ('Max. Vorlauftemperatur Heizung')
+my $ga_temp_hot_gas = "";						# DPT 9.001 ('Heißgastemperatur')
+my $ga_pressure_HD = "";
+
+# Status internal systems
+my $ga_status_compressor = "";					# DPT 1.001
+my $ga_status_DHC1 = "";
+my $ga_status_DHC2 = "";
+my $ga_status_buffer_stage_pump = "";
+my $ga_status_hotwater_pump = "";
+my $ga_status_heating_ciruit1_pump = "";
+my $ga_status_mixer_openin = "";
+my $ga_status_mixer_closing = "";
+my $ga_status_EVU_locked = "";
+my $ga_status_source_pump ="" ;
+
+# ===== END Configuration =====
+
+
+my %parameters = (
+	'setpointWater' => {
+		'statusGA' => $ga_setpoint_water,
+		'paramId' => '0003',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+		},
+	'setpointMixer' => {
+		'statusGA' => $ga_setpoint_mixer,
+		'paramId' => '0004',
+		'scaling' => 0.1,
+		'heatingCircuit' => '01',
+		'xy' => 'C'
+		},
+	'temperatureOutside' => {
+		'statusGA' => $ga_temperature_outside,
+		'paramId' => '000C',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+		},
+	'temperatureWater' => {
+		'statusGA' => $ga_temp_water,
+		'paramId' => '000E',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+		},
+	'temperaturMixer' => {
+		'statusGA' => $ga_temp_mixer,
+		'paramId' => '000F',
+		'scaling' => 0.1,
+		'heatingCircuit' => '01',
+		'xy' => 'C'
+		},
+	'tempMinSource' => {
+		'statusGA' => $ga_setpoint_source,
+		'paramId' => '01B0',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+		},
+	'temperatureSource' => {
+		'statusGA' => $ga_temp_source,
+		'paramId' => '01D4',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+		},
+	'setpointBufferStage' => {
+		'statusGA' => $ga_setpoint_buffer_stage,
+		'paramId' => '01D5',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+		},
+	'temperatureFlow' => {
+		'statusGA' => $ga_temp_flow,
+		'paramId' => '01D6',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+		},
+	'setpointReturn' => {
+		'statusGA' => $ga_setpoint_return,
+		'paramId' => '01D7',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+		},
+	'setpointFlow' => {
+		'statusGA' => $ga_setpoint_flow,
+		'paramId' => '01E8',
+		'scaling' => 0.1,
+		'heatingCircuit' => '01',
+		'xy' => 'C'
+		},
+	'temperatureHotGas' => {
+		'statusGA' => $ga_temp_hot_gas,
+		'paramId' => '0265',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+		},
+	'pressureHD' => {
+	    'statusGA' => $ga_pressure_HD,
+		'paramId' => '0268',
+		'scaling' => 0.1,
+		'heatingCircuit' => '00',
+		'xy' => '3'
+	}
+	
+	);
+
+my %ttw13RequestTypes = (
+	'request1' => {
+		'requestId' => '301',
+		'requestLength' => '7',
+		'requestBody' => '3100FAxxxx8000',
+		'requestBodyParameterPosition' => 3,
+		'responseId' => '180',
+		'responseLength' => '7',
+		'responseBody' => '6201FAxxxxyyyy',
+		'responseBodyParameterPosition' => 3,
+		'responseBodyValuePosition' => 5 }
+	);
+	
+
+# ===== do not change below here if you don't know what you are doing =====
+my $returnString;
+if( !$socket[$socknum] ) { # socket erstellen
+	$socket[$socknum] = IO::Socket::INET->new(
+		Proto => "udp",
+		LocalAddr => $can_receive_address,
+		PeerAddr => $can_send_address,
+		ReuseAddr => 1
+	)
+	or return ("open of $can_receive_address failed: $!");
+	$socksel->add($socket[$socknum]); # add socket to select
+	$plugin_socket_subscribe{$socket[$socknum]} = $plugname; # subscribe plugin
+	return "opened UDP socket $socknum";
+} elsif( !(!keys %msg) )  {
+	 # ==== check if we are called due to activity on registered address =====
+	 
+	 
+} elsif ($fh) { 
+	# ===== read from socket =====
+ 	my $buf;
+
+ 	recv($fh, $buf, 255, 0);
+	
+	# avoid trying to process crap
+	$buf =~ s/\R//g; # remove line breaks
+	$buf =~ s/[^A-Za-z0-9]//g; #remove bogous characters
+	if( length( $buf ) == 0 ) {
+		return;
+	}
+	
+	$plugin_info{ $plugname.'_ReceiveBuffer ' } .= $buf;
+	$buf = $plugin_info{ $plugname.'_ReceiveBuffer ' };
+	
+	my $endReached = 0;
+	while( $buf ne "" && length( $buf ) > 0 && $endReached == 0 ) {
+		my $function = substr( $buf, 0, 1 );
+		if ($function eq "t" ) {
+			# is header data in buffer?
+			if( length( $buf ) > 4 ) {
+				# complete CAN identifier and length byte
+				my $frameLength = substr( $buf, 4, 1 );
+				# is complete payload already in buffer?
+				if( length( $buf ) >  $frameLength * 2 ) {
+					# CAN frame is complete => decode
+					my $msgId = substr( $buf, 1, 3 );
+					my $msgLength = substr( $buf, 4, 1);
+					my $msgBody = substr( $buf, 5, substr( $buf, 4, 1) * 2 );
+					# store timestamp for received frame
+					$plugin_info{ $plugname.'_lastReceiveTime' } = time();
+					# remove frame from receive buffer
+					$buf = substr( $buf, ( 5 + ( $frameLength * 2 ) ), length( $buf ) -  ( 5 + ( $frameLength * 2 ) ) );
+					$returnString .= decodeCanFrame( $msgId, $msgLength, $msgBody );
+				} else {
+					# no more data to process
+					$endReached = 1;
+				}
+			} else {
+				# no more data to process
+				$endReached = 1;
+			}
+		} else {
+			substr( $buf, 0, 1, "" );
+		};
+	}
+	# store remaining characters
+	$plugin_info{ $plugname.'_ReceiveBuffer ' } = $buf;
+	
+} else { 
+	# ===== cyclic call =====
+		#syswrite( $socket[$socknum], "V\r" );  # Get Version
+
+	# readout loop
+	if( $plugin_info{ $plugname.'_requestMode' } eq '1' ) {
+		my @parameterNames = keys( %parameters );
+		my $numRequests = @parameterNames;
+		if( $numRequests > $plugin_info{ $plugname.'_requestNo' } ) {
+			# request one parameter each plugin cycle
+			my %thisParameter = (%{$parameters{ 
+				$parameterNames[ 
+					$plugin_info{ $plugname.'_requestNo' } 
+				] 
+			} } );
+			sendCanFrame('301','7', $thisParameter{ 'xy' }.'1'.$thisParameter{ 'heatingCircuit' }.'FA'.$thisParameter{ 'paramId' }.'0000' ); # $plugin_info{ $plugname.'_requestNo' }.' '.$parameterNames[ $plugin_info{ $plugname.'_requestNo' } ].' '.$thisParameter{ 'paramId' };
+			$plugin_info{ $plugname.'_requestNo' } += 1;
+			$plugin_info{ $plugname.'_cycle'} = 1;		# keep cycle fast
+			return; 
+		} else {
+			$plugin_info{ $plugname.'_requestNo' } = 0; 			# reset parameter counter
+			$plugin_info{ $plugname.'_cycle'} = $param_read_cycle;	# reset call cycle
+			$plugin_info{ $plugname.'_requestMode' } = 0;			# disable parameter walkthrough
+			$plugin_info{ $plugname.'_lastRequest' } = time();
+		}
+	} 
+
+	# after $param_read_cycle start reading all parameters from heat pump
+	if( ( time() - $plugin_info{ $plugname.'_lastRequest' } ) > $param_read_cycle ) {
+		$plugin_info{ $plugname.'_cycle'} = 1;			# start fast cycling 
+		$plugin_info{ $plugname.'_requestMode' } = 1; 	# enable readout loop
+		# first: get heating mode
+		sendCanFrame('301','7','3100FA01128000');
+		# also: get status of pumps
+		# sendCanFrame('301','7','3100FA02618000');
+		
+		# $returnString .= sendCanFrame('301','7','3100FA00260000');
+	}	
+	
+	# if last frame was received more than 15min ago => reconfigure interface
+	if( ( time() - $plugin_info{ $plugname.'_lastReceiveTime' } ) > ( 15 * 60 ) ) {
+			$returnString .= "Reconfiguring CAN interface...";
+			# (re)configure USBtin
+			syswrite( $socket[$socknum], "S1\r" ); # Set baudrate 20kBits/s
+			syswrite( $socket[$socknum], "O\r" );  # Open CAN channel	
+	}
+
+	
+#		$plugin_info{ $plugname.'_Parm ' } = 0;
+#		$plugin_info{ $plugname.'_Params ' } = "";
+#		if ( $plugin_info{ $plugname.'_Parm ' } < 65536 ) {
+#			my $parm = sprintf "3100FA%04X8000", $plugin_info{ $plugname.'_Parm ' };
+#			$returnString .= sendCanFrame('301', '7', $parm );
+#			$plugin_info{ $plugname.'_Parm ' } += 1;
+#			$plugin_info{ $plugname.'_cycle'} = 1;
+#		} else {
+#			$plugin_info{ $plugname.'_cycle'} = 300;
+#		}
+}
+return $returnString;
+
+
+sub decodeCanFrame {
+	my $msgId = shift;
+	my $msgLength = shift;
+	my $msgBody = shift;
+
+	# trigger to update values (?)
+	# 601,7,60015A05000000
+	if( ( $msgId eq '601' ) && ( $msgLength eq '7' ) && ( substr( $msgBody, 0, 6 )  eq '60015A' ) && ( substr($msgBody, 8, 6 ) eq '000000' ) ) {
+		my $retVal = 'mode changed to: ';
+		my $val = substr( $msgBody, 6, 2 );
+		if( $val eq '01' ) { $retVal .= 'Standby'; }
+		if( $val eq '02' ) { $retVal .= 'Automatic'; }
+		if( $val eq '03' ) { $retVal .= 'Day'; }
+		if( $val eq '04' ) { $retVal .= 'Night'; }
+		if( $val eq '05' ) { $retVal .= 'Water'; }
+		if( $val eq '06' ) { $retVal .= 'Emergency'; }
+		$plugin_info{ $plugname.'_cycle'} = 1;			# start fast cycling 
+		$plugin_info{ $plugname.'_requestMode' } = 1; 	# enable readout loop
+		return $retVal;
+	}
+	
+	# answer to a request
+	if( ( ( $msgId eq '180' ) || ( $msgId eq '601' ) ) && ( $msgLength eq '7' ) && ( substr( $msgBody, 0, 6 ) eq '6201FA' ) ) {
+		for my $thisParameterName( keys %parameters ) {
+			my %thisParameter = ( %{ $parameters{ $thisParameterName } } );
+			
+			if( substr( $msgBody, 6, 4 ) eq $thisParameter{ 'paramId' } ) {	
+				if( substr( $msgBody, 10, 4 ) eq '8000' ) { next; } # skip if parameter is unknown at heating system 
+				my $val = unpack( 's', pack( 'S', hex( substr( $msgBody, 10, 4 ) ) ) ) * $thisParameter{ 'scaling' }; #  hex( substr( $msgBody, 10, 4 ) ) * $thisParameter{ 'scaling' };
+				update_rrd( $plugname.'_'.$thisParameterName, '', $val );
+				return $thisParameterName.'='.$val;
+			}
+		}
+		
+		# status of devices -- TODO: does not work ATM
+		if( substr( $msgBody, 6, 4 ) eq '0261' )  {
+			my $val = hex( substr( $msgBody, 10, 4 ) );
+			my $retVal = substr( $msgBody, 10, 4 ).' - Devices:	 ';
+			if( $val & 0x0001 ) { $retVal .= 'Verdichter, '; }
+			if( $val & 0x0002 ) { $retVal .= 'DHC1, '; }
+			if( $val & 0x0004 ) { $retVal .= 'DHC2, '; }
+			if( $val & 0x0008 ) { $retVal .= 'Pufferladepumpe, '; }
+			if( $val & 0x0010 ) { $retVal .= 'Warmwasserladepumpe, '; }
+			if( $val & 0x0020 ) { $retVal .= 'HK1 Pumpe, '; }
+			if( $val & 0x0040 ) { $retVal .= 'HK2 Pumpe, '; }
+			if( $val & 0x0080 ) { $retVal .= 'Mischer auf, '; }
+			if( $val & 0x0100 ) { $retVal .= 'Mischer zu, '; }
+			if( $val & 0x0200 ) { $retVal .= 'EVU-Sperre, '; }
+			if( $val & 0x0400 ) { $retVal .= 'Quellenpumpe, '; }
+			if( $val & 0x0800 ) { $retVal .= 'Kühlkreispumpe, '; }
+			return $retVal;
+		}
+		
+		if( substr( $msgBody, 6, 4 ) eq '0112' )  {
+			my $val = substr( $msgBody, 10, 4 );
+			if( $val eq "0100" ) {
+				knx_write( $ga_status_heating_mode_standby, 1 );
+				knx_write( $ga_status_heating_mode_automatic, 0 );
+				knx_write( $ga_status_heating_mode_day, 0 );
+				knx_write( $ga_status_heating_mode_night, 0 );
+				knx_write( $ga_status_heating_mode_hotwater, 0 );
+				knx_write( $ga_status_heating_mode, "Standby" );
+				update_rrd( $plugname.'_mode', '', 10 );
+				return "Standby"; 
+			}
+			elsif( $val eq "0200" ) { 
+				knx_write( $ga_status_heating_mode_standby, 0 );
+				knx_write( $ga_status_heating_mode_automatic, 1 );
+				knx_write( $ga_status_heating_mode_day, 0 );
+				knx_write( $ga_status_heating_mode_night, 0 );
+				knx_write( $ga_status_heating_mode_hotwater, 0 );
+				knx_write( $ga_status_heating_mode, "Uhrenbetrieb" );
+				update_rrd( $plugname.'_mode', '', 20 );
+				return "Uhrenbetrieb";
+			}
+			elsif( $val eq "0300" ) { 
+				knx_write( $ga_status_heating_mode_standby, 0 );
+				knx_write( $ga_status_heating_mode_automatic, 0 );
+				knx_write( $ga_status_heating_mode_day, 1 );
+				knx_write( $ga_status_heating_mode_night, 0 );
+				knx_write( $ga_status_heating_mode_hotwater, 0 );
+				knx_write( $ga_status_heating_mode, "Tagbetrieb" );
+				update_rrd( $plugname.'_mode', '', 30 );
+				return "Tagbetrieb";
+			}
+			elsif( $val eq "0400" ) { 
+				knx_write( $ga_status_heating_mode_standby, 0 );
+				knx_write( $ga_status_heating_mode_automatic, 0 );
+				knx_write( $ga_status_heating_mode_day, 0 );
+				knx_write( $ga_status_heating_mode_night, 1 );
+				knx_write( $ga_status_heating_mode_hotwater, 0 );
+				knx_write( $ga_status_heating_mode, "Absenkbetrieb" );
+				update_rrd( $plugname.'_mode', '', 40 );
+				return "Absenkbetrieb";
+			}
+			elsif( $val eq "0500" ) { 
+				knx_write( $ga_status_heating_mode_standby, 0 );
+				knx_write( $ga_status_heating_mode_automatic, 0 );
+				knx_write( $ga_status_heating_mode_day, 0 );
+				knx_write( $ga_status_heating_mode_night, 0 );
+				knx_write( $ga_status_heating_mode_hotwater, 1 );
+				knx_write( $ga_status_heating_mode, "Warmwasser" );
+				update_rrd( $plugname.'_mode', '', 50 );
+				return "Warmwasserbetrieb";
+			}
+			elsif( $val eq "0600" ) { 
+				return "Notbetrieb"; 
+			}
+		}
+	}
+	
+	#for my $thisRequestTypeName ( keys %ttw13RequestTypes ) {
+	#	my %thisRequestType = (%{$ttw13RequestTypes{ $thisRequestTypeName }});
+	#	
+	#	# compare IDs
+	#	if( $msgId ne $thisRequestType{'responseId'} ) { next; };
+	#	
+	#	#compare length
+	#	if( $msgLength ne $thisRequestType{'responseLength'} ) { next; };
+	#	
+	#	#compare message body (header)
+	#	if( substr( $msgBody, 0, $thisRequestType{'responseBodyParameterPosition'}*2-1 ) ne substr( $thisRequestType{'responseBody'}, 0,  $thisRequestType{'responseBodyParameterPosition'}*2-1) ) { next; }
+	#	
+	#	# search for Parameter
+	#	for my $thisParameterName ( keys %ttw13Parameters ) {
+	#		my %thisParameter = (%{$ttw13Parameters{ $thisParameterName }});
+	#		
+	#		if( substr( $msgBody, $thisRequestType{'responseBodyParameterPosition'}*2, 4 ) eq $thisParameter{ 'parameter' } ) {
+	#			my $val = hex( substr( $msgBody, $thisRequestType{'responseBodyValuePosition'}*2, 4 ) ) * $thisParameter{ 'scaling' };
+	#			return'decoded ('.$msgId.','.$msgLength.','.$msgBody.') as '.$thisParameterName.' => '.$val.'), ';
+	#		}
+	#		
+	#	}
+	#}
+	#	
+	return "unknown (".$msgId.",".$msgLength.",".$msgBody."), ";
+}
+
+sub sendCanFrame {
+	my $msgId = shift;
+	my $msgLength = shift;
+	my $msgBody = shift;
+
+	syswrite( $socket[$socknum], 't'.$msgId.$msgLength.$msgBody."\r" );
+	return "sending (".$msgId.",".$msgLength.",".$msgBody."), ";
+}
