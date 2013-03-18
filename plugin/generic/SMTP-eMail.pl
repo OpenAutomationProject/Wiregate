@@ -29,6 +29,9 @@ $plugin_info{$plugname.'_cycle'} = 3600;
 
 use Net::SMTP::SSL;
 use MIME::Base64;
+use POSIX 'strftime';
+
+my $Datum = strftime("%a, %d %b %Y %H:%M:%S %z", localtime());
 
 my $smtp = Net::SMTP::SSL->new($mailserver, Timeout => 10) or return "Fehler beim verbinden zu $mailserver $!; $@";
 $smtp->auth($username,$password) or return "SASL Auth failed $!;$@"; # try SASL
@@ -36,7 +39,9 @@ $smtp->status() < 5 or return "Auth failed: $!; $@ ". $smtp->status();
 $smtp->mail($Absender) or return "Absender $Absender abgelehnt $!";
 $smtp->to(split(',',$Empfaenger)) or return "Empfaenger $Empfaenger abgelehnt: $!"; 
 $smtp->data() or return "Data failed $!";
+$smtp->datasend("From: $Absender\n") or return "Absender $Absender (Header-From) abgelehnt $!";
 $smtp->datasend("To: $Empfaenger\n") or return "Empfanger $Empfaenger (Header-To) abgelehnt $!";
+$smtp->datasend("Date: $Datum\n") or return "Datum $Datum (Header-Date) abgelehnt $!";
 $smtp->datasend("Subject: $Betreff\n") or return "Subject $Betreff abgelehnt $!";
 $smtp->datasend("\n") or return "Data failed $!";
 $smtp->datasend("$text\n") or return "Data failed $!";
