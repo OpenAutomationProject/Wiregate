@@ -1,0 +1,141 @@
+# Konfigurationsbeispiel für Sonenabhaengige Schaltungen
+#
+# License: GPL (v2)
+# $Id: emx_uhr.conf.sample2 $
+# Copyright: Edgar (emax) Hermanns, forum at hermanns punkt net
+#----------------------------------------------------------------------
+# extra Funktionen
+# 
+# Die Funktionen erlauben die Rueckgabe von Werten relativ zum Sonnenauf- 
+# bzw. -untergang. 
+#
+# ACHTUNG:   Das funktioniert nur, wenn dass 'emx_sonne.pl' Plugin aktiv 
+#            ist, welches ein mal taeglich den Sonnenaufgang und den 
+#            Sonnenuntergang berechnet und in %plugin_info abspeichert.
+#
+# Funktionen:
+#
+# sonnUntHH: gibt die Stunde des Sonnenuntergangs plus $1 zurueck.
+#            Moechte z.B. man die Stunde um 1:45 _vor_ Sonnenuntergang 
+#            erhalten, ruft man 'sonnUntHH(-1.75)' auf.
+#            Die Funktion gibt nur die Stunde zurueck. 
+#            ACHTUNG: Es muss trotzdem die komplette Zeitangabe
+#                     inklusive Stundenbruchteil als Parameter angegeben 
+#                     werden.
+#
+#            Beispiel: Sonnenuntergang um 18:15 Uhr
+#                      Geplante Schaltzeit 1,5 Stunden vorher
+#
+#                      Aufruf:       sonnUntHH(-1.5);
+#                      Rueckgabewert: 16   (= 18:15 minus 1:30 = 16:45)
+#           
+#            Positive Werte ergeben natuerlich eine spaetere Schaltzeit:
+#        
+#                      Aufruf:       sonnUntHH(1.75)
+#                      Rueckgabewert: 20   (= 18:15 plus 1.75 = 20:00)
+#
+#            Die Dezimalwerte fuer die Stundenbruchteile muss man nicht 
+#            ausrechnen, das macht perl von selber. Wer zum Beispiel
+#            Eine Stunde und 13 Minuten vorher Schalten moechte,
+#            kann das so schreiben:
+# 
+#                     Aufruf:        sonnUntHH(-1.216667)
+#
+#            oder einfacher auch so:
+#
+#                     Aufruf:        sonnUntHH(-(1.0 + 13/60))
+#
+# sonnUntHH: gibt die Minute des Sonnenuntergangs plus $1 zurueck.
+#            Es gelten die gleichen Regeln wie oben.
+# 
+# sonnAufHH: dto. fuer Sonnenaufgangs-Stunde
+# sonnAufMM: dto. fuer Minute.
+#
+#----------------------------------------------------------------------
+
+sub sonnUntHH()
+{
+    # Rueckgabe Sonnenuntergangs-Stunde + $1 Std
+    # Die Angabe $1 muss die vollstaendig abzuziehende/addierende Zeit 
+    # in HH.MM (als float) beinhalten, auch die Minuten!
+    # Beipiel: Eindreiviertel Stunden = 1:45 = 1.75
+    # Es wird nur die Stunde zurueckgegeben.
+
+    my $offset = shift || return int($plugin_info{'emx_sonne.pl.unt'});
+    $offset = int($offset * 1000);
+    ($offset < 0) and $offset = 24000 + ($offset % 24000);
+    return  int ((($plugin_info{'emx_sonne.pl.unt'} * 1000 + $offset) % 24000) / 1000);
+} # sonnUntHH
+
+sub sonnUntMM()
+{
+    # Rueckgabe Sonnenuntergangs-Minute + $1 Offset
+
+    my $offset = shift || return $plugin_info{'emx_sonne.pl.untMM'};
+    $offset = int($offset * 1000);
+    ($offset < 0) and $offset = 24000 + ($offset % 24000);
+    return  int ((($plugin_info{'emx_sonne.pl.unt'} * 1000 + $offset) % 1000) * 60 / 1000 );
+} # sonnUntMM
+
+sub sonnAufHH()
+{
+    # Rueckgabe Sonnenaufgangs-Stunde + $1 Std
+    # Die Angabe $1 muss die vollstaendig abzuziehende/addierende Zeit 
+    # in HH.MM (als float) beinhalten
+    # Es wird nur die Stunde zurueckgegeben.
+
+    my $offset = shift || return int($plugin_info{'emx_sonne.pl.auf'});
+    $offset = int($offset * 1000);
+    ($offset < 0) and $offset = 24000 + ($offset % 24000);
+    return  int ((($plugin_info{'emx_sonne.pl.auf'} * 1000 + $offset) % 24000) / 1000);
+} # sonnUntHH
+
+
+sub sonnAufMM()
+{
+    # Rueckgabe Sonnenaufgangs-Minute + $1 Offset
+
+    my $offset = shift || return $plugin_info{'emx_sonne.pl.aufMM'};
+    $offset = int($offset * 1000);
+    ($offset < 0) and $offset = 24000 + ($offset % 24000);
+    return  int ((($plugin_info{'emx_sonne.pl.auf'} * 1000 + $offset) % 1000) * 60 / 1000 );
+} # sonnAufMM
+
+#-----------------------------------------------------------------------------
+# Einstellungen (Beipiele)
+#-----------------------------------------------------------------------------
+
+$LokaleZeitZone = "CET";          # lokale Zeitzone
+$LokaleSommerZeitZone="CEST";     # lokale Zeitzone im Sommer
+
+@Zeiten = 
+    (
+     # Werkstatt Ventilator an, taeglich, 1 std. vor sonnenaufgang
+     { Name=>'WS_Ventilator', Aktiv=>'1', Std=>&sonnAufHH(-1.0), Min=>&sonnAufMM(-1.0), 
+       MTag=>undef, Mon=>undef, WTag=>undef, Wert=>'1', DPT=>'1', GA=>'1/2/34', Log=>'1' }, 
+     
+     # Werkstatt Ventilator aus, taeglich, 11 minuten spaeter als 1 std. vor sonnenaufgang
+     { Name=>'WS_Ventilator', Aktiv=>'1', Std=>&sonnAufHH(-1.0 + 11/60), Min=>&sonnAufMM(-1.0 + 11/60), 
+       MTag=>undef, Mon=>undef, WTag=>undef, Wert=>'0', DPT=>'1', GA=>'1/2/34', Log=>'1' }, 
+
+     # Rollaeden runter fahren, Kueche 13 Minuten nach Sonneuntergang, Terrasse 14 Minuten nach Sonnenuntergang
+     { Name=>'EG_RollKuecheAb',       Aktiv=>'1', Std=>&sonnUntHH(13/60), Min=>&sonnUntMM(13/60), Wert=>'1', DPT=>'1', GA=>'4/5/67', Log=>'1' }, 
+     { Name=>'EG_RollTerrasseAuf',    Aktiv=>'1', Std=>&sonnUntHH(14/60), Min=>&sonnUntMM(14/60), Wert=>'1', DPT=>'1', GA=>'4/5/67', Log=>'1' }, 
+    );
+
+#-----------------------------------------------------------------------------
+# $slotEnd definiert die Sekunde, ab der neu synchronisiert wird   
+# ACHTUNG: Sollte nicht kleiner als 1 Sekunde sein.
+#-----------------------------------------------------------------------------
+$slotEnd = 3; 
+
+#-----------------------------------------------------------------------------
+# ENDE Einstellungen
+#-----------------------------------------------------------------------------
+
+1;
+
+# emacs setting
+# ;;; Local Variables: ***
+# ;;; mode:perl ***
+# ;;; End: ***
