@@ -1,8 +1,9 @@
 # return();
 # schaltet anhand der Termine im Google-Kalender
 # by NetFritz 03/2013
-#
-
+# siehe : http://knx-user-forum.de/code-schnipsel/26061-google-schaltuhr.html
+# braucht noch "hole_gCal.php" Download unter:
+# http://openautomation.svn.sourceforge.net/viewvc/openautomation/tools/gCal/hole_gCal.php
 #
 # muss ewtl angepasst werden
 my $hole_gkalender = "./var/www/gCal/hole_gCal.php";
