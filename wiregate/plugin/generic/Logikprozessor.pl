@@ -48,6 +48,11 @@ sub groupaddress;
 # Konfigfile seit dem letzten Mal geaendert?
 my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
 $conf.='.conf' unless $conf=~s/\.pl$/.conf/;
+unless(-f $conf)
+{
+    plugin_log($plugname, "Config err: $conf nicht gefunden.");
+    exit;
+}
 my $configtime=24*60*60*(-M $conf);
 my $config_modified = ($configtime < $plugin_info{$plugname.'_configtime'}-1);
 
@@ -153,8 +158,14 @@ if($event=~/restart|modified/ || $config_modified)
 
 		for my $trm (@{$transmit})
 		{
-		    $plugin_subscribe{$trm}{$plugname}=1;
-		    plugin_log($plugname, "\$logic{$t}: Transmit-GA $trm nicht in %eibgaconf gefunden") unless exists $eibgaconf{$trm};
+		    if(defined $eibgaconf{$trm}{ga})
+		    {
+			$plugin_subscribe{$trm}{$plugname}=1;
+		    }
+		    else
+		    {
+			plugin_log($plugname, "\$logic{$t}: Transmit-GA $trm nicht in %eibgaconf gefunden");
+		    }
 		}
 	    }
 	}
@@ -180,8 +191,14 @@ if($event=~/restart|modified/ || $config_modified)
 		
 		for my $rec (@{$receive})
 		{
-		    $plugin_subscribe{$rec}{$plugname}=1;
-		    plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden") unless exists $eibgaconf{$rec};
+		    if(defined $eibgaconf{$rec}{ga})
+		    {
+			$plugin_subscribe{$rec}{$plugname}=1;
+		    }
+		    else
+		    {
+			plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden");
+		    }
 
 		    if($debug)
 		    {
@@ -228,18 +245,18 @@ if($event=~/restart|modified/ || $config_modified)
 		{
 		    if(ref $logic{$t}{transmit})
 		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result";
+			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet;  ";
 		    }
 		    else
 		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ";
+			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet;  ";
 		    }
 		}
 	    }
 	}
     }	    
 
-    $retval.=$count." initialisiert, ";
+    $retval.=$count." initialisiert;  ";
 }
 
 if($event=~/bus/)
@@ -318,13 +335,13 @@ if($event=~/bus/)
 
 		    if(defined $result)
 		    {
-			$retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(Logik) -> $ga:$result gesendet. " if $debug;
+			$retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(Logik) -> $ga:$result gesendet;  " if $debug;
 			knx_write($ga, $result, undef, 0x40) if defined $result; # response, DPT aus eibga.conf		    
 		    }
 		}	    
 		else
 		{
-		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet. " if $debug;
+		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet;  " if $debug;
 		    knx_write($ga, $result, undef, 0x40); # response, DPT aus eibga.conf		    
 		}
 		
@@ -355,7 +372,7 @@ if($event=~/bus/)
 	# Cool-Periode definiert und noch nicht abgelaufen?
 	if(defined $plugin_info{$plugname.'__'.$t.'_cool'} && $plugin_info{$plugname.'__'.$t.'_cool'}>time())
 	{
-	    $retval.="$ga:$in -> \$logic{$t}{receive}(Cool) " if $debug;
+	    $retval.="$ga:$in -> \$logic{$t}{receive}(Cool);  " if $debug;
 	    next;
 	}
 
@@ -371,18 +388,39 @@ if($event=~/bus/)
 	# In bestimmten Sonderfaellen nichts schicken
 	unless(defined $result) # Resultat undef => nichts senden
 	{
-	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden " if $debug;
+	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden;  " if $debug;
 	    next;
 	}
 
 	if($logic{$t}{transmit_only_on_request})
 	{
-	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result gespeichert "	if $debug;
+	    if($debug)
+	    {
+		if(ref $logic{$t}{transmit})
+		{
+		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gespeichert;  ";
+		}
+		else
+		{
+		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> ".$logic{$t}{transmit}.":$result gespeichert;  ";
+		}
+	    }
 	    next;
 	}
 
-        if($logic{$t}{transmit_changes_only} && ($result eq $prevResult)) {
-	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> $transmit:$result unverändert -> nichts zu senden " if $debug;
+        if($logic{$t}{transmit_changes_only} && ($result eq $prevResult)) 
+	{
+	    if($debug)
+	    {
+		if(ref $logic{$t}{transmit})
+		{
+		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result unveraendert -> nichts zu senden;  ";
+		}
+		else
+		{
+		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> ".$logic{$t}{transmit}.":$result unveraendert -> nichts zu senden;  ";
+		}
+	    }
 	    next;
         }
 
@@ -391,7 +429,7 @@ if($event=~/bus/)
 	{
 	    $plugin_info{$plugname.'__'.$t.'_timer'}=$systemtime+$logic{$t}{delay};
 	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{delay}+$logic{$t}{cool} if defined $logic{$t}{cool};
-	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> delay ".$logic{$t}{delay}."s " if $debug;
+	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> delay ".$logic{$t}{delay}."s;  " if $debug;
 	}
 	else
 	{
@@ -406,11 +444,11 @@ if($event=~/bus/)
 		{
 		    if(ref $logic{$t}{transmit})
 		    {
-			$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet ";
+			$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet;  ";
 		    }
 		    else
 		    {
-			$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ";
+			$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet;  ";
 		    }
 		}
 	    }
@@ -478,11 +516,11 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 		{
 		    if(ref $logic{$t}{transmit})
 		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet ($reason) ";
+			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet ($reason);  ";
 		    }
 		    else
 		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ($reason) ";
+			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ($reason);  ";
 		    }
 		}
 	    }
