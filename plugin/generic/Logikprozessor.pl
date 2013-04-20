@@ -948,7 +948,7 @@ sub execute_logic
     }
     else
     {
-	$input=();
+	$input=[];
 	for my $rec (@{$receive})
 	{
 	    if($ga eq $rec)
@@ -957,8 +957,7 @@ sub execute_logic
 	    }
 	    else
 	    {
-		$in=knx_read($rec, (defined $logic{$t}{eibd_cache}?$logic{$t}{eibd_cache}:300));
-		push @{$input}, $in;
+		push @{$input}, knx_read($rec, (defined $logic{$t}{eibd_cache}?$logic{$t}{eibd_cache}:300));
 	    }
 	}
     }
