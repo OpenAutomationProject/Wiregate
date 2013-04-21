@@ -44,6 +44,7 @@ my $systemtime=time();
 my $date=sprintf("%02d/%02d",$month,$day_of_month);
 
 sub groupaddress;
+sub my_knx_write;
 
 # Konfigfile seit dem letzten Mal geaendert?
 my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
@@ -948,7 +949,7 @@ sub execute_logic
     }
     else
     {
-	$input=[];
+	$input=();
 	for my $rec (@{$receive})
 	{
 	    if($ga eq $rec)
@@ -957,7 +958,8 @@ sub execute_logic
 	    }
 	    else
 	    {
-		push @{$input}, knx_read($rec, (defined $logic{$t}{eibd_cache}?$logic{$t}{eibd_cache}:300));
+		$in=knx_read($rec, (defined $logic{$t}{eibd_cache}?$logic{$t}{eibd_cache}:300));
+		push @{$input}, $in;
 	    }
 	}
     }
@@ -1156,5 +1158,57 @@ sub sendProwl {
         }
     }
     return undef;
+}
+
+# das folgende ist eine modifizierte Version von knx_write fuer Logiken
+# dieses knx_write erlaubt es, Lesetelegramme abzusetzen, ohne auf die Antwort zu warten
+sub my_knx_write {
+    my ($dst,$value,$dpt,$acpi,$dbgmsg) = @_;
+    my $bytes;
+    my $apci = 0x80 unless defined $acpi; # 0x00=read, 0x40=response, 0x80=write
+    $dpt = $eibgaconf{$dst}{'DPTSubId'} unless $dpt; # read dpt from eibgaconf if existing
+    given ($dpt) {
+	when (/^10/) {
+            my %wd=(Mo=>1, Di=>2, Mi=>3, Do=>4, Fr=>5, Sa=>6, So=>7);
+            my $wdpat=join('|',keys %wd);
+            my ($w,$h,$m,$s);
+            return unless ($w,$h,$m,$s)=($value=~/^($wdpat)?\s*([0-2][0-9])\:([0-5][0-9])\:?([0-5][0-9])?\s*/si);
+            return unless defined $h && defined $m;
+            $w=$wd{$w} if defined $wd{$w};
+            $h+=($w<<5) if $w; 
+            $s=0 unless $s;
+            $bytes=pack("CCCCC",0,$apci,$h,$m,$s);
+	}
+	when (/^11/) {
+            my ($y,$m,$d);
+            return unless ($y,$m,$d)=($value=~/^([1-2][0-9][0-9][0-9])\-([0-1][0-9])\-([0-3][0-9])\s*/si);
+            return if $y<1990 || $y>=2090;
+            $y%=100;
+            $bytes=pack("CCCCC",0,$apci,$d,$m,$y);
+	}
+	when (/^12/)             { $bytes = pack ("CCL>", 0, $apci, $value); }  #EIS11.000/DPT12 (4 byte unsigned)
+	when (/^13/)             { $bytes = pack ("CCl>", 0, $apci, $value); }
+	when (/^14/)             { $bytes = pack ("CCf>", 0, $apci, $value); }
+	when (/^16/)             { $bytes = pack ("CCa14", 0, $apci, $value); }
+	when (/^17/)             { $bytes = pack ("CCC", 0, $apci, $value & 0x3F); }
+	when (/^20/)             { $bytes = pack ("CCC", 0, $apci, $value); }
+	when (/^\d\d/)           { return; } # other DPT XX 15 are unhandled
+	when (/^[1,2,3]/)        { $bytes = pack ("CC", 0, $apci | ($value & 0x3f)); } #send 6bit small
+	when (/^4/)              { $bytes = pack ("CCc", 0, $apci, ord($value)); } 
+	when ([5,5.001])         { $bytes = pack ("CCC", 0, $apci, encode_dpt5($value)); } #EIS 6/DPT5.001 1byte
+	when ([5.004,5.005,5.010]) { $bytes = pack ("CCC", 0, $apci, $value); }
+	when (/^5/)              { $bytes = pack ("CCC", 0, $apci, $value); }
+	when (/^6/)              { $bytes = pack ("CCc", 0, $apci, $value); }
+	when (/^7/)              { $bytes = pack ("CCS>", 0, $apci, $value); }
+	when (/^8/)              { $bytes = pack ("CCs>", 0, $apci, $value); } 
+	when (/^9/)              { $bytes = pack ("CCCC", 0, $apci, encode_dpt9($value)); } #EIS5/DPT9 2byte float 
+	default                  { LOGGER('WARN',"None or unsupported DPT: $dpt sent to $dst value $value"); return; }
+    }
+    plugin_log("knx_write","KNX write DPT $dpt: $value ($bytes) to $dst ($dbgmsg)") if ($knxdebug);
+    my $leibcon = EIBConnection->EIBSocketURL($eib_url) or return("Error opening con: $!");
+    if ($leibcon->EIBOpenT_Group(str2addr($dst),1) == -1) { return("Error opening group: $!"); } 
+    my $res=$leibcon->EIBSendAPDU($bytes);
+    $leibcon->EIBClose();
+    return $res;
 }
 
