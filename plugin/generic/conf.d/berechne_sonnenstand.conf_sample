@@ -1,0 +1,13 @@
+# [BOF /etc/wiregate/plugin/generic/conf.d/berechne_sonnenstand.conf]
+
+# Geografische Lage
+($gv_lat, $gv_lon, $gv_elev) = (
+ 48.43333333333333,		# Breitengrad in Grad
+ 14.3,					# Längengrad in Grad
+ 825 / 1000				# Höhe über NN in Kilometer (deswegen geteilt durch 1000)
+);
+
+# NOT USED: Aktiviert Debug-Meldungen
+$show_debug = 0;  # switches debug information that will be shown in the log
+
+# [EOF /etc/wiregate/plugin/generic/conf.d/berechne_sonnenstand.conf]
