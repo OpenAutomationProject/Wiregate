@@ -1,0 +1,13 @@
+# [BOF /etc/wiregate/plugin/generic/conf.d/beschattung_freigabe.conf]
+
+# GA für die Helligkeit
+$gv_gaHelligkeit = '4/2/3';
+# GA um die gesamte Beschattungs-Automatik zu sperren
+$gv_gaSperre = '';
+# GA für Winter-Modus
+$gv_gaFreigabe = '0/6/101';
+
+# Aktiviert Debug-Meldungen
+$show_debug = 0;  # switches debug information that will be shown in the log
+
+# [EOF /etc/wiregate/plugin/generic/conf.d/beschattung_freigabe.conf]
