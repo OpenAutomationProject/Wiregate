@@ -1,0 +1,20 @@
+# [BOF /etc/wiregate/plugin/generic/conf.d/rrd_aufzeichnen.conf]
+
+# Alle Werte
+# id: ID des Wertes (evtl. für Variablen, die benötigt werden)
+# name: Name, falls irgendwelche Meldungen ausgegeben werden
+# gaWert: GA des Wertes
+# rrdName: Name des RRDs das mit dem Wert befüllt werden soll
+push @gt_werte, { id => "POOL_GLATT", name => "Geglättete Pooltemperatur", gaWert => "4/1/21", rrdName => "Temp_Pool_geglaettet" };
+#push @gt_werte, { id => "WZ", name => "Wohnzimmertemperatur", gaWert => "4/1/0", rrdName => "Temp_Wohnzimmer" };
+#push @gt_werte, { id => "WG", name => "Wintergartentemperatur", gaWert => "4/1/1", rrdName => "Temp_Wintergarten" };
+#push @gt_werte, { id => "SZ", name => "Schlafzimmertemperatur", gaWert => "4/1/2", rrdName => "Temp_Schlafzimmer" };
+#push @gt_werte, { id => "AUSSEN", name => "Außentemperatur", gaWert => "4/2/0", rrdName => "Temp_Aussen" };
+#push @gt_werte, { id => "HELLIGKEIT", name => "Helligkeit", gaWert => "4/2/3", rrdName => "Helligkeit_Aussen" };
+#push @gt_werte, { id => "GARAGE_OST", name => "Garagentor geöffnet OST", gaWert => "2/3/0", rrdName => "My_Garagentor_Ost" };
+#push @gt_werte, { id => "GARAGE_WEST", name => "Garagentor geöffnet WEST", gaWert => "2/3/1", rrdName => "My_Garagentor_West" };
+
+# Aktiviert Debug-Meldungen
+$show_debug = 1;  # switches debug information that will be shown in the log
+
+# [EOF /etc/wiregate/plugin/generic/conf.d/rrd_aufzeichnen.conf]
