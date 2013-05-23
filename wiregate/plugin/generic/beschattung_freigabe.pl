@@ -235,4 +235,4 @@ if ($gv_event eq EVENT_RESTART) {
  }
 }
 
-return 'Freigabe erfolgreich berechnet!';
+return 'Freigabe: '.$plugin_info{$plugname.'_beschattungFreigabe'};
