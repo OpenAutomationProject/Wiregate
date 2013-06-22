@@ -10,6 +10,7 @@
 #
 # Änderungshistorie:
 # 20130506 - mclb - Erstellung
+# 20130617 - mclb - Azimuth und Elevation werden nun zusätzlich auf GAs geschrieben.
 #
 #############################################################################
 #
@@ -49,43 +50,53 @@ my $show_debug;
 
 my $gv_azimuth;
 my $gv_elevation;
+my $gv_gaAzimuth;
+my $gv_gaElevation;
 
 # Read config file in conf.d
 my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
 if (! -f $confFile)
 {
-  plugin_log($plugname, " no conf file [$confFile] found."); 
+  plugin_log($plugname, "0.1 - no conf file [$confFile] found.") if ($show_debug > 0); 
   return "no conf file [$confFile] found.";
 }
 else
 {
-  plugin_log($plugname, " reading conf file [$confFile].") if( $show_debug > 1); 
+  plugin_log($plugname, "0.2 - reading conf file [$confFile].") if ($show_debug > 0); 
   open(CONF, $confFile);
   my @lines = <CONF>;
   close($confFile);
   my $result = eval("@lines");
   if( $show_debug > 1 )
   {
-    ($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+    ($result) and plugin_log($plugname, "0.3 - conf file [$confFile] returned result[$result]");
   }
   if ($@) 
   {
-    plugin_log($plugname, "conf file [$confFile] returned:") if( $show_debug > 1 );
+    plugin_log($plugname, "0.4 - conf file [$confFile] returned:") if ($show_debug > 0);
     my @parts = split(/\n/, $@);
     if( $show_debug > 1 )
     {
-      plugin_log($plugname, "--> $_") foreach (@parts);
+      plugin_log($plugname, "0.5 - --> $_") foreach (@parts);
     }
   }
 }
 
 # Ruf mich alle 5 Minuten selbst auf und berechne Azimuth und Elevation neu
-$plugin_info{$plugname.'_cycle'} = 60;
+$plugin_info{$plugname.'_cycle'} = 300;
 
 ($gv_azimuth, $gv_elevation) = berechneSonnenstand($gv_lat, $gv_lon, $gv_elev);
 
-$plugin_info{'azimuth'} = $gv_azimuth;
-$plugin_info{'elevation'} = $gv_elevation;
+plugin_log($plugname, '1 - Azimuth alt: '.$plugin_info{'azimuth'}.', Azimuth neu: '.$gv_azimuth) if ($show_debug > 0);
+plugin_log($plugname, '2 - Elevation alt: '.$plugin_info{'elevation'}.', Elevation neu: '.$gv_elevation) if ($show_debug > 0);
+
+if ($gv_azimuth ne $plugin_info{'azimuth'} or $gv_elevation ne $plugin_info{'elevation'}) {
+  $plugin_info{'azimuth'} = $gv_azimuth;
+  $plugin_info{'elevation'} = $gv_elevation;
+
+  if ($gv_gaAzimuth ne '') { knx_write($gv_gaAzimuth, $gv_azimuth); }
+  if ($gv_gaElevation ne '') { knx_write($gv_gaElevation, $gv_elevation); }
+}
 
 return 'Sonnenstand erfolgreich berechnet!';
 
