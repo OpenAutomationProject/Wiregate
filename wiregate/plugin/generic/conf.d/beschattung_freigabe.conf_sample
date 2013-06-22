@@ -4,8 +4,11 @@
 $gv_gaHelligkeit = '4/2/3';
 # GA um die gesamte Beschattungs-Automatik zu sperren
 $gv_gaSperre = '';
-# GA für Winter-Modus
+# GA für Freigabe
 $gv_gaFreigabe = '0/6/101';
+# GAs für Azimuth und Elevation
+$gv_gaAzimuth = '0/0/10';
+$gv_gaElevation = '0/0/11';
 
 # Aktiviert Debug-Meldungen
 $show_debug = 0;  # switches debug information that will be shown in the log

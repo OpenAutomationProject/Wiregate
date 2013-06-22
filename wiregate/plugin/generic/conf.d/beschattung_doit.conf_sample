@@ -1,8 +1,13 @@
-# [BOF /etc/wiregate/plugin/generic/conf.d/beschattung_v2.conf]
+# [BOF /etc/wiregate/plugin/generic/conf.d/beschattung_doit.conf]
 
 # Gruppenadressen
-# GA für Freigabe
+# GA für Winder
 $gv_gaWinter = '0/6/101';
+# GA für Freigabe
+$gv_gaFreigabe = '0/6/100';
+# GAs für Sonnenstand
+$gv_gaAzimuth = '0/0/10';
+$gv_gaElevation = '0/0/11';
 
 # Alle Raffstores
 # id: ID des Raffstores (evtl. für Variablen, die benötigt werden)
@@ -46,4 +51,4 @@ push @gt_raffstores, { id => "OG_K3_NORD_FEN", name => "K3 Nord Fenster", ausric
 # Aktiviert Debug-Meldungen
 $show_debug = 1;  # switches debug information that will be shown in the log
 
-# [EOF /etc/wiregate/plugin/generic/conf.d/beschattung_v2.conf]
+# [EOF /etc/wiregate/plugin/generic/conf.d/beschattung_doit.conf]

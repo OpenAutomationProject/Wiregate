@@ -7,7 +7,11 @@
  825 / 1000				# Höhe über NN in Kilometer (deswegen geteilt durch 1000)
 );
 
-# NOT USED: Aktiviert Debug-Meldungen
+# GA wo Azimuth und Elevation hingeschrieben werden sollen
+$gv_gaAzimuth = '0/0/10';
+$gv_gaElevation = '0/0/11';
+
+# Aktiviert Debug-Meldungen
 $show_debug = 0;  # switches debug information that will be shown in the log
 
 # [EOF /etc/wiregate/plugin/generic/conf.d/berechne_sonnenstand.conf]
