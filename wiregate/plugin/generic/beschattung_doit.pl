@@ -30,6 +30,8 @@
 # 20120920 - mclb - Winter-Modus (Aktivierbar über eigene GA; Im Winter-Modus können die Lamellen an eine andere Stelle zur Beschattung gefahren werden)
 # 20120925 - mclb - Beschattung temperaturabhängig aktivieren/deaktivieren
 # 20130506 - mclb - Aufteilen in 2 Plugins - 1. Freigabe, 2. Ausführung
+# 20130620 - mclb - Azimuth und Elevation werden jetzt über GAs empfangen, nicht mehr direkt vom plugin_info gelesen.
+#                   Somit erübrigt sich auch der zyklische Aufruf jede Minute.
 #
 #############################################################################
 #
@@ -110,47 +112,45 @@ my $gv_sommerzeit;
 my $show_debug = 0; # switches debug information that will be shown in the log
 my $gv_gaWinter = "";
 my $gv_gaFreigabe = "";
+my $gv_gaAzimuth = "";
+my $gv_gaElevation = "";
 my @gt_raffstores;
 
 # Read config file in conf.d
 my $confFile = '/etc/wiregate/plugin/generic/conf.d/'.basename($plugname,'.pl').'.conf';
-if (! -f $confFile)
-{
-  plugin_log($plugname, " no conf file [$confFile] found."); 
+if (! -f $confFile) {
+  plugin_log($plugname, "0.1 - no conf file [$confFile] found.") if ($show_debug > 0); 
   return "no conf file [$confFile] found.";
-}
-else
-{
-  plugin_log($plugname, " reading conf file [$confFile].") if( $show_debug > 1); 
+} else {
+  plugin_log($plugname, "0.2 - reading conf file [$confFile].") if($show_debug > 0); 
   open(CONF, $confFile);
   my @lines = <CONF>;
   close($confFile);
   my $result = eval("@lines");
   if( $show_debug > 1 )
   {
-    ($result) and plugin_log($plugname, "conf file [$confFile] returned result[$result]");
+    ($result) and plugin_log($plugname, "0.3 - conf file [$confFile] returned result[$result]");
   }
   if ($@) 
   {
-    plugin_log($plugname, "conf file [$confFile] returned:") if( $show_debug > 1 );
+    plugin_log($plugname, "0.4 - conf file [$confFile] returned:") if($show_debug > 0);
     my @parts = split(/\n/, $@);
     if( $show_debug > 1 )
     {
-      plugin_log($plugname, "--> $_") foreach (@parts);
+      plugin_log($plugname, "0.5 - --> $_") foreach (@parts);
     }
   }
 }
 
-# Ruf mich alle 60 Sekunden selbst auf, damit ich prüfen kann, ob die Helligkeit über-/unterschritten wurde
-$plugin_info{$plugname.'_cycle'} = 60;
+# Ruf mich garnicht zyklisch auf, nur wenn sich auf einer meiner abbonierten GAs etwas tut
+$plugin_info{$plugname.'_cycle'} = 0;
 # Ruf mich auf, wenn zwischen Sommer- und Winter-Modus gewechselt wird
-if ($gv_gaWinter ne '') {
- $plugin_subscribe{$gv_gaWinter}{$plugname} = 1;
-}
+if ($gv_gaWinter ne '') { $plugin_subscribe{$gv_gaWinter}{$plugname} = 1; }
 # Ruf mich auf, wenn sich die Freigabe ändert
-if ($gv_gaFreigabe ne '') {
- $plugin_subscribe{$gv_gaFreigabe}{$plugname} = 1;
-}
+if ($gv_gaFreigabe ne '') { $plugin_subscribe{$gv_gaFreigabe}{$plugname} = 1; }
+# Ruf mich auf, wenn sich der Sonnenstand ändert
+if ($gv_gaAzimuth ne '') { $plugin_subscribe{$gv_gaAzimuth}{$plugname} = 1; }
+if ($gv_gaElevation ne '') { $plugin_subscribe{$gv_gaElevation}{$plugname} = 1; }
 # Ruf mich auf, wenn sich an der Sperr-GA eines Raffstores etwas ändert
 # Ruf mich auf, wenn sich der Fenster-Status ändert
 foreach $gs_raffstore (@gt_raffstores) {
@@ -236,14 +236,24 @@ if ($gv_event eq EVENT_RESTART) {
  }
 } elsif ($gv_event eq EVENT_BUS) {
  if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gv_gaFreigabe) {
-  plugin_log($plugname, '20 - Freigabe = '.$msg{'value'});
+  plugin_log($plugname, '1 - Freigabe = '.$msg{'value'}) if ($show_debug > 0);
   $plugin_info{$plugname.'_freigabe'} = $msg{'value'};
  } elsif ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gv_gaWinter) {
   # Umschalten zwischen Sommer- und Wintermodus
+  plugin_log($plugname, '2 - Write Winter-Modus = '.$msg{'value'}) if ($show_debug > 0);
   $plugin_info{$plugname.'_winterModus'} = $msg{'value'};
  } elsif ($msg{'apci'} eq "A_GroupValue_Read" and $msg{'dst'} eq $gv_gaWinter) {
-  # Rückmeldung, ob gerade Sommer- oder Wintermodus aktiv ist
+  # Schreibe den Sommer-Winter-Modus Wert auf den Bus
+  plugin_log($plugname, '3 - Read Winter-Modus = '.$msg{'value'}) if ($show_debug > 0);
   knx_write($gv_gaWinter,$plugin_info{$plugname.'_winterModus'});
+ } elsif ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gv_gaAzimuth) {
+  # Neuer Azimuth-Wert
+  plugin_log($plugname, '4 - Azimuth = '.$msg{'value'}) if ($show_debug > 0);
+  $plugin_info{$plugname.'_azimuth'} = $msg{'value'};
+ } elsif ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gv_gaElevation) {
+  # Neuer Elevation-Wert
+  plugin_log($plugname, '5 - Elevation = '.$msg{'value'}) if ($show_debug > 0);
+  $plugin_info{$plugname.'_elevation'} = $msg{'value'};
  } else {
   for ($gv_index=0; $gv_index < @gt_raffstores; $gv_index++) {
    # Muss mittels for-Schleife (und nicht foreach) gemacht werden, weil ich die Werte in der Schleife updaten muss.
@@ -258,7 +268,9 @@ if ($gv_event eq EVENT_RESTART) {
     knx_write($gs_raffstore->{gaSperre}, $gs_raffstore->{sperre});
    }
    if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $gs_raffstore->{gaFensterStatus}) {
+    plugin_log($plugname, '6 - Fenster-Status = '.$msg{'value'}) if ($show_debug > 0);
     if ($msg{'value'} == 0) {
+	 plugin_log($plugname, '6a - Fenster-Status AUTOMATIK_AUS') if ($show_debug > 0);
      # Wird ein Fenster geöffnet, dann Raffstore nach oben und Automatik aus
      $gs_raffstore->{automatik} = AUTOMATIK_AUS;
      $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
@@ -272,6 +284,7 @@ if ($gv_event eq EVENT_RESTART) {
       }
 	 }
     } elsif ($msg{'value'} == 1) {
+	 plugin_log($plugname, '6b - Fenster-Status AUTOMATIK_EIN') if ($show_debug > 0);
      # Wird ein Fenster geschlossen, dann Automatik aus
      $gs_raffstore->{automatik} = AUTOMATIK_EIN;
     }
@@ -282,29 +295,28 @@ if ($gv_event eq EVENT_RESTART) {
    $gt_raffstores[$gv_index] = $gs_raffstore;
   }
  }
-} elsif ($gv_event eq EVENT_SOCKET) {
-} elsif ($gv_event eq EVENT_CYCLE) {
+
  # Beschattungs-Automatik
- plugin_log($plugname,'10 - Cycle-Aufruf, Sperre = '.$plugin_info{$plugname.'_sperre'}.', Freigabe = '.$plugin_info{$plugname.'_freigabe'}) if ($show_debug > 0);
+ plugin_log($plugname,'7 - Cycle-Aufruf, Sperre = '.$plugin_info{$plugname.'_sperre'}.', Freigabe = '.$plugin_info{$plugname.'_freigabe'}) if ($show_debug > 0);
  if ($plugin_info{$plugname.'_sperre'} == SPERRE_INAKTIV) {
-  plugin_log($plugname,'11 - Beschattung') if ($show_debug > 0);
-  plugin_log($plugname,'11a - Freigabe = '.$plugin_info{$plugname.'_freigabe'}) if ($show_debug > 0);
+  plugin_log($plugname,'8 - Beschattung') if ($show_debug > 0);
+  plugin_log($plugname,'9 - Freigabe = '.$plugin_info{$plugname.'_freigabe'}) if ($show_debug > 0);
 
   # Automatik läuft grundsätzlich
   foreach $gs_raffstore (@gt_raffstores) {
-   plugin_log($plugname,'12 - Aktiv = '.$gs_raffstore->{aktiv}.', Sperre = '.$gs_raffstore->{sperre}.', Automatik = '.$gs_raffstore->{automatik}) if ($show_debug > 0);
+   plugin_log($plugname,'10 - Raffstore = '.$gs_raffstore->{id}.', Aktiv = '.$gs_raffstore->{aktiv}.', Sperre = '.$gs_raffstore->{sperre}.', Automatik = '.$gs_raffstore->{automatik}) if ($show_debug > 0);
 
    if ($gs_raffstore->{aktiv} eq AKTIV and
        $gs_raffstore->{sperre} == SPERRE_INAKTIV and
        $gs_raffstore->{automatik} eq AUTOMATIK_EIN) {
 
-	plugin_log($plugname,'13 - Beschattung aktiv; Freigabe = '.$plugin_info{$plugname.'_freigabe'}) if ($show_debug > 0);
+	plugin_log($plugname,'11 - Beschattung aktiv; Freigabe = '.$plugin_info{$plugname.'_freigabe'}) if ($show_debug > 0);
 
     # Automatik ist aktiv -> also mach nun deine Arbeit
     if ($plugin_info{$plugname.'_freigabe'} eq FREIGABE_AUS) {
      # Freigabe ist aufgrund der Helligkeit nicht notwendig -> Raffstore nach oben!
 
-	 plugin_log($plugname,'14 - Freigabe AUS -> Raffstores nach oben') if ($show_debug > 0);
+	 plugin_log($plugname,'12 - Freigabe AUS -> Raffstores nach oben') if ($show_debug > 0);
 
      # Raffstores hoch
      $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
@@ -318,7 +330,7 @@ if ($gv_event eq EVENT_RESTART) {
       }
 	 }
     } else {
-	 plugin_log($plugname,'15 - Freigabe EIN -> Ausrichtungsabhängig beschatten; Ausrichtung = '.$gs_raffstore->{ausrichtung}) if ($show_debug > 0);
+	 plugin_log($plugname,'13 - Freigabe EIN -> Ausrichtungsabhängig beschatten; Ausrichtung = '.$gs_raffstore->{ausrichtung}) if ($show_debug > 0);
 
      if (exists($gs_raffstore->{ausrichtung})) {
       #Startwinkel berechnen
@@ -344,7 +356,7 @@ if ($gv_event eq EVENT_RESTART) {
          exists $gs_raffstore->{maxTemperatur} and
          exists $gs_raffstore->{valueTemperatur} ) {
 
-      plugin_log($plugname,'15a - minTemperatur = '.$gs_raffstore->{minTemperatur}.', maxTemperatur = '.$gs_raffstore->{maxTemperatur}.', valueTemperatur = '.$gs_raffstore->{valueTemperatur}) if ($show_debug > 0);
+      plugin_log($plugname,'14 - minTemperatur = '.$gs_raffstore->{minTemperatur}.', maxTemperatur = '.$gs_raffstore->{maxTemperatur}.', valueTemperatur = '.$gs_raffstore->{valueTemperatur}) if ($show_debug > 0);
 
       if ($gs_raffstore->{valueTemperatur} < $gs_raffstore->{minTemperatur}) {
        $gs_raffstore->{temperaturFreigabe} = TEMPFREIGABE_AUS;
@@ -357,12 +369,12 @@ if ($gv_event eq EVENT_RESTART) {
 	  $gs_raffstore->{temperaturFreigabe} = TEMPFREIGABE_EIN;
 	 }
 
-	 plugin_log($plugname,'16 - StartWinkel = '.$gv_startWinkel.', EndWinkel = '.$gv_endWinkel.', Azimuth = '.$plugin_info{'azimuth'}) if ($show_debug > 0);
-	 plugin_log($plugname,'16a - TemperaturFreigabe = '.$gs_raffstore->{temperaturFreigabe}) if ($show_debug > 0);
+	 plugin_log($plugname,'15 - StartWinkel = '.$gv_startWinkel.', EndWinkel = '.$gv_endWinkel.', Azimuth = '.$plugin_info{$plugname.'_azimuth'}) if ($show_debug > 0);
+	 plugin_log($plugname,'16 - TemperaturFreigabe = '.$gs_raffstore->{temperaturFreigabe}) if ($show_debug > 0);
 
      # Aktuelle Sonnenposition verwenden um zu bestimmen, ob der Raffstore gerade beschattet werden muss
-     if ($plugin_info{'azimuth'} >= $gv_startWinkel and
-         $plugin_info{'azimuth'} <= $gv_endWinkel   and
+     if ($plugin_info{$plugname.'_azimuth'} >= $gv_startWinkel and
+         $plugin_info{$plugname.'_azimuth'} <= $gv_endWinkel   and
          $gs_raffstore->{temperaturFreigabe} eq TEMPFREIGABE_EIN) {
 
       # Beschattung aufgrund der Ausrichtung und Raumtemperatur
@@ -370,10 +382,13 @@ if ($gv_event eq EVENT_RESTART) {
       # Raffstore runter
       $gv_rolloPos = knx_read($gs_raffstore->{gaRolloPosRM}, 5.001);
       if ($plugin_info{$plugname.'_winterModus'} == 1) {
+	   plugin_log($plugname,'17 - WinterModus = 1 - rolloBeschattungspos = '.$gs_raffstore->{rolloBeschattungsposWinter}) if ($show_debug > 0);
        $gv_rolloBeschattungspos = $gs_raffstore->{rolloBeschattungsposWinter};
       } else {
+	   plugin_log($plugname,'18 - WinterModus = 0 - rolloBeschattungspos = '.$gs_raffstore->{rolloBeschattungspos}) if ($show_debug > 0);
        $gv_rolloBeschattungspos = $gs_raffstore->{rolloBeschattungspos};
       }
+	  plugin_log($plugname,'19 - rolloPos = '.$gv_rolloPos.', rolloBeschattungsPos = '.$gv_rolloBeschattungspos) if ($show_debug > 0);
       if ($gv_rolloPos != $gv_rolloBeschattungspos) {
        knx_write($gs_raffstore->{gaRolloPos}, $gv_rolloBeschattungspos, 5.001);
       }
@@ -392,7 +407,7 @@ if ($gv_event eq EVENT_RESTART) {
         } else {
          $gv_lamellePosNeu = (90 - $plugin_info{$plugname.'_elevation'})/90*100;
          # Faktor für die Abweichung der Sonne von der Ausrichtung des Fensters miteinbeziehen
-         $gv_lamellePosNeu = $gv_lamellePosNeu * (1 - (abs($plugin_info{'azimuth'} - $gs_raffstore->{ausrichtung}) * 0.01));
+         $gv_lamellePosNeu = $gv_lamellePosNeu * (1 - (abs($plugin_info{$plugname.'_azimuth'} - $gs_raffstore->{ausrichtung}) * 0.01));
          # Der Wert für den Lamellenwinkel muss immer zwischen 0 und 100 sein! Alles darüber hinaus wird fix auf 0 bzw. 100 gesetzt.
          if ($gv_lamellePosNeu < 0) { $gv_lamellePosNeu = 0; }
          if ($gv_lamellePosNeu > 100) { $gv_lamellePosNeu = 100; }
@@ -422,6 +437,8 @@ if ($gv_event eq EVENT_RESTART) {
    }
   }
  }
+} elsif ($gv_event eq EVENT_SOCKET) {
+} elsif ($gv_event eq EVENT_CYCLE) {
 }
 
 # Dynamische Werte der Raffstore-Definition im plugin_info merken
