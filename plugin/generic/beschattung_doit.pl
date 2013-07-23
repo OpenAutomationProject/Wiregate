@@ -32,6 +32,7 @@
 # 20130506 - mclb - Aufteilen in 2 Plugins - 1. Freigabe, 2. Ausführung
 # 20130620 - mclb - Azimuth und Elevation werden jetzt über GAs empfangen, nicht mehr direkt vom plugin_info gelesen.
 #                   Somit erübrigt sich auch der zyklische Aufruf jede Minute.
+# 20130723 - mclb - Beseitigung einer überflüssigen if-Abfrage
 #
 #############################################################################
 #
@@ -398,24 +399,22 @@ if ($gv_event eq EVENT_RESTART) {
 
       # Lamellennachführung
      
-      if ($gv_minuten % 5 == 0) {
-       if ($gs_raffstore->{lamellenNachfuehrung} ne NACHF_AUS) {
-        if ($gs_raffstore->{lamellenNachfuehrung} eq NACHF_100) {
-         # Somit wird auf jeden Fall ganz zu gemacht.
-         $gv_lamellePos = 0;
-         $gv_lamellePosNeu = 100;
-        } else {
-         $gv_lamellePosNeu = (90 - $plugin_info{$plugname.'_elevation'})/90*100;
-         # Faktor für die Abweichung der Sonne von der Ausrichtung des Fensters miteinbeziehen
-         $gv_lamellePosNeu = $gv_lamellePosNeu * (1 - (abs($plugin_info{$plugname.'_azimuth'} - $gs_raffstore->{ausrichtung}) * 0.01));
-         # Der Wert für den Lamellenwinkel muss immer zwischen 0 und 100 sein! Alles darüber hinaus wird fix auf 0 bzw. 100 gesetzt.
-         if ($gv_lamellePosNeu < 0) { $gv_lamellePosNeu = 0; }
-         if ($gv_lamellePosNeu > 100) { $gv_lamellePosNeu = 100; }
-        }
-        # Nicht wegen jeder Kleinigkeit gleich nachstellen, erst nach einer gewissen Mindeständerung.
-        if (abs($gv_lamellePos - $gv_lamellePosNeu) > 5) {
-         knx_write($gs_raffstore->{gaLamellePos},$gv_lamellePosNeu,5.001);
-        }
+      if ($gs_raffstore->{lamellenNachfuehrung} ne NACHF_AUS) {
+       if ($gs_raffstore->{lamellenNachfuehrung} eq NACHF_100) {
+        # Somit wird auf jeden Fall ganz zu gemacht.
+        $gv_lamellePos = 0;
+        $gv_lamellePosNeu = 100;
+       } else {
+        $gv_lamellePosNeu = (90 - $plugin_info{$plugname.'_elevation'})/90*100;
+        # Faktor für die Abweichung der Sonne von der Ausrichtung des Fensters miteinbeziehen
+        $gv_lamellePosNeu = $gv_lamellePosNeu * (1 - (abs($plugin_info{$plugname.'_azimuth'} - $gs_raffstore->{ausrichtung}) * 0.01));
+        # Der Wert für den Lamellenwinkel muss immer zwischen 0 und 100 sein! Alles darüber hinaus wird fix auf 0 bzw. 100 gesetzt.
+        if ($gv_lamellePosNeu < 0) { $gv_lamellePosNeu = 0; }
+        if ($gv_lamellePosNeu > 100) { $gv_lamellePosNeu = 100; }
+       }
+       # Nicht wegen jeder Kleinigkeit gleich nachstellen, erst nach einer gewissen Mindeständerung.
+       if (abs($gv_lamellePos - $gv_lamellePosNeu) > 5) {
+        knx_write($gs_raffstore->{gaLamellePos},$gv_lamellePosNeu,5.001);
        }
       }
      } else {

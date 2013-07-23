@@ -10,6 +10,7 @@
 # 20130506 - mclb - Erstellung
 # 20130617 - mclb - Sonnenstand wird nun mittels GAs erhalten
 #                   Somit können nun die Werte z.B. einer Wetterstation verwendet werden.
+# 20130723 - mclb - Beseitigung einer falschen Klammerung
 #
 #############################################################################
 #
@@ -147,8 +148,8 @@ if ($gv_event eq EVENT_RESTART) {
  }
  # Evtl. Sperre setzen, falls noch nicht existent
  if (!exists $plugin_info{$plugname.'_sperre'}) {
- }
   $plugin_info{$plugname.'_sperre'} = SPERRE_INAKTIV;
+ }
  # Evtl. Werte initialisieren, falls es sie noch nicht gibt.
  if (!exists $plugin_info{$plugname.'_beschattungEin'}) {
   $plugin_info{$plugname.'_beschattungEin'} = BESCHATTUNG_AUS;
