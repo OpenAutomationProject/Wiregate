@@ -1,0 +1,17 @@
+
+# Längengrad, Breitengrad und Sprache
+$lat = 49.235;
+$lon = 16.653;
+$locale = 'de';
+
+# Die Gruppenadressen müssen vorher mit dem Gruppenadresseditor erfasst werden.
+# Wenn ein Wert nicht benötigt wird, kann man ihn einfach auskommentieren.
+$knxGA = {
+	temperature => '1/2/0',		# DPT  9.001: Außentemperatur in °C
+	humidity => '1/2/1',		# DPT  9.007: Luftfeuchtigkeit in %
+	pressure => '1/2/2',		# DPT  9.006: Luftdruck in hPa
+	windSpeed => '1/2/3',		# DPT  9.005: Windgeschwindigkeit in km/h
+	windDirection => '1/2/4',	# DPT  5.003: Winkel in Grad
+	clouds => '1/2/5',			# DPT  5.004: Bewölkung in %
+	city => '1/2/6',			# DPT 16.001: Name des nächsten Ortes (mit Wettervorhersage)
+	};

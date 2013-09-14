@@ -1,0 +1,20 @@
+
+# Benutzername und Passwort für openweathermap.org
+$user = "myusername";	# Benutzername
+$pass = "supergeheim";	# Passwort
+
+# Name, Koordinaten und Meereshöhe der Wetterstation
+$name = "Name-Station";		# Name der Wetterstation
+$lat = 49.275;				# Breitengrad in Grad
+$lon = 16.683;				# Längengrad in Grad
+$alt = 276;					# Höhe über dem Meeresspiegel in Meter
+
+# Gruppenadresse für den Außentemperaturfühler
+$GAtemp = "4/3/0";
+
+# Zeiträume in welchen keine Übertragung stattfinden soll
+# z.B. Messfehler wegen direkter Sonneneinstrahlung
+# Wenn nicht benötigt einfach auskommentieren. Für einen 
+# zusätzlichen Zeitraum die Zeile kopieren.
+push @TimeExclusions, { from => "06:00", until => "10:00" };
+
