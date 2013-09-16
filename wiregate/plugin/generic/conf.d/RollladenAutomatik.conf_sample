@@ -1,0 +1,104 @@
+# Die Koordinaten des Hauses. Sehr einfach über http://www.latlong.net/ zu ermitteln.
+# Und die Höhe über Normalnull (NN)
+$lat = 48.225073;	# Breitengrad in Grad
+$lon = 15.643443;	# Längengrad in Grad
+$elev = 267 / 1000;	# Höhe über NN in Kilometer (dewegen geteilt durch 1000)
+
+# Elevation der Sonne, ab der es abends dunkel ist bzw. morgens hell ist.
+# Bürgerliche Dämmerung ist bei -6 Grad.
+# Defaultwert ist -3
+$daemmerung = -3;
+
+# Gruppenadresse, über welche die komplette Automatik für alle Rollläden gesperrt werden kann
+# $GASperreAlle = "0/1/2";
+
+# Gruppenadresse für die Außentemperatur
+# $GATemperature = "1/2/0";
+
+# Gruppenadresse für die Windgeschwindigkeit
+# $GAWindSpeed = "1/2/3";
+
+# Gruppenadresse für die Windrichtung (hat derzeit noch keine Funktion)
+# $GAWindDirection = "1/2/4";
+
+# Gruppenadresse für die Bewölkung
+# $GACloudiness = "1/2/5";
+
+# Bugfix für KNX-Schnittstellen die sich bei zu schneller Telegrammabfolge
+# verschlucken, und denen wir deshalb die Geschwindigkeit der Telegramme drosseln müssen
+# 0 = nicht anschalten (Telegramme mit voller Geschwindigkeit abfeuern)
+# 1 = anschalten (Telegramme um 20 millisekunden verzögern)
+# nur für "Busch-Jäger 6196 USB REG" ist bekannt das dies benötigt wird
+# $bugfixSlowInterface = 1;
+
+# Ein Array von Hashes, wobei jeder Hash ein Rollladen/Fenster/Raum ist.
+# Name des Rolladen					
+# 	name => "Speisekammer"
+# Definition ist ausschließlich eine Vorlage und wird daher nicht gesteuert
+# 	istVorlage => 1
+# Name des Rollladen oder der Definition, welche als Vorlage dienen soll (Rekursionen sind möglich)
+# 	vorlage => "default"
+# Winkel zum Norden, ab dem das Fenster beschienen wird.
+# Echter Osten = 90°, echter Süden = 180°, echter Westen = 270°, echter Norden = 0°
+# 	winkel1 => 66	
+# Winkel zum Norden, bis zu dem das Fenster beschienen wird
+# 	winkel2 => 186
+# Richtung bei Beschattung: wenn 1 wird DPT3 angenommen und ganz zugefahren.
+# Bei ungleich 1, wird DPT5 angenommen und Position angefahren
+# 	wertZuBesch => 1
+# Richtung bei keiner Beschattung: wenn 0 wird DPT3 angenommen und ganz aufgefahren.
+# Bei ungleich 0, wird DPT5 angenommen und Position angefahren
+# 	wertAufBesch => 0
+# Richtung bei Nacht: wenn 1 wird DPT3 angenommen und ganz zugefahren.
+# Bei ungleich 1, wird DPT5 angenommen und Position angefahren
+# 	wertZuNacht => 1
+# Richtung bei keiner Nacht: wenn 0 wird DPT3 angenommen und ganz aufgefahren.
+# Bei ungleich 0, wird DPT5 angenommen und Position angefahren
+# 	wertAufNacht => 0
+# Schließen für Schutzfunktion (z.B.: zu niedrige Temp): wenn 1 wird DPT3 angenommen und ganz zugefahren.
+# Bei ungleich 1, wird DPT5 angenommen und Position angefahren
+# 	wertZuSchutz => 1
+# Öffnen für Schutzfunktion (z.B.: zu hoher Wind): wenn 0 wird DPT3 angenommen und ganz aufgefahren.
+# Bei ungleich 0, wird DPT5 angenommen und Position angefahren
+# 	wertAufSchutz => 0
+# Ob der Rollladen in die Automatik für Sonnenauf- und untergang einbezogen werden soll
+# 	sonnenAufUnter => 1		
+# Raum-Solltemperatur, wenn keine GA angegeben wurde oder kein Wert vom Bus gelesen wurde
+# 	raumSollTemp => 22
+# GA der Raum-Solltemperatur
+# 	GAraumsollTemp => "0/0/127"
+# GA der Raum-Isttemperatur
+# 	GAraumIstTemp => "0/0/128"
+# GA um Rollladen zu fahren
+# 	GAfahren => "0/0/126"
+# GA um die Automatik dieses einen Rollladen zu sperren
+# 	GAsperre=> "0/0/129"
+# Rolladen soll aufgrund der Raumtemperatur gesteuert werden
+#	tempGesteuert => 1
+# Hysterese für Regelung aufgrund der Raumtemperatur (in °C)
+#	tempHysterese => 0.5
+# Rolladenschutz für zu hohe Windgeschwindigkeiten (max. Geschwindigkeit in km/h)
+#	maxWindGeschw => 50
+# Hysterese für Regelung aufgrund der Windgeschwindigkeit (in km/h)
+#	windGeschwHysterese => 5
+# Rolladen wird ab einer maximalen Bewölkung (in %) nicht mehr runtergefahren
+#	maxBewoelkung => 75
+# Hysterese für Regelung aufgrund der Bewölkung (in %-Punkten)
+#	bewoelkungHysterese => 5
+# Rolladen wird runtergefahren wenn die Temperatur unterschritten wird (in °C)
+#	minAussenTemp => -15
+# Hysterese für Regelung aufgrund der Außentemperatur (in °C)
+#	aussenTempHysterese => 2
+push @AlleRolllaeden, { name => "default", istVorlage => 1, wertZuBesch => 1, wertAufBesch => 0,
+			wertZuNacht => 1, wertAufNacht => 0, sonnenAufUnter => 1, raumSollTemp => 23,
+			tempGesteuert => 1, tempHysterese => 0.5, maxWindGeschw => 80,
+			windGeschwHysterese => 5, maxBewoelkung => 75, bewoelkungHysterese => 5,
+			minAussenTemp => -15, aussenTempHysterese => 2, wertAufSchutz => 0, wertZuSchutz => 1 };
+
+push @AlleRolllaeden, { name => "Wohnzimmer", vorlage => "default", winkel1 => 66, winkel2 => 180,
+			GAraumIstTemp => "2/3/0", GAfahren => "3/1/0" };
+push @AlleRolllaeden, { name => "Küche", vorlage => "default", winkel1 => 152, winkel2 => 252,
+			GAraumIstTemp => "2/3/1", GAfahren => "3/1/2" };
+push @AlleRolllaeden, { name => "Schlafzimmer", vorlage => "default", winkel1 => 93, winkel2 => 186,
+			wertZuNacht => 80, sonnenAufUnter => 0, GAraumIstTemp => "2/3/3", GAfahren => "3/1/3" };
+
