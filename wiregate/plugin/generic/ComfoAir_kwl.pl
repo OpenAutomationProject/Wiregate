@@ -1,5 +1,5 @@
 # Plugin zur Ansteuerung einer Zender ComfoAir
-# Version 1.6.7c 03.08.2013 BETA
+# Version 1.6.7d 22.08.2013 BETA
 # Copyright: swiss (http://knx-user-forum.de/members/swiss.html)
 # Aufbau moeglichst so, dass man unterhalb der Einstellungen nichts veraendern muss!
 # - Neu mit der Moeglichkeit zur Anbindung über einen Moxa NPort von Fechter65 (http://knx-user-forum.de/members/fechter65.html)
@@ -8,6 +8,7 @@
 # - Neu nun mit direktem abfragen der Stufe nach dem setzen und auswerten der Komforttemperatur von swiss (http://knx-user-forum.de/members/swiss.html)
 # - Neu mit der Möglichkeit die Ventilationsstufe direkt zu setzen von swiss (http://knx-user-forum.de/members/swiss.html)
 # - Neu mit der Möglichkeit die Ventilatorstufe für Zuluft und Abluft getrennt zu setzen (0% - 100%) von Netsrac80 (http://knx-user-forum.de/members/netsrac80.html)
+# - Korrektur Stufe direkt setzen. Senden / empfangen hat nun das gleiche Mapping 1=Auto, 2=Sufe1, 3=Stufe2, 4=Stufe3
 
  
 
@@ -32,7 +33,7 @@ my $ga_stufeabwesend = ''; #1bit Trigger fuer Stufe "Abwesend". 1=Aktivieren
 my $ga_stufe1 = ''; #1bit Trigger fuer Stufe1. 1=Aktivieren
 my $ga_stufe2 = ''; #1bit Trigger fuer Stufe2. 1=Aktivieren
 my $ga_stufe3 = ''; #1bit Trigger fuer Stufe3. 1=Aktivieren
-my $ga_stufe_setzen = ''; # GA DPT 5.005 zum direkten setzen der Stufe (0=A, 1=Stufe1, 2=Stufe2, 3=Stufe3)
+my $ga_stufe_setzen = ''; # GA DPT 5.005 zum direkten setzen der Stufe (1=A, 2=Stufe1, 3=Stufe2, 4=Stufe3)
 my $ga_komforttemp = ''; #GA DPT 9.001 zum setzen der Komforttemperatur
 my $ga_drehzahl_ventilator_zul = ''; #GA DPT 5.001 zum setzen der Zuluftdrehzahl
 my $ga_drehzahl_ventilator_abl = ''; #GA DPT 5.001 zum setzen der Abluftdrehzahl
@@ -48,7 +49,7 @@ my $ga_betriebsstunden_filter = ''; #GA DPT 16.000 fuer die Rueckmeldung der Bet
 my $ga_zustand_badschalter = ''; #GA DPT 1.001 fuer die Rueckmeldung des Zustandes des Badezimmerschalters
 my $ga_fehler_filter = ''; #GA DPT 1.001 fuer den Zustand des Filters. 0=OK, 1=Filter Voll
 my $ga_fehlercode = ''; #GA DPT 16.000 fuer die Ausgabe des Fehlercodes als Text
-my $ga_aktstufe = ''; #GA DPT 5.005 liefert den Wert für die aktuelle Stufe (0=A, 1=Stufe1, 2=Stufe2, 3=Stufe3)
+my $ga_aktstufe = ''; #GA DPT 5.005 liefert den Wert für die aktuelle Stufe (1=A, 2=Stufe1, 3=Stufe2, 4=Stufe3)
  
 #Hier werden die Gruppenadressen für die Rückmeldung der Temperaturen vergeben: (Nicht vergeben=inaktiv)
 my $ga_aul_temp = ''; #GA DPT 9.001 für die Aussenlufttemperatur
@@ -182,9 +183,9 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
                 if($debug>=1){plugin_log($plugname,'Ventilationsstufe abrufen');}
                 $return_value2 = command_senden($daten);
             }
-	}elsif ($msg{'dst'} eq $ga_stufe_setzen) {
-		my $stufenwert = knx_read($msg{'dst'},0,5.005);
-        $daten = "0099010" . (1 + $stufenwert);
+    }elsif ($msg{'dst'} eq $ga_stufe_setzen) {
+        my $stufenwert = knx_read($msg{'dst'},0,5.005);
+        $daten = "0099010" . $stufenwert;
         plugin_log($plugname,'Stufe direkt setzen auf: ' . $stufenwert);
         $return_value2 = command_senden($daten);
             if($ga_aktstufe){ #Nur wenn die GA vergeben ist, die Ventilationsstufe abfragen
@@ -220,12 +221,12 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
         my $drehzahl_abl = knx_read($msg{'dst'},0,5.001);
         plugin_log($plugname,'Drehzahl Abluftluefter auf: ' . $drehzahl_abl . '% setzen');
         $plugin_info{$plugname."_abluftdrehzahl_1"} = $drehzahl_abl;
-		
+        
         my $temp_zuluftdrehzahl = sprintf "%x",$plugin_info{$plugname."_zuluftdrehzahl_1"};
         my $hex_abluftdrehzahl = sprintf "%x" , $drehzahl_abl; # Mache aus Integer HEX
         $daten = "00CF090F" . $hex_abluftdrehzahl.'0F0F'. $temp_zuluftdrehzahl.'0F0F0F0F';
         $return_value2 = command_senden($daten);
-		if($debug>=2){plugin_log($plugname,'Drehzahl Abluftlüfter DATEN: ' . $daten . ' mit '. $drehzahl_abl. ' setzen! Antwort:'.$return_value2); }
+        if($debug>=2){plugin_log($plugname,'Drehzahl Abluftlüfter DATEN: ' . $daten . ' mit '. $drehzahl_abl. ' setzen! Antwort:'.$return_value2); }
     }
     if($debug>=2){plugin_log($plugname,'ENDE Aufruf durch GA');}
     return;
@@ -241,7 +242,7 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
     $plugin_subscribe{$ga_stufe1}{$plugname} = 1;
     $plugin_subscribe{$ga_stufe2}{$plugname} = 1;
     $plugin_subscribe{$ga_stufe3}{$plugname} = 1;
-	$plugin_subscribe{$ga_stufe_setzen}{$plugname} = 1;
+    $plugin_subscribe{$ga_stufe_setzen}{$plugname} = 1;
     $plugin_subscribe{$ga_komforttemp}{$plugname} = 1;
     $plugin_subscribe{$ga_reset_filter}{$plugname} = 1;
     $plugin_subscribe{$ga_reset_error}{$plugname} = 1;
@@ -289,10 +290,10 @@ if ($msg{'apci'} eq "A_GroupValue_Write"){
     }
             
     if($ga_fehlercode){ #Nur wenn die GA vergeben ist, werden hier die Stoermeldungen abgefragt
-		$daten = "00D900";
-		if($debug>=1){plugin_log($plugname,'Störungen abrufen');}
-		$return_value2 = command_senden($daten);
-	}
+        $daten = "00D900";
+        if($debug>=1){plugin_log($plugname,'Störungen abrufen');}
+        $return_value2 = command_senden($daten);
+    }
 
     if($debug>=2){plugin_log($plugname,'ENDE Zyklische Abfrage');}
     return;
@@ -344,9 +345,9 @@ sub command_senden{
         if($debug>=2){plugin_log($plugname,'reciv-direkt:     ' . $sin);}
     
             if($reciv =~ /070f/i){ 
-				if (substr($reciv,(length($reciv)-6),6) ne '07070f'){			
-					last;
-				}
+                if (substr($reciv,(length($reciv)-6),6) ne '07070f'){            
+                    last;
+                }
             }
     }#Ende While  
 
@@ -409,7 +410,7 @@ sub command_senden{
         #Hier wird die Subroutine für die Berechnung der Checksumme aufgerufen und das Ergebnis in $rcv_checksum zurück gegeben
         $rcv_checksum = checksum_berechnen($reciv);
 
-		
+        
 #######################################################################
 #######################################################################
 ## Ab hier werden die Rueckmeldungen von der ComfoAir ausgewertet... ##
@@ -419,14 +420,14 @@ sub command_senden{
 
         if($rcv_checksum eq $checksum){ #Hier wird geprüft ob die Checksumme korrekt ist
             if($debug>=2){plugin_log($plugname,'Checksumme OK ');}
-			
-			#Hier werden die doppelten 07 aus dem Antwortstring entfernt.
-			if($debug>=2){plugin_log($plugname,'String vor 07 bereinigung:  '.$reciv);}
-			while ($reciv =~ s/0707/07/) {}
-			if($debug>=2){plugin_log($plugname,'String nach 07 bereinigung: '.$reciv);}
-			
+            
+            #Hier werden die doppelten 07 aus dem Antwortstring entfernt.
+            if($debug>=2){plugin_log($plugname,'String vor 07 bereinigung:  '.$reciv);}
+            while ($reciv =~ s/0707/07/) {}
+            if($debug>=2){plugin_log($plugname,'String nach 07 bereinigung: '.$reciv);}
+            
             if($reciv =~ /00D209/i){ #Wenn die Temperaturen empfangen wurden
-				my $t1 = substr($reciv,6,2);
+                my $t1 = substr($reciv,6,2);
                 my $t2 = substr($reciv,8,2);
                 my $t3 = substr($reciv,10,2);
                 my $t4 = substr($reciv,12,2);
@@ -437,10 +438,10 @@ sub command_senden{
                 $t2 =  (hex($t2)/2)-20;
                 $t3 =  (hex($t3)/2)-20;
                 $t4 =  (hex($t4)/2)-20;
-				$t5 =  (hex($t5)/2)-20;
+                $t5 =  (hex($t5)/2)-20;
 
                 #Wenn die GA's vergeben wurde, die Temperaturen auf die GA's senden
-				if($ga_komfort_temp ne ''){knx_write($ga_komfort_temp,$t1,9.001);}
+                if($ga_komfort_temp ne ''){knx_write($ga_komfort_temp,$t1,9.001);}
                 if($ga_aul_temp ne ''){knx_write($ga_aul_temp,$t2,9.001);}
                 if($ga_zul_temp ne ''){knx_write($ga_zul_temp,$t3,9.001);}
                 if($ga_abl_temp ne ''){knx_write($ga_abl_temp,$t4,9.001);}
@@ -477,7 +478,7 @@ sub command_senden{
 
             }elsif($reciv =~ /00DE14/i){ #Wenn die Rueckmeldung der Betriebsstunden  des Filters empfangen wurden
                 my $betriebsstunden_filter = substr($reciv,36,4);
-				if($debug>=3){plugin_log($plugname,'Betriebsstunden Filter Roh: '.$betriebsstunden_filter);}
+                if($debug>=3){plugin_log($plugname,'Betriebsstunden Filter Roh: '.$betriebsstunden_filter);}
                 plugin_log($plugname,'Betriebsstunden Filter: ' . hex($betriebsstunden_filter) . 'h');                
                 knx_write($ga_betriebsstunden_filter,hex($betriebsstunden_filter) . 'h',16.000);
                
