@@ -1,6 +1,7 @@
 ######################################################################################
 # Plugin RollladenAutomatik
-# V0.6 2013-09-15
+# V0.7 2013-11-05
+# Lizenz: GPLv2
 # Autoren: kleinklausi (http://knx-user-forum.de/members/kleinklausi.html)
 #          krumboeck (http://knx-user-forum.de/members/krumboeck.html)
 # Benötigt: libastro-satpass-perl -> 'apt-get install libastro-satpass-perl'
@@ -188,7 +189,7 @@ sub berechneRolladenParameter {
 		die $plugname . "Name: " . $rolladen->{name} . "; Endlosschleife bei Templates";
 	}
 	if (defined $rolladen->{vorlage}) {
-		my $template = berechneRolladen($rolllaeden{$rolladen->{vorlage}}, $counter + 1);
+		my $template = berechneRolladenParameter($rolllaeden{$rolladen->{vorlage}}, $counter + 1);
 		foreach my $key (keys (%$template)) {
 			if (!defined $rolladen->{$key}) {
 				if ($debug) {
