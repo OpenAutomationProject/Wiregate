@@ -3,13 +3,14 @@
 use DB_File;
 use Fcntl;
 use strict;
+use utf8;
 
 my $plugin_infofile = "/tmp/wiregate_plugin.db";
 my %plugin_info;
 tie %plugin_info, "DB_File", $plugin_infofile, O_RDONLY, 0666, $DB_HASH
  or die "Cannot open file 'plugin_info': $!";
 
-print "Content-Type: text/plain\n\n";
+print "Content-Type: application/json; charset=utf-8\n\n";
 
 print "{ ";
 # Split query-string into name/value pairs
