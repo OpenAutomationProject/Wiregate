@@ -73,6 +73,10 @@ $daemmerung = -3;
 # 	GAfahren => "0/0/126"
 # GA um die Automatik dieses einen Rollladen zu sperren
 # 	GAsperre=> "0/0/129"
+# GA für die aktuelle Position des Rollladen
+# 	GAistPos => "0/0/130"
+# GA für das Laden einer Position des Rollladen (für Aktoren welche gespeicherte Positionen unterstützen)
+# 	GAladePos => "0/0/131"
 # Rolladen soll aufgrund der Raumtemperatur gesteuert werden
 #	tempGesteuert => 1
 # Hysterese für Regelung aufgrund der Raumtemperatur (in °C)
@@ -89,6 +93,15 @@ $daemmerung = -3;
 #	minAussenTemp => -15
 # Hysterese für Regelung aufgrund der Außentemperatur (in °C)
 #	aussenTempHysterese => 2
+# Prüft die Position vor dem Fahren bei Sonnenauf und Untergang (boolean)
+#   pruefePositionSonnenAufUnter => 1
+# Debugging für Rolladen einschalten
+#   debug => 1
+
+# Format für im Aktor gespeicherte Positionen:
+# "44;Position:0" bezeichnet die im Aktor gespeicherte Position 0. Der Wert 44 dient lediglich zur Kontrolle. 
+
+
 push @AlleRolllaeden, { name => "default", istVorlage => 1, wertZuBesch => 1, wertAufBesch => 0,
 			wertZuNacht => 1, wertAufNacht => 0, sonnenAufUnter => 1, raumSollTemp => 23,
 			tempGesteuert => 1, tempHysterese => 0.5, maxWindGeschw => 80,

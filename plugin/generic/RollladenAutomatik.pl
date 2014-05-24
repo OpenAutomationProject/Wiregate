@@ -1,6 +1,6 @@
 ######################################################################################
 # Plugin RollladenAutomatik
-# V0.7 2013-11-05
+# V0.8 2014-05-24
 # Lizenz: GPLv2
 # Autoren: kleinklausi (http://knx-user-forum.de/members/kleinklausi.html)
 #          krumboeck (http://knx-user-forum.de/members/krumboeck.html)
@@ -24,6 +24,8 @@
 #	- Steuerung aufgrund der Raumtemperatur (krumboeck)
 #	- Hysteresewerte für Temperatur, Wind und Bewölkung (krumboeck)
 #	- Speichern der Rolladenposition und aktuellen Zuständen (krumboeck)
+#	- Fahren auf Positionen welche im Aktor (z.B. Siemens 523/03) gespeichert sind (krumboeck)
+#	- Überprüfen von Positionen vor Sonnenauf bzw. -untergang (krumboeck)
 #
 # TODO: Was teilweise integriert ist aber noch nicht komplett ist:
 # 	- Bei Fensterdefinition auch Elevation oben bzw. unten angeben
@@ -159,15 +161,24 @@ foreach my $element (@AlleRolllaeden) {
 		next;
 	}
 
+	# Ermittle gewünschte Position und Grund des Fahrens für den Rollladen
 	my ($position, $bemerkung) = berechneRolladenposition($rolladen, $azimuth, $elevation, $lastAzimuth, $lastElevation, $daemmerung, $weather);
-	my $lastPosition = ladeRolladenParameter($rolladen, "position");
 
+	# Fahre den Rollladen wenn es einen Positionswunsch gibt
 	if (defined $position) {
-		if ($position != $lastPosition) {
-			fahreRollladen($rolladen, $position);
-			plugin_log($plugname,"Name: " . $rolladen->{name} . "; " . $bemerkung);
+
+		if ($position =~ m/((\d+|\*));Position:(\d+)/) {
+			if (positionChanged($rolladen, $position)) {
+				ladeRollladenPosition($rolladen, $position, $3);
+				plugin_log($plugname,"Name: " . $rolladen->{name} . " (Lade Pos); " . $bemerkung);
+			}
+		} else {
+			if (positionChanged($rolladen, $position)) {
+				fahreRollladen($rolladen, $position);
+				plugin_log($plugname,"Name: " . $rolladen->{name} . "; " . $bemerkung);
+			}
 		}
-	} elsif ($debug) {
+	} elsif (defined $rolladen->{debug} && $rolladen->{debug}) {
 		plugin_log($plugname,"Name: " . $rolladen->{name} . "; Fahren wird fuer diesen Zyklus ausgesetzt");
 	}
 
@@ -180,9 +191,62 @@ $plugin_info{$plugname.'_lastElevation'} = $elevation;
 return "Grad gegen Norden: " . round(rad2deg($azimuth)) . "; Grad ueber Horizont: " . round(rad2deg($elevation));
 
 
-####################################
+############################################
+# Prüft ob der Rolladen gefahren werden muss
+############################################
+sub positionChanged {
+	my ($rolladen, $newPosition) = @_;
+
+	# Ermittle die aktuelle Position
+	my $lastPosition = ladeRolladenParameter($rolladen, "position");
+
+	my $testAbendDaemmerung = ($elevation < deg2rad($daemmerung) && $lastElevation > deg2rad($daemmerung)) || 0;
+	my $testMorgenDaemmerung = ($elevation > deg2rad($daemmerung) && $lastElevation < deg2rad($daemmerung)) || 0;
+
+
+	my $newPositionValue = $newPosition;
+	if ($newPosition =~ m/((\d+|\*));Position:(\d+)/) {
+		$newPositionValue = $1;
+	}
+	my $lastPositionValue = $lastPosition;
+	if ($lastPosition =~ m/((\d+|\*));Position:(\d+)/) {
+		$lastPositionValue = $1;
+	}
+
+	if ((defined $rolladen->{pruefePositionSonnenAufUnter} && $rolladen->{pruefePositionSonnenAufUnter} == 1
+			&& ($testAbendDaemmerung || $testMorgenDaemmerung))
+		|| (($lastPosition ne $newPosition) && ($lastPositionValue eq "*"))) {
+		if (defined $rolladen->{GAistPos}) {
+			$lastPositionValue = knx_read($rolladen->{GAistPos}, 0, 5.001);
+			$lastPositionValue = sprintf("%d", $lastPositionValue);
+			if (defined $rolladen->{debug} && $rolladen->{debug}) {
+				plugin_log($plugname,"Name: " . $rolladen->{name} . "; Rollladen meldete Position: " . $lastPosition);
+			}
+		} else {
+			plugin_log($plugname,"Name: " . $rolladen->{name} . "; Konfiguration benötigt GAistPos für diesen Rollladen");
+		}
+	}
+
+	if ($newPosition == 1) {
+		$newPosition = 100;
+	}
+	if ($newPositionValue == 1) {
+		$newPositionValue = 100;
+	}
+	if (defined $rolladen->{debug} && $rolladen->{debug}) {
+		plugin_log($plugname,"Name: " . $rolladen->{name} . "; Last-Pos: " . $lastPosition . "; Pos: " . $newPosition);
+		plugin_log($plugname,"Name: " . $rolladen->{name} . "; Last-Pos-Value: " . $lastPositionValue . "; Pos-Value: " . $newPositionValue);
+	}
+	if (($lastPosition ne $newPosition) || ($newPositionValue <= ($lastPositionValue - 1)) || ($newPositionValue >= ($lastPositionValue + 1))) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+###################################
 # Berechne Parameter eines Rolladen
-####################################
+###################################
 sub berechneRolladenParameter {
 	my ($rolladen, $counter) = @_;
 	if ($counter > 20) {
@@ -238,7 +302,7 @@ sub berechneRolladenposition {
         my $testAktuellBeschienen = ($azimuth > $winkel1 && $azimuth < $winkel2) || 0;
         my $testVoherBeschienen = ($lastAzimuth > $winkel1 && $lastAzimuth < $winkel2) || 0;
 
-	# Test ob Nach oder Daemmerung
+	# Test ob Nacht oder Daemmerung
 	my $testAbendDaemmerung = ($elevation < deg2rad($daemmerung) && $lastElevation > deg2rad($daemmerung)) || 0;
 	my $testMorgenDaemmerung = ($elevation > deg2rad($daemmerung) && $lastElevation < deg2rad($daemmerung)) || 0;
 	my $testNacht = ($elevation < deg2rad($daemmerung)) || 0;
@@ -397,16 +461,22 @@ sub fahreRollladen {
 	my ($rolladen, $richtung) = @_;
 	my $GA = $rolladen->{GAfahren};
 
+	if (defined $rolladen->{debug} && $rolladen->{debug}) {
+		plugin_log($plugname, "Name: " . $rolladen->{name} . "; Fahre Rolladen Position: " . $richtung);
+	}
+
 	if ($richtung == 0 || $richtung == 1) {
 		# Auf/Zu fahren
 		knx_write($GA,$richtung,3);		
-	}
-	else {
+	} else {
 		# Position anfahren
 		knx_write($GA,$richtung,5);
 	}
 
 	# Position speichern
+	if ($richtung == 1) {
+		$richtung = 100;
+	}
 	speichereRolladenParameter($rolladen, "position", $richtung);
 
 	# kurze Pause, falls das benutzte Interface das braucht...
@@ -415,6 +485,30 @@ sub fahreRollladen {
 	}
 }
 
+####################################################
+# Aufruf mit fahreRollladen($richtung, $GA);
+####################################################
+sub ladeRollladenPosition {
+	my ($rolladen, $wert, $position) = @_;
+
+	if (! defined $rolladen->{GAladePos}) {
+		plugin_log($plugname,"Name: " . $rolladen->{name} . "; Wert für GAladePos ist nicht definiert!");
+		return;
+	}
+
+	if (defined $rolladen->{debug} && $rolladen->{debug}) {
+		plugin_log($plugname, "Name: " . $rolladen->{name} . "; Fahre zur gespeicherten Position: " . $position);
+	}
+
+	knx_write($rolladen->{GAladePos}, $position, 1.001);
+
+	speichereRolladenParameter($rolladen, "position", $wert);
+
+	# kurze Pause, falls das benutzte Interface das braucht...
+        if ($bugfixSlowInterface) {
+        	usleep(20000);
+	}
+}
 
 ########################################
 # Parameter für einen Rolladen speichern
