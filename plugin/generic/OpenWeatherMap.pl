@@ -107,7 +107,7 @@ if (defined $knxGA->{clouds}) {
 if (defined $knxGA->{city}) {
         my $city = $data->{city}->{name};
         if (length($city) > 14) {
-			$city = subtr($city, 0, 14);
+			$city = substr($city, 0, 14);
         }
 	knx_write($knxGA->{city}, $city, 16.001);
 }
