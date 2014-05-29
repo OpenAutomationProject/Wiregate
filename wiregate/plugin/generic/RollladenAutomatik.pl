@@ -1,6 +1,6 @@
 ######################################################################################
 # Plugin RollladenAutomatik
-# V0.8 2014-05-24
+# V0.9 2014-05-29
 # Lizenz: GPLv2
 # Autoren: kleinklausi (http://knx-user-forum.de/members/kleinklausi.html)
 #          krumboeck (http://knx-user-forum.de/members/krumboeck.html)
@@ -26,6 +26,7 @@
 #	- Speichern der Rolladenposition und aktuellen Zuständen (krumboeck)
 #	- Fahren auf Positionen welche im Aktor (z.B. Siemens 523/03) gespeichert sind (krumboeck)
 #	- Überprüfen von Positionen vor Sonnenauf bzw. -untergang (krumboeck)
+#	- Nach Aufhebung der Sperre auf Position fahren (krumboeck)
 #
 # TODO: Was teilweise integriert ist aber noch nicht komplett ist:
 # 	- Bei Fensterdefinition auch Elevation oben bzw. unten angeben
@@ -149,16 +150,20 @@ foreach my $element (@AlleRolllaeden) {
 # Los gehts. Jeden Rolladen/Fenster/Raum abarbeiten.
 foreach my $element (@AlleRolllaeden) {
 
-        if (defined $element->{istVorlage} && $element->{istVorlage}) {
+	if (defined $element->{istVorlage} && $element->{istVorlage}) {
 		next;
 	}
 
 	my $rolladen = berechneRolladenParameter($element, 0);
 
-	# Falls gesperrt, mit nächstem Rollladen fortfahren
-        if (defined $rolladen->{GAsperre}
-		&& knx_read($rolladen->{GAsperre}, 0, 1) == 1) {
-		next;
+	if (defined $rolladen->{GAsperre}) {
+		$plugin_subscribe{$rolladen->{GAsperre}}{$plugname} = 1;
+		# Falls gesperrt, mit nächstem Rollladen fortfahren
+		if (knx_read($rolladen->{GAsperre}, 0, 1) == 1) {
+			speichereRolladenParameter($rolladen, "locked", 1);
+			plugin_log($plugname,"Name: " . $rolladen->{name} . "; Sperre für Rolladen wurde empfangen");
+			next;
+		}
 	}
 
 	# Ermittle gewünschte Position und Grund des Fahrens für den Rollladen
@@ -203,6 +208,16 @@ sub positionChanged {
 	my $testAbendDaemmerung = ($elevation < deg2rad($daemmerung) && $lastElevation > deg2rad($daemmerung)) || 0;
 	my $testMorgenDaemmerung = ($elevation > deg2rad($daemmerung) && $lastElevation < deg2rad($daemmerung)) || 0;
 
+	my $testLockChanged = 0;
+	if (defined $rolladen->{GAsperre}) {
+		my $parameterLocked = ladeRolladenParameter($rolladen, "locked");
+		if (defined $parameterLocked && $parameterLocked && knx_read($rolladen->{GAsperre}, 0, 1) == 0) {
+			speichereRolladenParameter($rolladen, "locked", 0);
+			if (defined $rolladen->{pruefePositionNachSperre} && $rolladen->{pruefePositionNachSperre}) {
+				$testLockChanged = 1;
+			}
+		}
+	}
 
 	my $newPositionValue = $newPosition;
 	if ($newPosition =~ m/((\d+|\*));Position:(\d+)/) {
@@ -215,6 +230,7 @@ sub positionChanged {
 
 	if ((defined $rolladen->{pruefePositionSonnenAufUnter} && $rolladen->{pruefePositionSonnenAufUnter} == 1
 			&& ($testAbendDaemmerung || $testMorgenDaemmerung))
+		|| $testLockChanged
 		|| (($lastPosition ne $newPosition) && ($lastPositionValue eq "*"))) {
 		if (defined $rolladen->{GAistPos}) {
 			$lastPositionValue = knx_read($rolladen->{GAistPos}, 0, 5.001);
@@ -222,6 +238,8 @@ sub positionChanged {
 			if (defined $rolladen->{debug} && $rolladen->{debug}) {
 				plugin_log($plugname,"Name: " . $rolladen->{name} . "; Rollladen meldete Position: " . $lastPosition);
 			}
+		} elsif ($testLockChanged) {
+			$lastPositionValue = -1;
 		} else {
 			plugin_log($plugname,"Name: " . $rolladen->{name} . "; Konfiguration benötigt GAistPos für diesen Rollladen");
 		}
