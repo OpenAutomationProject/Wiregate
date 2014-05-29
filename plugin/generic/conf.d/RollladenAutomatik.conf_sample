@@ -97,6 +97,8 @@ $daemmerung = -3;
 #   pruefePositionSonnenAufUnter => 1
 # Debugging für Rolladen einschalten
 #   debug => 1
+# Prüft die Position nach Aufhebung einer Sperre (boolean)
+#   pruefePositionNachSperre => 1
 
 # Format für im Aktor gespeicherte Positionen:
 # "44;Position:0" bezeichnet die im Aktor gespeicherte Position 0. Der Wert 44 dient lediglich zur Kontrolle. 
@@ -105,8 +107,9 @@ $daemmerung = -3;
 push @AlleRolllaeden, { name => "default", istVorlage => 1, wertZuBesch => 1, wertAufBesch => 0,
 			wertZuNacht => 1, wertAufNacht => 0, sonnenAufUnter => 1, raumSollTemp => 23,
 			tempGesteuert => 1, tempHysterese => 0.5, maxWindGeschw => 80,
-			windGeschwHysterese => 5, maxBewoelkung => 75, bewoelkungHysterese => 5,
-			minAussenTemp => -15, aussenTempHysterese => 2, wertAufSchutz => 0, wertZuSchutz => 1 };
+			windGeschwHysterese => 5, maxBewoelkung => 70, bewoelkungHysterese => 5,
+			minAussenTemp => -15, aussenTempHysterese => 2, wertAufSchutz => 0, wertZuSchutz => 1,
+			pruefePositionSonnenAufUnter => 1, pruefePositionNachSperre => 1 };
 
 push @AlleRolllaeden, { name => "Wohnzimmer", vorlage => "default", winkel1 => 66, winkel2 => 180,
 			GAraumIstTemp => "2/3/0", GAfahren => "3/1/0" };
