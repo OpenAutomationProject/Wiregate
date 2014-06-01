@@ -1,6 +1,6 @@
 ######################################################################################
 # Plugin RollladenAutomatik
-# V0.9 2014-05-29
+# V1.0 2014-05-29
 # Lizenz: GPLv2
 # Autoren: kleinklausi (http://knx-user-forum.de/members/kleinklausi.html)
 #          krumboeck (http://knx-user-forum.de/members/krumboeck.html)
@@ -31,7 +31,6 @@
 # TODO: Was teilweise integriert ist aber noch nicht komplett ist:
 # 	- Bei Fensterdefinition auch Elevation oben bzw. unten angeben
 #	- Jalousie Lamellenführung
-#	- Vorwarnpositionsfahrten?
 #	- Englisch oder Deutsch?
 ######################################################################################
 
@@ -316,14 +315,20 @@ sub berechneRolladenposition {
 	my $winkel1 = deg2rad($element->{winkel1});
 	my $winkel2 = deg2rad($element->{winkel2});
 
-        # Teste ob das Fenster beschienen wird
-        my $testAktuellBeschienen = ($azimuth > $winkel1 && $azimuth < $winkel2) || 0;
-        my $testVoherBeschienen = ($lastAzimuth > $winkel1 && $lastAzimuth < $winkel2) || 0;
+	# Teste ob das Fenster beschienen wird
+	my $testAktuellBeschienen = ($azimuth > $winkel1 && $azimuth < $winkel2) || 0;
+	my $testVoherBeschienen = ($lastAzimuth > $winkel1 && $lastAzimuth < $winkel2) || 0;
 
 	# Test ob Nacht oder Daemmerung
 	my $testAbendDaemmerung = ($elevation < deg2rad($daemmerung) && $lastElevation > deg2rad($daemmerung)) || 0;
 	my $testMorgenDaemmerung = ($elevation > deg2rad($daemmerung) && $lastElevation < deg2rad($daemmerung)) || 0;
 	my $testNacht = ($elevation < deg2rad($daemmerung)) || 0;
+
+	# Test ob Rolladen gesperrt war, damit gefahren wird obwohl das betreffende Fenster nicht mehr beschienen wird
+	my $parameterLocked = ladeRolladenParameter($element, "locked");
+	if (! defined $parameterLocked) {
+		$parameterLocked = 0;
+	}
 
 	my ($position, $bemerkung);
 
@@ -360,48 +365,53 @@ sub berechneRolladenposition {
 	if (!$testVoherBeschienen && $testAktuellBeschienen) {
 		$position = $element->{wertZuBesch};
 		$bemerkung = "Wegen Sonne zufahren bei: " . round(rad2deg($azimuth));
-	} elsif ($testVoherBeschienen && !$testAktuellBeschienen) {
+	} elsif (($parameterLocked || $testVoherBeschienen) && !$testAktuellBeschienen) {
 		$position = $element->{wertAufBesch};
 		$bemerkung = "Wegen Sonne auffahren bei: " . round(rad2deg($azimuth));
 	}
 
 	my $testTempNiedrig = 0;
 	my $testTempHoch = 0;
-	if (!$testNacht && $testAktuellBeschienen && $element->{tempGesteuert}) {
-		# Solltemperatur für den Raum feststellen
-		my $sollTemp;
-		if (defined $element->{GAraumSollTemp}) {
-			$sollTemp = knx_read($element->{GAraumSollTemp}, 300, 9);
-		}
-	        if (!defined $sollTemp) {
-	        	$sollTemp = $element->{raumSollTemp};
-	        }
-
-		# Aktuelle Temperatur für den Raum feststellen
-		my $istTemp = knx_read($element->{GAraumIstTemp}, 300, 9);
-
-		if (defined $sollTemp && defined $istTemp) {
-			my $tempHysterese = $element->{tempHysterese};
-			if (!defined $tempHysterese) {
-				$tempHysterese = 1;
+	if (!$testNacht && $testAktuellBeschienen) {
+		if ($element->{tempGesteuert}) {
+			# Solltemperatur für den Raum feststellen
+			my $sollTemp;
+			if (defined $element->{GAraumSollTemp}) {
+				$sollTemp = knx_read($element->{GAraumSollTemp}, 300, 9);
 			}
-	 		$testTempNiedrig = ($istTemp < ($sollTemp - $tempHysterese));
-		 	$testTempHoch = ($istTemp > ($sollTemp + $tempHysterese));
-
-			# Fenster ist beschienen, Rolladen ist zu und Temperatur ist zu niedrig
-			if ($testTempNiedrig) {
-				$position = $element->{wertAufBesch};
-				$bemerkung = "Wegen Temperatur auffahren bei: " . $istTemp . ' °C';
-			}
-
-			# Fenster ist beschienen, Rolladen ist offen und Temperatur ist zu hoch
-			if ($testTempHoch) {
-				$position = $element->{wertZuBesch};
-				$bemerkung = "Wegen Temperatur zufahren bei: " . $istTemp . ' °C';
+		        if (!defined $sollTemp) {
+		        	$sollTemp = $element->{raumSollTemp};
+		        }
+	
+			# Aktuelle Temperatur für den Raum feststellen
+			my $istTemp = knx_read($element->{GAraumIstTemp}, 300, 9);
+	
+			if (defined $sollTemp && defined $istTemp) {
+				my $tempHysterese = $element->{tempHysterese};
+				if (!defined $tempHysterese) {
+					$tempHysterese = 1;
+				}
+		 		$testTempNiedrig = ($istTemp < ($sollTemp - $tempHysterese));
+			 	$testTempHoch = ($istTemp > ($sollTemp + $tempHysterese));
+	
+				# Fenster ist beschienen, Rolladen ist zu und Temperatur ist zu niedrig
+				if ($testTempNiedrig) {
+					$position = $element->{wertAufBesch};
+					$bemerkung = "Wegen Temperatur auffahren bei: " . $istTemp . ' °C';
+				}
+	
+				# Fenster ist beschienen, Rolladen ist offen und Temperatur ist zu hoch
+				if ($testTempHoch) {
+					$position = $element->{wertZuBesch};
+					$bemerkung = "Wegen Temperatur zufahren bei: " . $istTemp . ' °C';
+				}
+			} else {
+				plugin_log($plugname,"Name: " . $element->{name} . "; Temperatur konnte nicht festgestellt werden");
+				return (undef, undef);
 			}
 		} else {
-			plugin_log($plugname,"Name: " . $element->{name} . "; Temperatur konnte nicht festgestellt werden");
-			return (undef, undef);
+			$position = $element->{wertZuBesch};
+			$bemerkung = "Wegen Beschattung zufahren";
 		}
 	}
 
