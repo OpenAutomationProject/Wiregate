@@ -1,0 +1,112 @@
+/* Reset
+------------------------------------------------------------ */
+* { margin: 0; padding: 0; }
+html { overflow: hidden;}
+body 
+{ 
+	border: 1px;
+	border-radius: 0px;
+		-moz-border-radius: 0px;
+		-webkit-border-radius: 0px;
+		-o-border-radius: 0px;
+	overflow: hidden;
+	color: white;
+	font-family: Dosis, Helvetica, Arial, sans-serif;
+	font-size: 16px;
+	text-shadow:black 1px 1px;
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	padding: 0;
+}
+h1 { border: 0;font-size: 1.4em; text-shadow:black 1px 1px;}
+h2 {	border: 0;font-size: 3em; color: #FF8000; text-shadow:black 1px 1px;}
+h3 { border: 0;font-size: 0.8em;}
+h4 { border: 0;font-size: 0.7em;}
+h5 {	border: 0;font-size: 1.4em; color: #FF8000; text-shadow:black 1px 1px;}
+h6 {	border: 0;font-size: 4em; color: #FF8000; text-shadow:black 1px 1px;}
+a, img { outline: none; border:0; color: #000; font-weight: bold; text-transform: uppercase;}
+p { margin: 0; line-height: 1.4em; font-size: 1.2em;}
+img { border: 0;display: block;}
+}
+
+
+/*Struktur*/
+div.wrapper
+{
+	width: 96%;
+	max-width: 1500px;
+	margin: auto;
+	padding: 2%;
+	z-index:10;
+}
+	
+	div.wetteraktuell{
+		font-family: Dosis, Helvetica, Arial, sans-serif;
+		overflow: hidden;
+		margin:0;
+		padding: 1%;
+		width: 18%;
+		height: 100%;
+		float: left;
+		text-align: center;
+		z-index:10;
+		}		
+
+	div.wetteraktuellbild{
+		margin:0;
+		padding: 1%;
+		width: 17%;
+		height: 100%;
+		float: left;
+		z-index:10;
+		}		
+
+
+	div.wetteraktuellsmall{
+		font-family: Dosis, Helvetica, Arial, sans-serif;
+		overflow: hidden;
+		margin:0;
+		padding: 1%;
+		width: 98%;
+		height: 100%;
+		float: left;
+		text-align: center;
+		z-index:10;
+		}		
+
+	div.wetteraktuellbildsmall{
+		margin:0;
+		padding: 1%;
+		width: 97%;
+		height: 40%;
+		float: left;
+		z-index:10;
+		}		
+
+	div.forecastcontainer{
+		font-family: Dosis, Helvetica, Arial, sans-serif;
+		padding: 0;
+		width: 60%;
+		height: 100%;
+		margin:0;
+		float: right;
+		text-align: center;
+		z-index:10;
+		}		
+		
+	div.forecast{
+		font-family: Dosis, Helvetica, Arial, sans-serif;
+		padding: 1%;
+		width: 23%;
+		height: 100%;
+		margin:0;
+		float: left;
+		text-align: center;
+		z-index:10;
+		}
+		
+p.back {
+  clear: both;
+  text-align: center;
+}
