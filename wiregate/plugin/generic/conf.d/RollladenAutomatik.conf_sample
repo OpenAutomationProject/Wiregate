@@ -62,7 +62,9 @@ $daemmerung = -3;
 # Bei ungleich 0, wird DPT5 angenommen und Position angefahren
 # 	wertAufSchutz => 0
 # Ob der Rollladen in die Automatik für Sonnenauf- und untergang einbezogen werden soll
-# 	sonnenAufUnter => 1		
+# 	sonnenAufUnter => 1		# bei Sonnenaufgang und Sonnenuntergang
+# 	sonnenAufUnter => 2		# nur Sonnenaufgang
+# 	sonnenAufUnter => 3		# nur Sonnenuntergang
 # Raum-Solltemperatur, wenn keine GA angegeben wurde oder kein Wert vom Bus gelesen wurde
 # 	raumSollTemp => 22
 # GA der Raum-Solltemperatur
@@ -99,6 +101,11 @@ $daemmerung = -3;
 #   debug => 1
 # Prüft die Position nach Aufhebung einer Sperre (boolean)
 #   pruefePositionNachSperre => 1
+# Regel wird nur ausgeführt wenn die Bedingung erfüllt ist (boolean)
+#   Beispiel für Heizzeitraum
+#     bedingung => '($tagImJahr < toDayOfYear(15, 5, $jahr) || $tagImJahr >= toDayOfYear(15, 9, $jahr)) ? 1 : 0'
+#   Beispiel für Wochenende
+#     bedingung => '($wochentag == SAMSTAG || $wochentag == SONNTAG) ? 1 : 0'
 
 # Format für im Aktor gespeicherte Positionen:
 # "44;Position:0" bezeichnet die im Aktor gespeicherte Position 0. Der Wert 44 dient lediglich zur Kontrolle. 
