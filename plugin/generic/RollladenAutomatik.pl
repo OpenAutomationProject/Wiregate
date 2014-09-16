@@ -1,6 +1,6 @@
 ######################################################################################
 # Plugin RollladenAutomatik
-# V1.0 2014-05-29
+# V1.1 2014-09-16
 # Lizenz: GPLv2
 # Autoren: kleinklausi (http://knx-user-forum.de/members/kleinklausi.html)
 #          krumboeck (http://knx-user-forum.de/members/krumboeck.html)
@@ -27,6 +27,8 @@
 #	- Fahren auf Positionen welche im Aktor (z.B. Siemens 523/03) gespeichert sind (krumboeck)
 #	- Überprüfen von Positionen vor Sonnenauf bzw. -untergang (krumboeck)
 #	- Nach Aufhebung der Sperre auf Position fahren (krumboeck)
+#   - Hinzufügen von Bedingungen (krumboeck)
+#   - Erweiterte Einstellungen für Sonnenauf- und untergang (krumboeck)
 #
 # TODO: Was teilweise integriert ist aber noch nicht komplett ist:
 # 	- Bei Fensterdefinition auch Elevation oben bzw. unten angeben
@@ -42,6 +44,14 @@
 use constant HIGHER => 1;
 use constant EQUAL => 0;
 use constant LOWER => -1;
+
+use constant MONTAG => 1;
+use constant DIENSTAG => 2;
+use constant MITTWOCH => 3;
+use constant DONNERSTAG => 4;
+use constant FREITAG => 5;
+use constant SAMSTAG => 6;
+use constant SONNTAG => 7;
 
 # Die Koordinaten des Hauses. Sehr einfach über http://www.getlatlon.com/ zu ermitteln.
 # Und die Höhe über NN
@@ -155,6 +165,13 @@ foreach my $element (@AlleRolllaeden) {
 
 	my $rolladen = berechneRolladenParameter($element, 0);
 
+	if (defined $rolladen->{bedingung} && !callBedingung($rolladen)) {
+		if (defined $rolladen->{debug} && $rolladen->{debug}) {
+			plugin_log($plugname, "Name: " . $rolladen->{name} . "; Bedingung nicht erfüllt");
+		}
+		next;
+	}
+
 	if (defined $rolladen->{GAsperre}) {
 		$plugin_subscribe{$rolladen->{GAsperre}}{$plugname} = 1;
 		# Falls gesperrt, mit nächstem Rollladen fortfahren
@@ -194,6 +211,37 @@ $plugin_info{$plugname.'_lastElevation'} = $elevation;
 
 return "Grad gegen Norden: " . round(rad2deg($azimuth)) . "; Grad ueber Horizont: " . round(rad2deg($elevation));
 
+
+############################################
+# Bedingung ausführen
+############################################
+sub callBedingung {
+	my ($rolladen) = @_;
+	my ($sekunde, $minute, $stunde, $tag, $monat, $jahr, $wochentag, $tagImJahr, $isdst) = localtime(time);
+	$monat += 1;
+	$tagImJahr += 1;
+	if ($wochentag == 0) {
+		$wochentag = 7;
+	}
+	$jahr += 1900;
+	my $result = eval $rolladen->{bedingung};
+	if ($@) {
+		plugin_log($plugname,"Name: " . $rolladen->{name} . "; Fehler in Bedingung: " . $@);
+		return 0;
+	}
+	return $result;
+}
+
+sub toDayOfYear {
+	my ($day, $month, $year)=@_;
+	my @cumul_d_in_m = (0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365);
+	my $doy=$cumul_d_in_m[--$month]+$day;
+	return $doy if $month < 2;
+	return $doy unless $year % 4 == 0;
+	return ++$doy unless $year % 100 == 0;
+	return $doy unless $year % 400 == 0;
+	return ++$doy;
+}
 
 ############################################
 # Prüft ob der Rolladen gefahren werden muss
@@ -350,12 +398,12 @@ sub berechneRolladenposition {
 		}
 	}
 
-	if ($element->{sonnenAufUnter}) {
-		if ($testNacht) {
+	if ($element->{sonnenAufUnter} > 0) {
+		if ($testNacht && ($element->{sonnenAufUnter} == 1 || $element->{sonnenAufUnter} == 3)) {
 			$position = $element->{wertZuNacht};
 			$bemerkung = "Wegen Abenddaemmerung zufahren bei: " . round(rad2deg($azimuth));
 			return ($position, $bemerkung);
-		} elsif ($testMorgenDaemmerung) {
+		} elsif ($testMorgenDaemmerung && ($element->{sonnenAufUnter} == 1 || $element->{sonnenAufUnter} == 2)) {
 			$position = $element->{wertAufNacht};
 			$bemerkung = "Wegen Morgendaemmerung auffahren bei: " . round(rad2deg($azimuth));
 		}
