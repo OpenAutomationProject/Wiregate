@@ -4,7 +4,7 @@
 # Copyright: Bodo (http://knx-user-forum.de/members/bodo.html)
 # License: GPL (v2)
 # Aufbau möglichst so, dass man unterhalb der Definitionen nichts ändern muss!
-COMPILE_PLUGIN
+# COMPILE_PLUGIN
 
 ##################
 ### DEFINITION ###
