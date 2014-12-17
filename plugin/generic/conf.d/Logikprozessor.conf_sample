@@ -7,17 +7,18 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
 
 # Zentrale Einstellungen, insb. für die Prowl Mechanik, s. u..
 %settings=(
-  prowl => {
-    apikey => "*** hier eigenen API-Key eintragen***", 
-    application => 'WireGate KNX',
-    priority => 0,
-    event => '[unbenanntes Ereignis]',
-    description => '',
-    url => ''
-  }
+    prowl => {
+	apikey => "*** hier eigenen API-Key eintragen***", 
+	application => 'WireGate KNX',
+	priority => 0,
+	event => '[unbenanntes Ereignis]',
+	description => '',
+	url => ''
+    },
+    samurai => "https://user:pass\@samurai.sipgate.net/RPC2", 
 );
 
-%logic=(
+%logic=(    
     # 1. Alle Werte, die auf einer GA gesendet werden, werden mit 2 multipliziert auf einer anderen GA weitergegeben
     mal2 => { receive=>'9/5/201', transmit=>'9/5/202', translate => sub { 2*$input; }, },
     # das "undef" steht da einfach, weil uns der letzte Ergebniswert nicht interessiert
@@ -31,10 +32,10 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # 3. Wie oben, aber das Ergebnis limitiert auf den Bereich 0-100
     lsum => { receive=>'1/2/7', transmit=>'1/2/8', translate => sub { limit(0,$state+$input,100); }, },
  
-    # 4. Memory-Funktion. Fuer KNX-Geräte, die kein Auslesen ihres Statuswerts zulassen (z.B. MDT DaliControl 
+    # 4. Memory-Funktion. Fuer KNX-Geraete, die kein Auslesen ihres Statuswerts zulassen (z.B. MDT DaliControl 
     # bei Einzel-EVG-Ansteuerung). Sehr einfach:
-    memory => { transmit=>'1/2/9' },
-    # Hier wird folgende Eigenschaft der Logik ausgenutzt: Wenn ein Write-Telegramm auf die Transmit-Adresse kommt, 
+    memory => { transmit=>'1/2/9', reply_to_read_requests=>1 },
+    # Hier geschieht folgendes: Wenn ein Write-Telegramm auf die Transmit-Adresse kommt, 
     # speichert der Logikprozessor den Wert immer automatisch ab. Eine Leseanfrage auf der transmit-GA hingegen wird 
     # immer mit dem letzten Wert (hier also dem gespeicherten) beantwortet. Eine receive-Adresse oder translate-Logik 
     # werden hier gar nicht gebraucht.
@@ -52,7 +53,16 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # wird nur dann gesendet, wenn Ergebnis!=Input oder Sender des empfangenen Telegramms!=$eibd_backend_address (Wiregate).
     # * Wenn waehrend der delay-Zeit erneut ein Receive-Telegramm empfangen wird, wird die Logik erneut ausgefuehrt und
     # die delay-Zeit beginnt von vorne (wie bei einem Treppenlicht die Leuchtzeit bei erneutem Druecken verlaengert wird).
-    
+    # * Schreibtelegramme auf die transmit-Adresse waehrend laufender delay-Zeit fuehren NICHT zum Speichern des Wertes 
+    # wie in der Memory-Funktion! - sonst wuerde der spaeter (nach Ablauf des delays) gesendete Wert verfremdet.
+    # * Gibt eine Logik undef zurueck (return undef;), so geschieht NICHTS - auch der delay-Timer laeuft weiter mit dem 
+    # bereits vorgemerkten Wert, der dann zu senden ist.
+    # * Gibt eine Logik den Text "cancel" zurueck (return "cancel";), so wird der delay-Timer geloescht. Auch hier bleibt
+    # der bereits vorgemerkte Wert weiter vorgemerkt - read-Requests auf die transmit-Adresse werden diesen Wert liefern.
+    # * Wird eine Logik waehrend der delay-Zeit erneut aufgerufen und liefert weder undef noch "cancel" zurueck, so 
+    # wird der delay-Timer neu gesetzt und bei Ablauf der neue Wert gesendet. Der vorher vorgemerkte Wert wird dann also
+    # gar nicht gesendet.
+
     # Als weitere Sicherheit vor Zirkellogiken (die ja auch im Zusammenwirken mehrerer Logiken entstehen koennen) gibt es
     # die Klausel "cool=>...", die eine Logik nur dann zur Ausfuehrung zulaesst, wenn seit der letzten Ausfuehrung 
     # die spezifizierte Zahl von Sekunden verstrichen ist. Im obigen Beispiel also zB
@@ -62,11 +72,21 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # Hinweise zu cool: 
     # * bei gesetztem "cool=>..." wird die Ausfuehrung der Logik auf receive-Telegramme (nicht aber die Reaktion auf 
     # Schreib/Lesetelegramme wie in Bsp 4) fuer die definierte Zeit verhindert. 
-    # * Falls gleichzeitig "delay=>..." spezifiziert ist, so wird die erneute Ausfuehrung der Logik bereits waehrend 
+    # * Falls gleichzeitig "delay=>..." spezifiziert ist, so wird die erneute Ausfuehrung der Logik schon waehrend 
     # der delay-Zeit verhindert bis zum folgenden Schreibvorgang UND danach noch fuer die in cool=>... spezifizierte 
     # Anzahl Sekunden. 
     # * Ein Setzen von cool=>0 und delay=>10 hat den Effekt, dass die Ausfuehrung der Logik sofort nach Senden des 
     # transmit-Telegramms wieder erlaubt ist, aber NICHT waehrend der delay-Zeit (hier 10s). 
+    # * gibt eine Logik den Wert "undef" zurueck, so hat dies generell KEINEN Effekt. Es wird dann nichts gesendet, 
+    # und auch die cool-Zeit beginnt dann nicht zu laufen.
+
+    # 4b. Hier eine andere Loesung fuer KNX-geraete, die kein zyklisches Senden sondern nur Senden auf Aenderungen erlauben.
+    # Sendet ein KNX-Geraet auf 1/2/9 einen beliebigen Wert, so wird dieser alle 5min "bis in alle Ewigkeit" wiederholt - 
+    # es sei denn, es kommt ein neuer Wert vom Geraet, dann wird ab sofort dieser neue Wert wiederholt. 
+    # Eine solche Logik ist nuetzlich, um sicherzustellen, dass der jeweils aktuelle Wert immer im eibd-Cache vorhanden
+    # ist und somit von anderen Logiken genutzt werden kann.
+    repeater => { receive=>'1/2/9', transmit=>'1/2/9', delay=>'5min', transmit=>sub{$input} },
+    # Randbemerkung: fuer delay koennen auch Werte mit Einheiten wie '5min', '3h' oder '27s' eingesetzt werden
 
     # 5. Hier eine Logik, die den Input bei Eintreffen mit 2 multipliziert, das Resultat aber nur speichert und erst 
     # spaeter auf ein explizites Lesetelegramm hin auf der transmit-Adresse sendet. 
@@ -91,13 +111,14 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # Debugging der Logik hilfreich sein koennten.
 
     # 9. Ein komplexerer Fall nur zur Demonstration: hier besteht der Status des Logikprozessors aus mehreren Werten. 
-    # Es wird immer die Summe aus letztem, vorletztem und aktuellem Wert gesendet, und zwar mit 30s Verzoegerung.
-    complex => { receive=>'9/5/205', 
-                 transmit=>'9/5/206', 
-                 delay=>30, 
-                 state => {val1=>0, val2=>0}, 
-		 translate => sub { $state->{val2}=$state->{val1}; $state->{val1}=$state->{result}; 
-				    $state->{val2}+$state->{val1}+$input; }, 
+    # Es wird der Mittelwert aus letztem, vorletztem und aktuellem Wert gesendet, und zwar mit 30s Verzoegerung.
+    mittelwert => { receive=>'9/5/205', 
+		    transmit=>'9/5/206', 
+		    delay=>30, 
+		    state => {val1=>0, val2=>0}, 
+		    translate => sub { my $oldest=$state->{val2};
+				       $state->{val2}=$state->{val1}; $state->{val1}=$input; 
+				       return ($oldest+$state->{val2}+$input)/3; }, 
     },
     # Wenn state ein Hash ist, wird der letzte gesendete Wert in $state->{result} gespeichert.
 
@@ -107,10 +128,12 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     wecker => { transmit=>'10/1/15', timer=>{ time=>['08:00','10:00','09:00+2m-09:30','18:00+1h-20:00'], 
 					      day_of_month=>'8..14', day_of_week=>'Di' }, translate => 1 }, 
     # Logiken mit timer-Klausel weichen in mehreren Punkten von den bisherigen Logiken ab:
-    # * sie ignorieren die delay-Klausel und die cool-Klausel
-    # * Die transmit_only_on_request-Klausel funktioniert aber
-    # * ALTES VERHALTEN: jeglicher Bustraffic auf receive-Adressen wird ignoriert. JETZT NICHT MEHR - FALLS MAN DIESES
-    #   VERHALTEN MÖCHTE, KANN STATT receive=>.... DIE OPTION fetch=>... GENUTZT WERDEN!
+    # * sie ignorieren die cool-Klausel. 
+    # * Die delay-Klausel wird nur dann angewendet, wenn die Logik aufgrund eines Telegramms auf einer receive-Adresse ausgefuert
+    #   wird. Bei Aufrufen, die vom Timer ausgeloest wurden, wird delay ignoriert.
+    # * Wenn man uebrigens moechte, dass Telegramme auf receive-Adressen ignoriert werden (also reine Timerfunktion),
+    #   so ersetze man 'receive' durch 'fetch', siehe auch unten
+    # * Die transmit_only_on_request-Klausel funktioniert wie gewohnt
     # * Evtl. spezifizierte receive-Adressen werden beim Timer-Aufruf abgefragt, um das input-Array vorzubesetzen).
     #
     # Weitere Infos zu Timer-Spezifikationen
@@ -133,8 +156,6 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # ist doch leserlicher, oder? Hier wird ein relativer Dimmwert (LR=Licht relativ, SZ=Schlafzimmer) durch Skalierung 
     # und Summierung in einen absoluten Wert umgewandelt   
 
-
-
     # 12. Prowl (http://www.prowlapp.com/) ist eine iPhone/iPad/i*-App zum Empfang von Growl-Kurznachrichten 
     # via Push. Da Prowl auch über eine Web-API Nachrichten entgegennehmen kann, ist eine Kopplung an eigene 
     # Anwendungen möglich. Für einen Minimalbetrieb ist Growl oder ein Mac nicht erforderlich: Es reicht die App auf dem 
@@ -144,7 +165,6 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # Zur Vereinfachung der einzelnen Aufrufe können in der Konfigurationsdatei des Logikprozessors zentral Standardwerte 
     # hinterlegt werden. Dazu ist neben den %logic Hash noch ein %settings Hash zu legen, der bestimmte Einstellungen 
     # unterstützt, siehe oben.
-
 
     # Der Versand von Prowl-Nachrichten erfolgt nach der Verarbeitung von "translate", falls vorhanden. In der 
     # einfachsten Form erfolgt die Definition direkt mit dem gewünschten event-String (was die beschriebene Vergabe von
@@ -194,14 +214,10 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
       }
     }
 
-
     # Der Versand an mehrere Empfänger ist durch die Definition von "apikey" als Array möglich:
-
     # apikey => [ "*** key 1 ***", "*** key 2 ***", ... ]
 
-
-
-    # 13. transmit_changes_only beschränkt eine Logik darauf, dass nur Änderungen des States auf den Bus geschickt werden.
+    # 13. transmit_changes_only beschränkt eine Logik darauf, dass nur Aenderungen des Status auf den Bus geschickt werden.
     # Dies kann bspw. genutzt werden, wenn zyklisch Temperaturwerte ausgewertet werden, aber nur "neue" Erkenntnisse auf
     # den Bus kommen sollen.
 
@@ -210,30 +226,79 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
       transmit => '6/1/0',
       transmit_changes_only => 1,
       translate => sub {
-        return ($input gt 25) ? 1 : 0;
+	  return ($input gt 25) ? 1 : 0;
       }
     }
 
     # Weitere Optionen ohne Beispiel:
 
-    # 14. Die Optionen transmit_on_startup=>1 fuehrt die Logik bei der Initialisierung einmal aus (Vorsicht: bei zu 
-    # vielen solchen Logiken kann das zum Timeout des Plugins fuehren!). 
+    # 14. Die Optionen transmit_on_startup=>1 fuehrt die Logik bei der Initialisierung einmal aus. 
 
-    # 15. Falls Read-Requests an die transmit-Adresse einer Logik geschickt werden, so fuehrt das normalerweise zur 
-    # (erneuten) Uebertragung des letzten Resultats bzw, falls dieses undef ist, zur Ausfuehrung der Logik und 
-    # Uebertragung des Resultats. Mit recalc_on_request=>0 wird die Ausfuehrung der Logik in diesem Fall unterdrueckt, 
-    # mit recalc_on_request=>1 wird sie in jedem Fall erzwungen. Mit ignore_read_requests=>1 werden solche Requests 
-    # gar nicht beantwortet (das ist per Default der Fall, wenn mehrere transmit-Adressen fuer eine Logik angegeben sind). 
+    # 15. Falls Read-Requests an die transmit-Adresse einer Logik geschickt werden, so wird das normalerweise ignoriert,
+    # es sei denn, reply_to_read_requests=>1 oder transmit_only_on_requests=>1 ist gesetzt (Uebertragung des letzten Resultats
+    # oder - falls keines vorhanden - erneute Berechnung) oder recalc_on_request=>1 ist gesetzt (erneute Ausfuehrung der Logik).
+    # Mit recalc_on_request=>0 wird die Ausfuehrung der Logik in solchen Faellen unterdrueckt.
+    # Bei mehreren transmit-Adressen fuer eine Logik wird grundsaetzlich NIEMALS auf read-requests geantwortet.
 
-    # 16. Die Option eibd_cache legt die Cache-Zeit bei knx_read-Aufrufen fest. Default ist 300.
+    # 16. Die Option eibd_cache legt die Cache-Zeit bei knx_read-Aufrufen fest. Default ist 5min.
 
-    # 17. Neben receive kann in fetch=>... eine weitere GA oder GA-Liste übergeben werden. Diese GAs werden NICHT abonniert, und
-    # Telegramme hierauf lösen die Logik auch nicht aus, sie werden nur bei Ausführung der Logik per knx_read ausgelesen und in
+    # 17a. Neben receive kann in fetch=>... eine weitere GA oder GA-Liste uebergeben werden. Diese GAs werden NICHT abonniert, und
+    # Telegramme hierauf lösen die Logik auch nicht aus, sie werden nur bei Ausfuehrung der Logik per knx_read ausgelesen und in
     # $input hinterlegt
 
-    # 18. Neuerdings koennen nun auch mehrere GAs unter transmit=>[...] angegeben werden. Es wird allerdings an alle der gleiche
-    # Wert gesendet!
+    # 17b. Neben receive und fetch kann in trigger=>... eine weitere GA oder GA-Liste uebergeben werden. Diese GAs werden abonniert, 
+    # Telegramme hierauf loesen die Logik aus, die Werte selbst werden aber NICHT abgefragt und auch NICHT in $input hinterlegt. Letzteres
+    # geschieht nur mit receive und fetch. In gewissen Sinne ist also "trigger=>'0/1/0', fetch=>'0/1/0'," aequivalent zu "receive=>'0/1/0'," 
+    # letzteres ist nur effizienter. Ersteres (also trigger) ist aber viel effizienter, wenn man eine Logik durch viele GAs 
+    # triggern moechte, OHNE dass dies weitere knx_read-Requests ausloest.
 
+    # 17c. Die Option trigger=>... hat noch eine zweite Syntax: man kann vorgeben, dass eine Sequenz von Telegrammen die Logik triggert.
+    # trigger=>['ga1==1', 'ga2>2', 'ga3==ANY', 'within 2min', 'all'} gibt vor, dass drei Telegramme innerhalb einer Minute empfangen 
+    # werden muessen:
+    # Auf der GA ga1 muss der Wert 1 empfangen werden, auf ga2 ein Wert groesser 2, und ga3 muss kommen, wobei der Wert egal ist. 
+    # Nur dann wird die Logik ausgefuehrt. Ein "==ANY" koennte auch entfallen, und statt 'all' koennte auch 'any' oder 'all_in_order'
+    # spezifiziert werden. Mit 'any' (das ist der Default) wird die Logik ausgefuehrt, sobald EINE der Bedingungen eingetreten ist. 
+    # Mit 'all' muessen alle eintreten, und mit 'all_in_order' auch noch in der spezifizierten Reihenfolge. 
+    # Ist 'within...' nicht angegeben, so gilt ein timeout von 60 Sekunden.
+
+    # 18. Es koennen auch mehrere GAs unter transmit=>[...] angegeben werden. Es wird allerdings an alle der gleiche Wert gesendet!
+
+    # 19. Mit der Option rrd=>'ABC', wird der an die transmit-Adresse gesendete Wert zusaetzlich in ein RRD geschrieben.
+    # Damit kann der Werteverlauf ueber die Zeit spaeter in eine Visualisierungsgrafik uebertragen werden.
+
+    # 20. Die Option execute_on_input_changes_only=>1 fuehrt die Logik nur aus, falls die vorliegenden Inputdaten sich
+    # gegenueber dem letzten Ausfuehren der Logik geaendert haben.
+
+    # 20b. Die Option execute_only_if_input_defined=>1 fuehrt die Logik nur aus, falls ALLE input- und fetch-Parameter definierte Werte haben
+
+    # 21. Ein Nachteil der timer-Option ist, dass sie nicht dynamisch (zB durch eine andere Logik) festgelegt werden kann. 
+    # Einmal eingerichtet, bleibt der Timer unerbittlich.  Eine zweite Luecke ist, dass manchmal Logiksequenzen in bestimmter
+    # zeitlicher Abfolge ausgefuehrt werden sollen. Das ist mit den oben beschriebenen Optionen nicht komfortabl moeglich. 
+    # Theoretisch ist das mittels delay realisierbar, aber kann schnell unelegant und unuebersichtlich werden. Zur 
+    # Schließung dieser Luecken wurde die Option followup eingefuehrt, die als Funktion followup() in translate-Funktionen 
+    # verfuegbar ist. Diese definiert dynamisch Folgesequenzen anderer Logiken mit großen Freiheiten, was die zeitliche Definition angeht.
+
+    # Verwendung als Option
+    Tuer1_oeffnen => { transmit=>'Tuer1', translate=>1, followup=>{'Tuer2_oeffnen'=>2, 'Tuer3_oeffnen'=>3}, }, 
+    Tuer2_oeffnen => { transmit=>'Tuer1', translate=>1 },
+    Tuer3_oeffnen => { transmit=>'Tuer1', translate=>1 },
+    # Hier wird die zweite Tuer zwei Sekunden spaeter geoeffnet und die dritte drei Sekunden nach der ersten.
+    # Statt der 2 und 3 koennte da auch stehen '2s', oder '2min', oder '2h'.
+    # Auch moeglich ist es - in diesem Beispiel vielleicht wenig sinnvoll -  eine Definition analog der Option timer zu hinterlegen:
+    Tuer1_oeffnen => { transmit=>'Tuer1', translate=>1, followup=>{time=>'08:00', weekday=>1} }, 
+    # Hier wuerde die Tur bspw. geoeffnet, wenn das naechste Mal 8 Uhr an einem Wochentag ist. 
+    # Alle Moeglichkeiten der Option timer stehen zur Verfuegung. Ein wichtiger Unterschied zu timer ist aber, 
+    # dass mit dieser followup- Option nur eine EINMALIGE Ausfuehrung der Folgelogik verknuepft ist.  
+
+    # Auch wird der followup-Timer nur gesetzt, wenn davor auch etwas gesendet wurde. Ohne transmit kein followup! 
+    # Konsequenterweise wird bei gleichzeitiger Verwendung von delay=>... und followup=>... der Followup-Timer erst mit der verzoegerten
+    # Sendung des Telegramms eingerichtet.
+    # Moechte man die evtl. laufenden followup-Timer  loeschen, geht wieder ein einfaches return 'cancel', wie schon bei der Option delay.
+
+    # Verwendung von followup als Funktion: im Unterschied zur timer-Option laesst sich ein followup-Timer  
+    # auch innerhalb einer translate-Funktion ausfuehren: 
+    Tuer1_oeffnen => { transmit=>'Tuer1', translate=>sub { followup({'Tuer2_oeffnen'=>2, debug=>1}); }, },
+    # Dies geht ohne jedwede Einschraenkung.  Zum Debuggen kann man dem followup-Hash noch eine Option debug=>1 mitgeben, wie oben gezeigt.
     ); 
 
 

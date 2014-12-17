@@ -4,27 +4,24 @@
 ##################
 # Wiregate-Plugin
 # (c) 2012 Fry under the GNU Public License
+#
+# sendSMS Code based on sipgate-provided Perl script written by Sam Buca
+#
+# COMPILE_PLUGIN
 
-# $plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
+#$plugin_info{$plugname.'_cycle'}=0; return 'deaktiviert';
 
-use POSIX qw(floor strftime);
+use POSIX qw(floor strftime sqrt);
+use Math::Trig qw(asin acos atan tan);
 
 # Tools und vorbesetzte Variablen fuer die Logiken
 sub limit { my ($lo,$x,$hi)=@_; return $x<$lo?$lo:($x>$hi?$hi:$x); }
+sub scene { my ($n,$op)=@_; $n--; return $n | ((defined $op && $op eq 'store') ? 0x80 : 0); }
+
 my $date=strftime("%W,%a,%u,%m,%d,%Y,%j,%H,%M,%T",localtime);
 plugin_log($plugname, "Datum/Uhrzeit nicht lesbar: '$date'.") unless ($date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/);
-#my $date=`/bin/date +"%W,%a,%u,%m,%d,%Y,%j,%H,%M,%T"`;
-#unless($date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/)
-#{
-#    plugin_log($plugname, "Datum/Uhrzeit nicht lesbar: '$date', versuche strftime.");
-#    $date=strftime("%W,%a,%u,%m,%d,%Y,%j,%H,%M,%T",time(),0,1,0,0,70,7,0);
-#    unless($date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/)
-#    {
-#	plugin_log($plugname, "Datum/Uhrzeit auch bei strftime nicht lesbar: '$date', steige aus.");
-#	return;
-#    }
-#}
-my $calendar_week=$1;
+
+my $calendar_week=$1+1;
 my $day_of_week=$2;
 my $day_of_week_no=$3;
 my $month=int($4);
@@ -34,17 +31,20 @@ my $day_of_year=int($7);
 my $hour=int($8);
 my $minute=int($9);
 my $time_of_day=$10; # '08:30:43'
-my $weekend=($day_of_week_no>=6);
-my $weekday=!$weekend;
+my $weekend=($day_of_week_no>=6)?1:0;
+my $weekday=1-$weekend;
 my $holiday=is_holiday($year,$day_of_year);
-my $workingday=(!$weekend && !$holiday);
-my $day=($hour>=7 && $hour<23);
-my $night=!$day;
+my $workingday=($weekend==0 && $holiday==0)?1:0;
+my $day=($hour>=7 && $hour<22)?1:0;
+my $night=1-$day;
 my $systemtime=time();
-my $date=sprintf("%02d/%02d",$month,$day_of_month);
+$date=sprintf("%02d/%02d",$month,$day_of_month);
+my $eibd_backend_address=undef;
 
 sub groupaddress;
-sub my_knx_write;
+sub sendSMS; 
+sub sendProwl;
+sub verify;
 
 # Konfigfile seit dem letzten Mal geaendert?
 my $conf="/etc/wiregate/plugin/generic/conf.d/$plugname"; 
@@ -67,44 +67,60 @@ elsif (%msg) { $event='bus'; return if !$config_modified && $msg{apci} eq "A_Gro
 elsif ($fh) { $event='socket'; } # Netzwerktraffic
 else { $event='cycle'; } # Zyklus
 
-# Konfigurationsfile einlesen
-my $eibd_backend_address='1.1.254';
-my %logic=();
-my %settings=();
-open FILE, "<$conf" || return "no config found";
-$/=undef;
-my $lines = <FILE>;
-$lines =~ s/((?:translate|\'translate\'|\"translate\")\s*=>\s*sub\s*\{)/$1 my \(\$state,\$input\)=\@\_;/sg; 
-$lines =~ s/((?:prowl|\'prowl\'|\"prowl\")\s*=>\s*sub\s*\{)/$1 my \(\%context\)=\@\_;my \(\$input,\$state,\$result\)=\(\$context{input},\$context{state},\$context{result}\);/sg; 
-close FILE;
-eval($lines);
-return "config error: $@" if $@;
-
-# Plugin-Code
+# Rueckgabewert des Plugins
 my $retval='';
 
 # Im Falle eines Timeouts soll der Logikprozessor in 10s neu gestartet werden
 $plugin_info{$plugname."_cycle"}=10;  
 
-# Unterscheidung Aufrufgrund
-if($event=~/restart|modified/ || $config_modified) 
+if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plugname}{logic}) 
 {
-    # alle Variablen loeschen
+    # eibpa.conf - falls existent - einlesen
+    my %eibpa=();
+
+    if(open EIBPA, "</etc/wiregate/eibpa.conf")
+    {
+	$/="\n";    
+	while(<EIBPA>)
+	{
+	    next unless /^(.*)\s+([0-9]+\.[0-9]+\.[0-9]+)\s*$/;
+	    
+	    $eibpa{$2}=$1;
+	    $eibpa{$1}=$2;
+	}
+	close EIBPA; 
+    }
+    $plugin_cache{$plugname}{eibpa}=\%eibpa;
+
+    my %logic=();
+    my %settings=();
+
+    # Konfigurationsfile einlesen
+    open CONFIG, "<$conf" || return "cannot open config";
+    $/=undef;
+    my $lines = <CONFIG>;
+    $lines =~ s/((?:translate|\'translate\'|\"translate\")\s*=>\s*sub\s*\{)/$1 my \(\$logname,\$state,\$ga,\$input,\$year,\$day_of_year,\$month,\$day_of_month,\$calendar_week,\$day_of_week,\$day_of_week_no,\$hour,\$minute,\$time_of_day,\$systemtime,\$weekend,\$weekday,\$holiday,\$workingday,\$day,\$night,\$date\)=\@\_;/sg;
+    $lines =~ s/((?:prowl|\'prowl\'|\"prowl\")\s*=>\s*sub\s*\{)/$1 my \(\%context\)=\@\_;my \(\$input,\$state,\$result\)=\(\$context{input},\$context{state},\$context{result}\);/sg; 
+    close CONFIG;
+    eval $lines;
+    return "config error: $@" if $@;
+
+    $logic{'_eibd_backend_address'}=$eibd_backend_address if !defined $logic{'_eibd_backend_address'} && defined $eibd_backend_address;
+
+    # bestimmte Variablen loeschen
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
-	next if $k=~/^$plugname\_last/;
+	next if $k=~m/^$plugname\_last/;
+	next unless $k=~m/$plugname\__(.*)_(timer|delay|cool|followup)/ && !defined $logic{$1}; 
 	delete $plugin_info{$k};
     }
 
-    $plugin_info{$plugname.'_configtime'}=$configtime;
-
+    # Konfiguration pruefen #######################################################
     my $count=0;
     my $err=0;
 
-    for my $t (keys %logic)
+    for my $t (grep !/^(debug$|_)/, keys %logic)
     {
-	next if $t eq 'debug' || $t=~/^_/;
-
 	# Debuggingflag gesetzt
 	my $debug = $logic{debug} || $logic{$t}{debug}; 
 
@@ -127,6 +143,12 @@ if($event=~/restart|modified/ || $config_modified)
 	    next;
 	}
 
+	if(defined $logic{$t}{trigger} && ref $logic{$t}{trigger} && ref $logic{$t}{trigger} ne 'ARRAY')
+	{
+	    plugin_log($plugname, "Config err: \$logic{$t}{trigger} ist weder Skalar noch ARRAY-Referenz ([ga1,ga2>=2,ga3==ANY,...]).");
+	    next;
+	}
+
 	if(defined $logic{$t}{state} && ref $logic{$t}{state} && ref $logic{$t}{state} ne 'HASH')
 	{
 	    plugin_log($plugname, "Config err: \$logic{$t}{state} ist weder Skalar noch HASH-Referenz ({...}).");
@@ -141,14 +163,99 @@ if($event=~/restart|modified/ || $config_modified)
 	    next; 
 	}
 
-	if(defined $logic{$t}{timer} && defined $logic{$t}{delay})
+	my @keywords=qw(receive fetch trigger transmit translate debug delay timer prowl eibd_cache reply_to_read_requests 
+                         ignore_read_requests transmit_only_on_request recalc_on_request state transmit_changes_only
+                         execute_on_input_changes_only cool rrd transmit_on_startup followup prowl execute_only_if_input_defined);
+	my $keywords="(".join("|",@keywords).")";
+
+	for my $k (keys %{$logic{$t}})
 	{
-	    plugin_log($plugname, "Config err: \$logic{$t}: delay und timer festgelegt, ignoriere delay");
+	    next if $k=~/^$keywords$/;
+	    plugin_log($plugname, "Config warn: \$logic{$t}, Eintrag '$k' wird ignoriert. Typo?");
+	}
+    }
+
+    # Korrektur der Flags reply_to_read_requests, damit nicht mehrere Logiken antworten...
+    my %responding=();
+
+    for my $t (grep !/^(debug$|_)/, keys %logic)
+    {
+	my $transmit=$logic{$t}{transmit};
+	next if !defined $transmit;
+
+	# Default ist nun, dass NICHT geantwortet wird
+	my $reply=$logic{$t}{reply_to_read_requests};
+	$reply = 1 if $logic{$t}{recalc_on_request} || $logic{$t}{transmit_only_on_request}; # macht ja nur so Sinn
+
+	# Flag ignore_read_requests ist veraltet, wird aber noch unterstuetzt
+	$reply=!$logic{$t}{ignore_read_requests} if !defined $reply && defined $logic{$t}{ignore_read_requests}; 
+
+	if($logic{$t}{ignore_read_requests})
+	{
+	    plugin_log($plugname, "Config warn: \$logic{$t} - Option ignore_read_requests ist veraltet (und nun per Default gesetzt).");
+	}
+	if($reply && $logic{$t}{ignore_read_requests})
+	{
+	    plugin_log($plugname, "Config err: \$logic{$t} hat sowohl reply_to_read_requests als auch ignore_read_requests gesetzt.");
+	    $reply=0;
+	}
+	if($reply && (!defined $transmit || ref $transmit))
+	{
+	    plugin_log($plugname, "Config warn: \$logic{$t}: reply_to_read_requests funktioniert nur bei GENAU EINER transmit-Adresse.");
+	    $reply=0;
 	}
 
-	my $transmit=$logic{$t}{transmit};
+	my $footnote="";
+	$footnote.="(T)" if $logic{$t}{transmit_only_on_request};
+	$footnote.="(R)" if $logic{$t}{recalc_on_request};
+
+	$logic{$t}{reply_to_read_requests}=$reply;
+	next unless $reply;
+
+	$transmit=[$transmit] unless ref $transmit;
+	for my $tx (@{$transmit})
+	{
+	    $responding{$tx}=[] unless defined $responding{$tx};
+	    push @{$responding{$tx}}, $t.$footnote;
+	}
+    }
+
+    my @problemgas=sort grep @{$responding{$_}}>1, keys %responding; # alle GAs mit mehr als einer antwortenden Logik
+
+    if(@problemgas)
+    {
+	my %changed=();
+
+	plugin_log($plugname, "Config warn: Lesezugriffe auf folgende transmit-Adressen werden von mehreren Logiken beantwortet:");
+	for my $ga (@problemgas)
+	{
+	    plugin_log($plugname, "$ga -> ".join(", ", @{$responding{$ga}}));
+	    my @change=sort grep !/\([TR]\)$/, @{$responding{$ga}};
+	    shift @change unless grep /\([TR]\)$/, @{$responding{$ga}}; # erste antwortende Logik mag noch ok sein...
+
+	    for my $t (@change)
+	    {
+		$logic{$t}{reply_to_read_requests}=0;
+		$changed{$t}=1;
+	    }
+	}
+
+	plugin_log($plugname, "(T) - transmit_only_on_request gesetzt");
+	plugin_log($plugname, "(R) - recalc_on_request gesetzt");
+	plugin_log($plugname, "Bei folgende Logiken wurde daher reply_to_read_requests=>0 gesetzt:");
+	plugin_log($plugname, join ", ", keys %changed);
+    }
+    # Ende Konfiguration pruefen #######################################################
+
+    # es folgt die eigentliche Initialisierung - abonnieren von GAs, Aufbau von Hilfsstrukturen
+    for my $t (grep !/^(debug$|_)/, keys %logic)
+    {
+	# Debuggingflag gesetzt
+	my $debug = $logic{debug} || $logic{$t}{debug}; 
 
 	# transmit-Adresse(n) abonnieren
+	my $transmit=$logic{$t}{transmit};
+
 	if(defined $transmit)
 	{
 	    $transmit=groupaddress $transmit;
@@ -161,26 +268,59 @@ if($event=~/restart|modified/ || $config_modified)
 		{
 		    if(defined $eibgaconf{$trm}{ga})
 		    {
-			$plugin_subscribe{$trm}{$plugname}=1;
+			if($logic{$t}{reply_to_read_requests})
+			{
+			    $plugin_subscribe_read{$trm}{$plugname}=1; 
+			    $plugin_subscribe_write{$trm}{$plugname}=1; 
+			    $logic{'__'.$trm}{$t}=1;
+			}
 		    }
 		    else
 		    {
-			plugin_log($plugname, "\$logic{$t}: Transmit-GA $trm nicht in %eibgaconf gefunden");
+			plugin_log($plugname, "\$logic{$t}: Transmit-GA $trm nicht in eibga.conf gefunden");
+#			plugin_log($plugname, join" ",@{$transmit});
 		    }
 		}
 	    }
 	}
 
-	# Timer-Logiken reagieren nicht auf Bustraffic auf den receive-Adressen
-	# fuer Timer-Logiken: ersten Call berechnen
-	if($logic{$t}{timer})
+	# trigger-Adresse(n) abonnieren
+	if(defined $logic{$t}{trigger})
 	{
-	    set_next_call($t, $debug);
+	    my $trigger=$logic{$t}{trigger};
+	    $trigger=[$trigger] unless ref $trigger eq 'ARRAY';
+	    my @trigcond = grep !/^(within\s*[0-9]+(?:m|min|h|s)?|all_in_order|any|all)$/, @{$trigger};
+
+	    my @doubles=();
+
+	    for my $cond (@trigcond)
+	    {
+		my ($trg,$op,$sval) = ($cond=~/^([^\s<=>!]*)(?:(==|\seq|\slt|\sgt|\sle|\sge|>|<|>=|<=|!=)(.+?))?$/);
+
+		if(defined $eibgaconf{$trg}{ga})
+		{
+		    $trg=groupaddress $trg;
+		    $plugin_subscribe_write{$trg}{$plugname}=1;    
+		    $logic{'__'.$trg}{$t}=1;
+		}
+		else
+		{
+		    plugin_log($plugname, "\$logic{$t}: Trigger-GA $trg nicht in eibga.conf gefunden");
+		    next;
+		}
+		
+		if($debug)
+		{
+		    my $qtrg=quotemeta $trg;
+		    push @doubles, $trg if grep /^$qtrg$/, @{$transmit};			
+		}
+	    }
+	    plugin_log($plugname, "\$logic{$t}: Moegliche Zirkellogik: ".(join",", @doubles)." ist Trigger- und Transmit-GA, und weder delay, cool noch transmit_only_on_request ist spezifiziert.") if $debug && @doubles && !defined $logic{$t}{cool} && !defined $logic{$t}{delay} && !defined $logic{$t}{transmit_only_on_request};
 	}
 
+	# Nun alle receive-Adressen abonnieren (eine oder mehrere)
 	my $receive=$logic{$t}{receive};
 
-	# Nun alle receive-Adressen abonnieren (eine oder mehrere)
 	if(defined $receive)
 	{
 	    $receive=groupaddress $receive;
@@ -194,11 +334,12 @@ if($event=~/restart|modified/ || $config_modified)
 		{
 		    if(defined $eibgaconf{$rec}{ga})
 		    {
-			$plugin_subscribe{$rec}{$plugname}=1;
+			$plugin_subscribe_write{$rec}{$plugname}=1;    
+			$logic{'__'.$rec}{$t}=1;
 		    }
 		    else
 		    {
-			plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in %eibgaconf gefunden");
+			plugin_log($plugname, "\$logic{$t}: Receive-GA $rec nicht in eibga.conf gefunden");
 		    }
 
 		    if($debug)
@@ -209,76 +350,115 @@ if($event=~/restart|modified/ || $config_modified)
 		}
 	    }
 
-	    plugin_log($plugname, "\$logic{$t}: Warnung: ".(join",", @doubles)." sowohl Receive- als auch Transmit-GA.") if $debug && @doubles;
+	    plugin_log($plugname, "\$logic{$t}: Moegliche Zirkellogik: ".(join",", @doubles)." ist Receive- und Transmit-GA, und weder delay, cool noch transmit_only_on_request ist spezifiziert.") if $debug && @doubles && !defined $logic{$t}{cool} && !defined $logic{$t}{delay} && !defined $logic{$t}{transmit_only_on_request};
 	}
 
-	# Zaehlen und Logeintrag
-	$count++;
-    }
-
-#    plugin_log($plugname, "Initialisierungsblock beendet");   
-
-    # ab hier wuerde uns ein Timeout nicht mehr so stark treffen...
-    for my $t (keys %logic)
-    {
-	next if $t eq 'debug' || $t=~/^_/;
-	next unless $logic{$t}{transmit_on_startup};
-
-	my $debug = $logic{debug} || $logic{$t}{debug}; 
-
-	# Berechnung und Senden beim Startup des Logikprozessors
-	my $result=execute_logic($t, undef, undef);	
-
-	if(defined $result && defined $logic{$t}{transmit})
+	# Zeitangaben in delay, cool und eibd_cache normalisieren
+	for my $opt (qw(delay cool eibd_cache))
 	{
-	    my $transmit=groupaddress $logic{$t}{transmit};
+	    if(defined $logic{$t}{$opt} && $logic{$t}{$opt}=~/^([0-9]*)(m|h|min|s)$/)
+	    {
+		my $val=$1; 
+		$val*=3600 if $2 eq 'h';
+		$val*=60 if $2 eq 'm' || $2 eq 'min';
+		$logic{$t}{$opt}=$val;
+	    }
+	}
 
-	    if($transmit)
-	    {	
-		$transmit=[$transmit] unless ref $transmit;
+        # Timer-Logiken reagieren idR nicht auf Bustraffic auf den receive-Adressen, stattdessen haben sie einen komplexen Timer-Eintrag, 
+	# der das Aufrufmuster festlegt. Dieses wird hier standardisiert fuer spaetere leichtere Auswertung: $logic->{$t}{timer} ist eine 
+	# Liste oder ein einzelner Eintrag. Jeder solche Eintrag ist ein Hash zB der Art
+	#    {day_of_month=>[(1..7)],day_of_week=>'Mo',time=>['08:30','09:20']}
+	# Das gerade genannte Beispiel bedeutet "jeden Monat jeweils der erster Montag, 8:30 oder 9:20". Verwendbare Klauseln sind:
+	#    year, month, day_of_month, calendar_week, day_of_week und time
+	# Pflichtfeld ist lediglich time, die anderen duerfen auch entfallen. Jeder Wert darf ein Einzelwert oder eine Liste sein.
 
-		for my $trm (@{$transmit})
+	if(defined $logic{$t}{timer})
+	{
+	    $logic{$t}{timer}=[$logic{$t}{timer}] if ref $logic{$t}{timer} eq 'HASH';
+	    
+	    for my $s (@{$logic{$t}{timer}})
+	    {
+                # Schedule-Form standardisieren (alle Eintraege in Listenform setzen und Wochentage durch Zahlen ersetzen)
+		standardize_and_expand_single_schedule($t,$s,$debug);
+	    }
+
+	    # fuer Timer-Logiken: ersten Call berechnen
+	    set_next_call('timer',$t,$logic{$t}{timer},$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,
+			  $hour,$minute,$time_of_day,$systemtime,$debug);
+	}
+
+	if(defined $logic{$t}{followup})
+	{
+	    my $followup=$logic{$t}{followup};
+
+	    for my $q (grep !/^debug$/, keys %{$followup})
+	    {
+		next unless ref $followup->{$q}; 
+		$followup->{$q}=[$followup->{$q}] if ref $followup->{$q} eq 'HASH';
+		
+		for my $s (@{$followup->{$q}})
 		{
-		    knx_write($trm, $result); # DPT aus eibga.conf		    
-		}
-
-		if($debug)
-		{
-		    if(ref $logic{$t}{transmit})
-		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet;  ";
-		    }
-		    else
-		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet;  ";
-		    }
+		    # Followup-Form standardisieren (alle Eintraege in Listenform setzen und Wochentage durch Zahlen ersetzen)
+		    standardize_and_expand_single_schedule($t,$s,$debug);
 		}
 	    }
 	}
-    }	    
+
+	# Zaehlen der erfolgreich eingetragenen Logiken
+	$count++;
+    }
+
+    $plugin_info{$plugname.'_configtime'}=$configtime;
+
+    # Alle Logiken im Cache speichern:
+    $plugin_cache{$plugname}{logic}=\%logic;
+    $plugin_cache{$plugname}{settings}=\%settings;
 
     $retval.=$count." initialisiert;  ";
 }
 
+# Falls das config-File nicht veraendert wurde, geht es hier eigentlich los... alle Logikdefinitionen stehen schon in %plugin_cache
+my $logic=$plugin_cache{$plugname}{logic};
+my $settings=$plugin_cache{$plugname}{settings};
+my $eibpa=$plugin_cache{$plugname}{eibpa};
+
+$eibd_backend_address=$logic->{'_eibd_backend_address'} if defined $logic->{'_eibd_backend_address'};
+
+# Alle Logiken mit transmit_on_startup=>1 als followup vormerken - dadurch kann uns ein Timeout nicht so sehr treffen...
+if($event=~/restart|modified/)
+{
+    for my $t (grep !/^(debug$|_)/, keys %{$logic})
+    {
+	next unless $logic->{$t}{transmit_on_startup};
+	followup({$t=>0});
+    }
+}
+
+# Aufruf durch Bustraffic (d.h. eine Logik wird durch receive=>..., trigger=>... oder auch transmit=>... auf einer GA "getroffen"
 if($event=~/bus/)
 {
     return $retval if $msg{apci} eq "A_GroupValue_Response";
 
     my $ga=$msg{dst};
     my $in=$msg{value};
+    $msg{sender}=$eibpa->{$msg{src}} if defined $eibpa->{$msg{src}};
+
     my $keep_subscription=0; # falls am Ende immer noch Null, die GA stornieren
 
     # welche translate-Logik ist aufgerufen?
-    for my $t (keys %logic)
+    for my $t (sort grep !/^(debug$|_)/, keys %{$logic->{'__'.$ga}})
     {
-	next if $t eq 'debug' || $t=~/^_/;
+	# Flags abfragen
+	my $reply=$logic->{$t}{reply_to_read_requests};
+	my $debug = $logic->{debug} || $logic->{$t}{debug}; 
 
-	my $transmit=groupaddress($logic{$t}{transmit});
+	# transmit hoert auf read- und write-Telegramme
+	my $transmit=groupaddress($logic->{$t}{transmit});
 	my $transmit_ga=0;
-
 	if(defined $transmit)
 	{
-	    unless(ref $logic{$t}{transmit})
+	    unless(ref $logic->{$t}{transmit})
 	    {
 		$transmit_ga=1 if $ga eq $transmit;
 		$transmit=[$transmit];
@@ -287,14 +467,69 @@ if($event=~/bus/)
 	    {
 		$transmit_ga=1 if grep /^$ga$/, @{$transmit};
 	    }
+	    $keep_subscription=1 if $transmit_ga;
+
+	    # Sonderfall: Read- und Write-Telegramme auf einer Transmit-Adresse
+	    # Diesen Sonderfall erstmal aus dem Weg raeumen...
+	    if($transmit_ga)
+	    {    
+		# Ein Read-Request auf einer Transmit-GA wird mit dem letzten Ergebnis beantwortet
+		# ausser recalc_on_request ist gesetzt, dann wird neu berechnet
+		if($msg{apci} eq "A_GroupValue_Read")
+		{  		
+		    next unless $reply;
+		    
+		    my $result=$plugin_info{$plugname.'__'.$t.'_result'};
+		    
+		    if(!defined $result || $logic->{$t}{recalc_on_request})
+		    {
+			# falls gespeichertes Ergebnis ungueltig, neuer Berechnungsversuch
+			$result=execute_logic($t,undef,undef,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date) 
+			    unless defined $logic->{$t}{recalc_on_request} && $logic->{$t}{recalc_on_request}==0;
+			
+			if(defined $result)
+			{
+			    $retval.="$ga:Lesetelegramm -> \$logic->{$t}{transmit}(Logik) -> $ga:$result gesendet;  " if $debug;
+			    knx_write($ga, $result, undef, 0x40) if defined $result; # response, DPT aus eibga.conf		    
+			    $plugin_info{$plugname.'__'.$t.'_result'}=$result; 
+			    last; # maximal eine Antwort auf ein read-Telegramm!
+			}
+			else
+			{
+			    $retval.="$ga:Lesetelegramm -> \$logic->{$t}{transmit}(Logik) -> nichts zu senden;  " if $debug;
+			}		   
+		    }	    
+		    elsif(defined $result)
+		    {
+			$retval.="$ga:Lesetelegramm -> \$logic->{$t}{transmit}(memory) -> $ga:$result gesendet;  " if $debug;
+			knx_write($ga, $result, undef, 0x40); # response, DPT aus eibga.conf		    
+			last; # maximal eine Antwort auf ein read-Telegramm!
+		    }
+		    else
+		    {
+			$retval.="$ga:Lesetelegramm -> \$logic->{$t}{transmit}(memory) -> nichts zu senden;  " if $debug;	           
+		    }
+		    
+		    next;
+		}
+		elsif($reply && !defined $plugin_info{$plugname.'__'.$t.'_delay'}) 
+		{
+		    # Speichern hat keinen Zweck, wenn wir spaeter sowieso nicht auf read-requests reagieren
+		    # oder wenn noch ein Delay-Timer laeuft! - dann ist das noch zu sendende Logikresultat gespeichert 
+		    # und darf nicht geaendert werden		    
+		    $plugin_info{$plugname.'__'.$t.'_result'}=$in if defined $in; 
+		}
+	    }
 	}
 
-	my $receive=groupaddress($logic{$t}{receive});
-	my $receive_ga=0; 
+	next unless $msg{apci} eq "A_GroupValue_Write" && defined $in;
+	# Wir wissen ab hier: Es liegt ein Write-Telegramm vor, kein Read- (oder Response-) Telegramm
 
-	if(defined $receive)
+	my $receive=groupaddress($logic->{$t}{receive});
+	my $receive_ga=0; 
+	if(defined $receive) 
 	{
-	    unless(ref $logic{$t}{receive})
+	    unless(ref $logic->{$t}{receive})
 	    {
 		$receive_ga=1 if $ga eq $receive;
 	    }
@@ -302,207 +537,308 @@ if($event=~/bus/)
 	    {
 		$receive_ga=1 if grep /^$ga$/, @{$receive};
 	    }
+
+	    if($receive_ga)
+	    {
+		$keep_subscription=1;
+		$retval.="$msg{src} $ga:$in -> \$logic->{$t}{receive}" if $debug;
+	    }
 	}
 
-	next unless $receive_ga || $transmit_ga; # diese Logik nicht anwendbar
-
-	$keep_subscription=1;
-
-	# Debuggingflag gesetzt
-	my $debug = $logic{debug} || $logic{$t}{debug}; 
-	my $ignore_read_requests=$logic{$t}{ignore_read_requests};
-
-	# bei mehreren transmit-Adressen per Default Read-Requests ignorieren (wird idR so erwuenscht sein)
-	$ignore_read_requests = ref $logic{$t}{transmit} && !$logic{$t}{recalc_on_request} && !$logic{$t}{transmit_only_on_request} 
-	  unless defined $ignore_read_requests;
-
-	# Sonderfall: Read- und Write-Telegramme auf einer Transmit-Adresse
-    	if($transmit_ga)
-	{    
-	    # Ein Read-Request auf einer Transmit-GA wird mit dem letzten Ergebnis beantwortet
-	    # ausser das Flag recalc_on_request ist gesetzt
-	    # Read-Requests auf die receive-Adressen werden gar nicht beantwortet
-	    if($msg{apci} eq "A_GroupValue_Read")
-	    {  
-		next if $ignore_read_requests;
-
-		my $result=$plugin_info{$plugname.'_'.$t.'_result'};
-
-		if(!defined $result || $logic{$t}{recalc_on_request})
+	my $trigger_ga=0;
+	if(!$receive_ga && defined $logic->{$t}{trigger}) 
+	{
+	    my $trigger=$logic->{$t}{trigger};
+	    
+	    $trigger=[$trigger] unless ref $trigger eq 'ARRAY';
+	    
+	    my $any=1;
+	    my $all=grep /^all$/i, @{$trigger};
+	    my $all_in_order=grep /^all_in_order$/i, @{$trigger};
+	    ($any,$all)=(0,0) if $all_in_order;
+	    $any=0 if $all;
+	    
+	    # Karenzzeit ("within") in Sekunden berechnen 
+	    my $within=60; 
+	    if($all || $all_in_order)
+	    {
+		my @within=grep /^within\s*([0-9]+)(h|min|m|s)?$/, @{$trigger};
+		$within=$1*(defined $2 ? ($2 eq 'h' ? 3600:(($2 eq 'min' || $2 eq 'm') ? 60:1)):1)
+		    if @within && $within[0]=~/^within\s*([0-9]+)(h|min|m|s)?$/;
+	    }
+	    
+	    my @trigcond = grep !/^(within\s*[0-9]+(?:m|min|h|s)?|all_in_order|any|all)$/, @{$trigger};
+	    
+	    for my $cond (@trigcond)
+	    {
+		my ($tga,$op,$sval) = ($cond=~/^\s*(.*?)\s*(?:(==|\seq|\slt|\sgt|\sle|\sge|>|<|>=|<=|!=)(.+?))?\s*$/);
+		$tga=groupaddress($tga);
+		
+		if($all || $all_in_order) # erfuellte Bedingungen loeschen, falls zu viel Zeit verstrichen
 		{
-		    # falls gespeichertes Ergebnis ungueltig, neuer Berechnungsversuch
-		    $result=execute_logic($t, undef, undef) 
-			unless defined $logic{$t}{recalc_on_request} && $logic{$t}{recalc_on_request}==0;
-
-		    if(defined $result)
-		    {
-			$retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(Logik) -> $ga:$result gesendet;  " if $debug;
-			knx_write($ga, $result, undef, 0x40) if defined $result; # response, DPT aus eibga.conf		    
-		    }
-		}	    
-		else
-		{
-		    $retval.="$ga:Lesetelegramm -> \$logic{$t}{transmit}(memory) -> $ga:$result gesendet;  " if $debug;
-		    knx_write($ga, $result, undef, 0x40); # response, DPT aus eibga.conf		    
+		    my $lasttime=$plugin_cache{$plugname}{triggercache}{$t}{$cond};
+		    delete $plugin_cache{$plugname}{triggercache}{$t}{$cond} if defined $lasttime && $systemtime-$lasttime>$within;
 		}
 		
-		next;
+		next unless $ga eq $tga;
+		
+		$keep_subscription=1;
+		$trigger_ga=1 unless $any;
+		
+		if($any && verify($in,$op,$sval)) # Fuer "any" wird hier gleich die Bedingung geprueft
+		{
+		    $trigger_ga=1;
+		}		
 	    }
-	    elsif(!$receive_ga) # Wenn eine GA sowohl in transmit als auch receive vorkommt, geht receive vor 
+	    
+	    my $retv=0;
+	    
+	    # Das Folgende wird nur ausgefuehrt, wenn all oder all_in_order spezifiziert wurde UND wir schon wissen,
+	    # dass eine der in trigger vorkommenden GAs vorliegt
+	    if($trigger_ga && !$any)
 	    {
-		next if $ignore_read_requests; # Speichern hat keinen Zweck, wenn wir spaeter sowieso nicht auf read-requests reagieren
-
-		if(defined $in) # Write/Response-Telegramm auf transmit: das waren moeglicherweise wir selbst, also nicht antworten
+		for my $cond (@trigcond)
 		{
-		    $plugin_info{$plugname.'_'.$t.'_result'}=$in; # einfach Input ablegen
+		    my ($tga,$op,$sval) = ($cond=~/^(.*?)(?:(==|\seq|\slt|\sgt|\sle|\sge|>|<|>=|<=|!=)(.+?))?$/);
+		    $tga=groupaddress($tga);
+		    $plugin_cache{$plugname}{triggercache}{$t}{$cond}=$systemtime if $ga eq $tga && verify($in,$op,$sval);
+		    
+		    if(defined $plugin_cache{$plugname}{triggercache}{$t}{$cond})
+		    {
+			if($debug)
+			{
+			    $retval.="$msg{src} $ga:$in -> \$logic->{$t}{trigger}(" unless $retv; 
+			    $retval.="," if $retv; 
+			    $retval.="$cond";
+			    $retv=1;
+			}
+		    }
+		    else
+		    {
+			$trigger_ga=0; # Bedingung nicht erfuellt -> trigger nicht faellig
+			last if $all_in_order; # fur "all_in_order" testen wir nicht weiter, fuer "all" schon...
+		    }
 		}
-		else
-		{
-		    delete $plugin_info{$plugname.'_'.$t.'_result'};
-		}
-		next;
+		delete $plugin_cache{$plugname}{triggercache}{$t} if $trigger_ga; # Reset aller Bedingungen	    
 	    }
+	    
+	    if($debug && $trigger_ga)
+	    {
+		$retval.="$msg{src} $ga:$in -> \$logic->{$t}{trigger}" unless $retv;		
+		$retval.=($retv?",":"(")."triggered" unless $any; 
+		$retv=1;
+	    }
+	    
+	    $retval.=")" if $retv && !$any;	    
 	}
 
-	next unless $msg{apci} eq "A_GroupValue_Write" && $receive_ga;
-	# Wir wissen ab hier: Es liegt ein Write-Telegramm auf einer der receive-Adressen vor
-
-	# Nebenbei berechnen wir noch zwei Flags, die Zirkelkommunikation verhindern sollen
-        # (Logik antwortet auf sich selbst in einer Endlosschleife)
+	next unless $receive_ga || $trigger_ga; 
+	# Wir wissen ab hier: Es liegt ein Write-Telegramm auf einer der receive-Adressen oder einer Trigger-Adresse vor
 
 	# Cool-Periode definiert und noch nicht abgelaufen?
 	if(defined $plugin_info{$plugname.'__'.$t.'_cool'} && $plugin_info{$plugname.'__'.$t.'_cool'}>time())
 	{
-	    $retval.="$ga:$in -> \$logic{$t}{receive}(Cool);  " if $debug;
+	    $retval.="(Cool) -> nichts zu senden;  " if $debug;
 	    next;
 	}
 
 	# Aufruf der Logik-Engine
-	my $prevResult=$plugin_info{$plugname.'_'.$t.'_result'};
-	my $result=execute_logic($t, $ga, $in);
+	my $prevResult=$plugin_info{$plugname.'__'.$t.'_result'};
+	my $result=execute_logic($t,$ga,$in,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date);
 
-        # war Wiregate der Sender des Telegramms?
-        # Zirkelaufruf mit wiederholt gleichen Ergebnissen ausschliessen
-	my $sender_is_wiregate = $msg{src} eq $eibd_backend_address; 
-	next if $sender_is_wiregate && $transmit_ga && $in == $result;
-
-	# In bestimmten Sonderfaellen nichts schicken
-	unless(defined $result) # Resultat undef => nichts senden
+	# In bestimmten Sonderfaellen nichts senden. Diese Sonderfaelle behandeln wir erstmal
+	if(!defined $transmit || !defined $result)	    
 	{
-	    $retval.="$ga:$in -> \$logic{$t}{receive}(Logik) -> nichts zu senden;  " if $debug;
-	    next;
-	}
-
-	if($logic{$t}{transmit_only_on_request})
-	{
-	    if($debug)
+	    $retval.="(Logik) -> nichts zu senden;  " if $debug;
+	    
+	    if($logic->{$t}{delay} && defined $plugin_info{$plugname.'__'.$t.'_delay'}) # Laufender Delay?
 	    {
-		if(ref $logic{$t}{transmit})
-		{
-		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gespeichert;  ";
-		}
-		else
-		{
-		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> ".$logic{$t}{transmit}.":$result gespeichert;  ";
-		}
+		$plugin_info{$plugname.'__'.$t.'_result'}=$prevResult; # altes Resultat wieder aufnehmen
 	    }
 	    next;
 	}
 
-        if($logic{$t}{transmit_changes_only} && ($result eq $prevResult)) 
+        # Ggf warnen vor Logiken, die aussehen wie Zirkel
+	plugin_log($plugname, "(circle logic?)") if $msg{src} eq $eibd_backend_address && $transmit_ga && $in==$result && $debug;
+
+	# Wir wissen nun: Die Logik hat ein Ergebnis gebracht (result ist definiert) und eine/mehrere transmit-GAs sind definiert
+
+	# In bestimmten Faellen wird dennoch nicht oder nicht sofort gesendet:
+	if($logic->{$t}{transmit_only_on_request})
 	{
-	    if($debug)
+	    if(ref $logic->{$t}{transmit})
 	    {
-		if(ref $logic{$t}{transmit})
+		$retval.="(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result gespeichert;  " if $debug;
+	    }
+	    else
+	    {
+		$retval.="(Logik) -> ".$logic->{$t}{transmit}.":$result gespeichert;  " if $debug;
+	    }
+	    next;
+	}
+	if($result eq 'cancel' && ($logic->{$t}{delay} || $logic->{$t}{followup}))
+	{
+	    if($logic->{$t}{delay} && defined $plugin_info{$plugname.'__'.$t.'_delay'})
+	    {
+		$plugin_info{$plugname.'__'.$t.'_result'}=$prevResult; # altes Resultat wieder aufnehmen
+
+		if($result eq 'cancel')
 		{
-		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result unveraendert -> nichts zu senden;  ";
+		    delete $plugin_info{$plugname.'__'.$t.'_delay'};
+		    $retval.="(Logik) -> wartender Delay-Timer geloescht;  " if $debug;
 		}
 		else
 		{
-		    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> ".$logic{$t}{transmit}.":$result unveraendert -> nichts zu senden;  ";
+		    $retval.=sprintf("(Logik) -> unveraendert, $prevResult wird in %.0f s gesendet;  ", $plugin_info{$plugname.'__'.$t.'_delay'}-time()) if $debug;
 		}
+	    }
+	    else
+	    {
+		$retval.="(Logik) -> nichts zu senden;  " if $debug;
+	    }
+
+	    # Followup durch andere Logik definiert? Dann in Timer-Liste eintragen	    
+	    if($result eq 'cancel' && defined $logic->{$t}{followup})
+	    {
+		my $followup=$logic->{$t}{followup};
+
+		for my $q (grep !/^debug$/, keys %{$followup})
+		{
+		    plugin_log($plugname, "Followup '$q' storniert.") 
+			if defined $plugin_info{$plugname.'__'.$q.'_followup'} && ($debug || $logic->{$q}{debug} || $followup->{debug});
+
+		    delete $plugin_info{$plugname.'__'.$q.'_followup'};
+		}
+	    }
+
+	    next;
+	}
+
+        if($logic->{$t}{transmit_changes_only} && ($result eq $prevResult)) 
+	{
+	    if(ref $logic->{$t}{transmit})
+	    {
+		$retval.="(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result unveraendert -> nichts zu senden;  " if $debug;
+	    }
+	    else
+	    {
+		$retval.="(Logik) -> ".$logic->{$t}{transmit}.":$result unveraendert -> nichts zu senden;  " if $debug;
 	    }
 	    next;
         }
 
 	# Falls delay spezifiziert, wird ein "Wecker" gestellt, um in einem spaeteren Aufruf den Wert zu senden
-	if($logic{$t}{delay})
+	if($logic->{$t}{delay})
 	{
-	    $plugin_info{$plugname.'__'.$t.'_timer'}=$systemtime+$logic{$t}{delay};
-	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{delay}+$logic{$t}{cool} if defined $logic{$t}{cool};
-	    $retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> delay ".$logic{$t}{delay}."s;  " if $debug;
-	}
-	else
-	{
-	    if(defined $result && defined $transmit)
+	    $plugin_info{$plugname.'__'.$t.'_delay'}=$systemtime+$logic->{$t}{delay};
+	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic->{$t}{delay}+$logic->{$t}{cool} if defined $logic->{$t}{cool};
+	    if($debug)
 	    {
-		for my $trm (@{$transmit})
+		if(ref $logic->{$t}{transmit})
 		{
-		    knx_write($trm, $result); # DPT aus eibga.conf		    
+		    $retval.="(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result wird in ".$logic->{$t}{delay}."s gesendet;  ";
 		}
-
-		if($debug)
+		else
 		{
-		    if(ref $logic{$t}{transmit})
-		    {
-			$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet;  ";
-		    }
-		    else
-		    {
-			$retval.="$msg{src} $ga:$in -> \$logic{$t}{receive}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet;  ";
-		    }
+		    $retval.="(Logik) -> ".$logic->{$t}{transmit}.":$result wird in ".$logic->{$t}{delay}."s gesendet;  ";
+		}
+	    }
+	}
+	else # sofort senden
+	{
+	    for my $trm (@{$transmit})
+	    {
+		knx_write($trm, $result); # DPT aus eibga.conf		    
+	    }
+
+	    update_rrd($logic->{$t}{rrd},'',$result) if defined $logic->{$t}{rrd};
+
+	    if($debug)
+	    {
+		if(ref $logic->{$t}{transmit})
+		{
+		    $retval.="(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result gesendet;  ";
+		}
+		else
+		{
+		    $retval.="(Logik) -> ".$logic->{$t}{transmit}.":$result gesendet;  ";
 		}
 	    }
 
 	    # Cool-Periode starten
-	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{cool} if defined $logic{$t}{cool};
+	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic->{$t}{cool} if defined $logic->{$t}{cool};
+
+	    # Followup durch andere Logik definiert? Dann in Timer-Liste eintragen	    
+	    if(defined $logic->{$t}{followup})
+	    {
+		set_followup($t,$logic->{$t}{followup},$year,$day_of_year,$month,$day_of_month,$calendar_week,
+			     $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
+	    }
 	}
     }
 
     unless($keep_subscription)
     {
 	delete $plugin_subscribe{$ga}{$plugname};
+	delete $plugin_subscribe_read{$ga}{$plugname};
+	delete $plugin_subscribe_write{$ga}{$plugname};
+	delete $logic->{'__'.$ga};
     }
 }
 
+# Ab hier gemeinsamer Code fuer Ausfuehrung auf Bustraffic hin, sowie "zyklische" Ausfuehrung (auf Timer/Followup/Delay hin).
+
 # Evtl. faellige Timer finden, gleichzeitig Timer fuer nachste Aktion setzen
 my $nexttimer=undef;
-for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
+for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_info) # alle Timer
 {
-    if(time()>=$plugin_info{$timer}) # Timer faellig? -> dann ausfuehren bzw. Resultat senden
+    my $scheduled_time=$plugin_info{$timer};
+
+    # Timer koennte IM LAUFE DIESER SCHLEIFE durch Logikausfuehrungen geloescht worden sein
+    next unless defined $scheduled_time; 
+
+    if(time()>=$scheduled_time) # Timer faellig? -> dann ausfuehren bzw. Resultat senden
     {
 	# Relevanten Eintrag von %logic ermitteln
-	$timer=~/$plugname\__(.*)_timer/;
+	$timer=~/$plugname\__(.*)_(timer|delay|followup|cool)/;
 	my $t=$1; 
+	my $reason=$2;
+
+	if($reason eq 'cool' || !defined $logic->{$t})
+	{
+	    delete $plugin_info{$timer};
+	    next;
+	}
 
 	# Debuggingflag gesetzt
-	my $debug = $logic{debug} || $logic{$t}{debug}; 
+	my $debug = $logic->{debug} || $logic->{$t}{debug}; 
 	
 	# Transmit-GA
-	my $toor=$logic{$t}{transmit_only_on_request};
-	my $result=undef;
-	my $reason='';
+	my $prevResult=$plugin_info{$plugname.'__'.$t.'_result'};
+	my $result=$prevResult; 
+	# zu sendendes Resultat ist bei delay einfach das zuletzt berechnete Ergebnis der Logik (delay)
 
-	unless($logic{$t}{timer})
+	# in anderen Faellen (timer-Logik) muss das Ergebnis erst durch Aufruf der Logik-Engine berechnet werden.
+	if($reason ne 'delay')
 	{
-	    # zu sendendes Resultat = zuletzt berechnetes Ergebnis der Logik (delay)
-	    $result=$plugin_info{$plugname.'_'.$t.'_result'};
-	    $reason='delayed';
-	}
-	else
-	{
-	    # ...es sei denn, es ist eine timer-Logik. Die muss jetzt ausgefuehrt werden
-	    # Aufruf der Logik-Engine
-	    $result=execute_logic($t, undef, undef);
-	    $reason='Timer';
+	    $result=execute_logic($t,undef,undef,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date);
 	}
 
 	# Timer loeschen bzw. neu setzen
-	set_next_call($t, $debug);
-
-	if(defined $result && !$toor && defined $logic{$t}{transmit})
+	if($reason eq 'timer')
 	{
-	    my $transmit=groupaddress $logic{$t}{transmit};
+	    set_next_call('timer',$t,$logic->{$t}{timer},$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,
+			  $hour,$minute,$time_of_day,$systemtime,$debug);
+	}
+	elsif($reason eq 'delay' || ($reason eq 'followup' && $plugin_info{$timer}==$scheduled_time)) # kein neus Followup
+	{
+	    delete $plugin_info{$timer};
+	}
+
+	if(defined $result && !$logic->{$t}{transmit_only_on_request} && defined $logic->{$t}{transmit} 
+	   && (!$logic->{$t}{transmit_changes_only} || $result ne $prevResult))
+	{
+	    my $transmit=groupaddress $logic->{$t}{transmit};
 
 	    if($transmit)
 	    {	
@@ -513,21 +849,45 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 		    knx_write($trm, $result); # DPT aus eibga.conf		    
 		}
 
+		update_rrd($logic->{$t}{rrd},'',$result) if defined $logic->{$t}{rrd};
+
 		if($debug)
 		{
-		    if(ref $logic{$t}{transmit})
+		    if(ref $logic->{$t}{transmit})
 		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> [".join(",",@{$logic{$t}{transmit}})."]:$result gesendet ($reason);  ";
+			$retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result gesendet ($reason);  ";
 		    }
 		    else
 		    {
-			$retval.="\$logic{$t}{transmit}(Logik) -> ".$logic{$t}{transmit}.":$result gesendet ($reason);  ";
+			$retval.="\$logic->{$t}{transmit}(Logik) -> ".$logic->{$t}{transmit}.":$result gesendet ($reason);  ";
 		    }
 		}
+
+		# Cool-Periode starten
+		$plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic->{$t}{cool} if defined $logic->{$t}{cool};
 	    }
 
-	    # Cool-Periode starten
-	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic{$t}{cool} if defined $logic{$t}{cool};
+	    # Followup durch andere Logik definiert? Dann in Timer-Liste eintragen	    
+	    if(defined $result && defined $logic->{$t}{followup})
+	    {
+		my $followup=$logic->{$t}{followup};
+
+		if($result eq 'cancel')
+		{
+		    for my $q (grep !/^(debug$|_)/, keys %{$followup})
+		    {
+			plugin_log($plugname, "Followup '$q' storniert.") 
+			    if defined $plugin_info{$plugname.'__'.$q.'_followup'} && ($debug || $logic->{$q}{debug} || $followup->{debug});
+			
+			delete $plugin_info{$plugname.'__'.$q.'_followup'};
+		    }
+		}
+		else
+		{
+		    set_followup($t,$followup,$year,$day_of_year,$month,$day_of_month,$calendar_week,
+		                 $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
+		}
+	    }
 	}
     }
     else # noch nicht faelliger Timer
@@ -538,18 +898,17 @@ for my $timer (grep /$plugname\__.*_timer/, keys %plugin_info) # alle Timer
 
 # Suche Timer-Logiken, bei denen aus irgendeinem Grund der naechste Aufruf noch nicht berechnet wurde,
 # bspw wegen eines Plugin-Timeouts waehrend der Berechnung
-for my $t (keys %logic)
+for my $t (grep defined $logic->{$_}{timer}, grep !/^(debug$|_)/, keys %{$logic})
 {
-    next if $t eq 'debug' || $t=~/^_/;
-    next unless defined $logic{$t}{timer};
-    
+    # bei Timer-Logiken muesste ja immer eine naechste Aufrufzeit vorgemerkt sein. Sehen wir mal nach:
     my $ttime=$plugin_info{$plugname.'__'.$t.'_timer'};
+    next if defined $ttime && $ttime>$systemtime; # alles in Ordnung
 
-    next if defined $ttime && $ttime>$systemtime;
+    plugin_log($plugname, "\$logic->{$t}: Timer verpasst, berechne erneut");
 
-    plugin_log($plugname, "\$logic{$t}: Timer in der Vergangenheit (".strftime("%D %X",$ttime)."<".strftime("%D %X",time()).", Delta ".($ttime-time())."), berechne erneut");
-
-    set_next_call($t, $logic{debug} || $logic{$t}{debug});
+    my $debug=$logic->{debug} || $logic->{$t}{debug};
+    set_next_call('timer',$t,$logic->{$t}{timer},$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,
+		  $hour,$minute,$time_of_day,$systemtime,$debug);
 }
 
 # Cycle auf naechsten Aufruf setzen
@@ -562,16 +921,13 @@ else
     my $cycle=int($plugin_info{$nexttimer}-time());
     $cycle=1 if $cycle<1;
     $plugin_info{$plugname."_cycle"}=$cycle;
-    if($logic{debug})
+    if($logic->{debug})
     {
-	$nexttimer=~s/^$plugname\__//;
-	$nexttimer=~s/_timer$//;    
-	$retval.="Naechster Timer: $nexttimer";
+	$nexttimer=~s/^$plugname\__(.*)_(timer|delay|followup)$/$1/;
+	$retval.="Naechster Timer/Delay/Followup: $nexttimer in $cycle s";
     }
 }
 
-# experimentell - wir helfen der Garbage Collection etwas nach...
-for my $k (keys %logic) { delete $logic{$k}; }
 return unless $retval;
 return $retval;
 
@@ -624,7 +980,7 @@ sub is_holiday
 
     # Feiertagstabelle als Tageszahl im Jahr (1=1.Januar, 32=1.Februar usw.): 1.1., 1.5., 3.10., 25./26.12. 
     # und die auf Ostern bezogenen Kirchenfeiertage: Karfreitag, Ostern (2x), Christi Himmelfahrt, Pfingsten (2x), Fronleichnam
-    my @holidays=(1,121+$leapyear,276+$leapyear,359+$leapyear,360+$leapyear,$J-2,$J,$J+39,$J+49,$J+50,$J+60);
+    my @holidays=(1,121+$leapyear,276+$leapyear,359+$leapyear,360+$leapyear,$J-2,$J,$J+1,$J+39,$J+49,$J+50,$J+60);
     
     return (grep { $_==$doy } @holidays) ? 1 : 0;
 }
@@ -665,7 +1021,7 @@ sub schedule_matches_day
 
 sub standardize_and_expand_single_schedule
 {
-    my ($t,$s)=@_;
+    my ($t,$s,$debug)=@_;
     my @days_in_month=(0,31,29,31,30,31,30,31,31,30,31,30,31); # hier ist jedes Jahr ein Schaltjahr
     my %weekday=(Mo=>1,Mo=>1,Mon=>1,Di=>2,Tu=>2,Tue=>2,Mi=>3,We=>3,Wed=>3,Do=>4,Th=>4,Thu=>4,Fr=>5,Fri=>5,Sa=>6,Sat=>6,So=>7,Su=>7,Sun=>7);
 
@@ -681,7 +1037,7 @@ sub standardize_and_expand_single_schedule
 	plugin_log($plugname, "Logiktimer zu Logik '$t' enthaelt mindestens einen Eintrag ohne Zeitangabe (time=>...)");
 	next;
     }	    
-    
+
     # Eintrag pruefen und standardisieren
     for my $k (keys %{$s})
     {
@@ -729,7 +1085,6 @@ sub standardize_and_expand_single_schedule
 		}		    
 	    }
 	    @{$s->{$k}} = sort @{$newlist};
-#		plugin_log($plugname, "\$logic{$t} Aufrufdaten $k: ".join " ", @{$s->{$k}});
 	} 
 	elsif($k eq 'date')
 	{
@@ -755,32 +1110,58 @@ sub standardize_and_expand_single_schedule
 		}
 	    }
 	    @{$s->{date}} = sort @{$newlist};
-#	    plugin_log($plugname, "\$logic{$t} Aufrufdaten date: ".join " ", @{$s->{date}});	
 	}
 	else
 	{
 	    @{$s->{$k}}=sort @{$s->{$k}}; # alle Listen sortieren
 	}
     }
+}
+
+
+# Fuer eine bestimmte Timer-Logik den naechsten Aufruf berechnen (relativ komplexes Problem wegen der 
+# vielen moeglichen Konfigurationen und Konstellationen)
+sub set_next_call
+{
+    # Typ (timer oder followup), der relevante Eintrag in %logic, Zeitangaben und das Debugflag
+    my ($type,$t,$schedule,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug)=@_; 
+    $type='timer' unless $type=~/^(timer|followup)$/;
+
+    my $now=int($hour)*60+$minute;
+    my $nowstring=sprintf("%02d:%02d",$hour,$minute);
+
+    # Das "Day-Hash" wird dazu verwendet, Tage zu finden, auf die die Timer-Spezifikation zutrifft
+    # Wir fangen dabei mit today, also heute, an.
+    my $today={year=>$year,day_of_year=>$day_of_year,month=>$month,day_of_month=>$day_of_month,
+	       calendar_week=>$calendar_week,day_of_week=>$day_of_week_no};
+    add_day_info($today);
     
-    # Zeitangabe im Tag
-    # Um Rechenzeit zu sparen - am Ende interessiert uns nur der erste Zeitpunkt am Tag und der erste nach der aktuellen Tageszeit
-    # - errechnen wir auch nur diese beiden Zeitpunkte
-    if(grep /\+/, @{$s->{time}}) 
+    # Suche den naechsten Aufruf dieser Logik
+    my $nextcall=undef;
+
+    # Zeitangabe im Tag. Am Ende interessiert uns (i) fuer den Fall, dass der naechste Aufruf morgen oder spaeter ist,
+    # nur der erste Aufruf der Logik am Tag, und (ii) fuer den Fall, dass der naechste Aufruf schon heute stattfindet,
+    # der erste Aufruf der Logik nach der aktuellen Tageszeit. Beides errechnen wir jetzt.
+    my %firsttime=();
+    for my $s (@{$schedule})
     {
-	my $newtime=[];
+	my $nexttime=undef;
+
 	for my $ts (@{$s->{time}})
 	{
+	    $ts=~s/(\-[0-9][0-9]:[0-9][0-9])(\+[1-9][0-9]*(?:m|h|min))$/$2$1/;
 	    unless($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])\+([1-9][0-9]*)(m|h|min)(?:\-([0-9][0-9]):([0-9][0-9]))?$/)
 	    {
 		# Einzelne Zeitangaben wie '07:30'
 		if($ts=~/^(.*?)([0-9][0-9]):([0-9][0-9])$/)
 		{
-		    push @{$newtime}, sprintf("%02d:%02d",$2, $3);
+		    my $ti=sprintf("%02d:%02d",$2, $3);
+		    $firsttime{$s}=$ti if !defined $firsttime{$s} || ($firsttime{$s} gt $ti);
+		    $nexttime=$ti if $ti gt $nowstring && (!defined $nexttime || $nexttime gt $ti);
 		}
 		else
 		{
-		    plugin_log($plugname, "Logiktimer zu Logik '$t': Unerlaubter time-Eintrag '$ts' (erlaubt sind Eintraege wie '14:05' oder '07:30+30m-14:30' oder '07:30+5m-08:00')");
+		    plugin_log($plugname, "Logik '$t': Unerlaubter time-Eintrag '$ts' in timer oder followup (erlaubt sind Eintraege wie '14:05' oder '07:30+30m-14:30' oder '07:30+5m-08:00')");
 		    next;
 		}
 	    }
@@ -790,78 +1171,34 @@ sub standardize_and_expand_single_schedule
 		# time=>'08:00+30min' - ab 08:00 alle 30min
 		# time=>'08:00+5min-09:00' - ab 08:00 alle 5min mit Ende 09:00
 		my ($head,$t1,$period,$t2)=($1,$2*60+$3,$4*($5 eq 'h' ? 60 : 1),(defined $6 ? ($6*60+$7) : 24*60));	    
-		my $now=int($hour)*60+$minute;
-	
+		
 		# erster Zeitpunkt am Tag
-		push @{$newtime}, sprintf("%02d:%02d",$t1/60,$t1%60);
-
+		my $ti=sprintf("%02d:%02d",$t1/60,$t1%60);
+		$firsttime{$s}=$ti if !defined $firsttime{$s} || ($firsttime{$s} gt $ti);
+		
 		# erster Zeitpunkt nach aktueller Tageszeit
-		if($t1<=$now && $t2>$now)
+		if($t1>$now)
+		{
+		    $nexttime=$ti if !defined $nexttime || $nexttime gt $ti;
+		}
+		elsif($t1<=$now && $t2>$now)
 		{
 		    $t1+=int(($now-$t1)/$period+1)*$period;
-		    push @{$newtime}, sprintf("%02d:%02d",$t1/60,$t1%60) if $t1<=$t2;
-		}
-		
-# alter Code: hier wurde noch jede Zeitangabe expandiert (rechenzeitintensiv bei Schedules mit kurzem Intervall)	
-#		for(my $tm=$t1; $tm<=$t2; $tm+=$period)
-#		{
-#		    push @{$newtime}, sprintf("%02d:%02d",$tm/60,$tm%60);
-#		}
+		    next if $t1>$t2;
+		    
+		    $ti=sprintf("%02d:%02d",$t1/60,$t1%60);
+		    $nexttime=$ti if !defined $nexttime || ($nexttime gt $ti);
+		}		
 	    }
 	}
-	@{$s->{time}} = sort @{$newtime};
-#	    plugin_log($plugname, "\$logic{$t} Aufrufzeiten: ".join " ", @{$newtime});
-    }
-}
-
-
-# Fuer eine bestimmte Timer-Logik den naechsten Aufruf berechnen (relativ komplexes Problem wegen der 
-# vielen moeglichen Konfigurationen und Konstellationen)
-sub set_next_call
-{
-    my ($t,$debug)=@_; # der relevante Eintrag in %logic, und das Debugflag
-    my $nextcall=undef;
-    my $days_until_nextcall=0;
-
-    # $logic{$t}{timer} ist eine Liste oder ein einzelner Eintrag
-    # jeder solche Eintrag ist ein Hash im Format 
-    # {day_of_month=>[(1..7)],day_of_week=>'Mo',time=>['08:30','09:20']}
-    # das gerade genannte Beispiel bedeutet "jeden Monat jeweils der erster Montag, 8:30 oder 9:20"
-    # verwendbare Klauseln sind year, month, day_of_month, calendar_week, day_of_week und time
-    # Pflichtfeld ist lediglich time, die anderen duerfen auch entfallen. 
-    # Jeder Wert darf ein Einzelwert oder eine Liste sein.
-    my $schedule=$logic{$t}{timer}; 
-
-#    return unless defined $schedule;
-
-    # Das "Day-Hash" wird dazu verwendet, Tage zu finden, auf die die Timer-Spezifikation zutrifft
-    # Wir fangen dabei mit today, also heute, an.
-    my $today={year=>$year,day_of_year=>$day_of_year,month=>$month,day_of_month=>$day_of_month,
-	       calendar_week=>$calendar_week,day_of_week=>$day_of_week_no};
-    add_day_info($today);
-
-    my $time_of_day=sprintf("%02d:%02d",$hour,$minute);
-
-    # Schedule-Form standardisieren (alle Eintraege in Listenform setzen und Wochentage durch Zahlen ersetzen)
-    # dabei gleich schauen, ob HEUTE noch ein Termin ansteht
-    $schedule=[$schedule] if ref $schedule eq 'HASH';
-
-    for my $s (@{$schedule})
-    {
-	standardize_and_expand_single_schedule($t,$s);
 
 	# Steht heute aus diesem Schedule noch ein Termin an?
-	next unless schedule_matches_day($s,$today) && $s->{time}[-1] gt $time_of_day;
-
-	# Heute steht tatsaechlich noch ein Termin an! Welcher ist der naechste? 
-	# Rueckwaerts durch die Liste $s->{time} suchen
-	my $nc=undef;
-	for(my $i=$#{$s->{time}}; $i>=0 && $s->{time}[$i] gt $time_of_day; $i--) { $nc=$s->{time}[$i]; }
-	$nextcall=$nc unless defined $nextcall && $nextcall lt $nc;
+	$nextcall=$nexttime if schedule_matches_day($s,$today) && defined $nexttime && (!defined $nextcall || $nextcall gt $nexttime);
     }
 
     # Wenn $nextcall hier bereits definiert, enthaelt es die naechste Aufrufzeit des Timers im Format "08:30"
     my $schedules_done=0; 
+    my $days_until_nextcall=0;
 
     # falls nextcall noch nicht definiert, geht es jetzt um den naechsten Tag mit Termin
     until($schedules_done || defined $nextcall || $days_until_nextcall>5000) # maximal ca. 15 Jahre suchen
@@ -876,7 +1213,7 @@ sub set_next_call
 	    next unless schedule_matches_day($s,$today);
 		
 	    # an diesem Tag gibt es einen Termin! Wann ist der erste?
-	    $nextcall=$s->{time}[0] unless defined $nextcall && $nextcall lt $s->{time}[0];	
+	    $nextcall=$firsttime{$s} if !defined $nextcall || $nextcall gt $firsttime{$s};	
 	}
     }
 
@@ -890,40 +1227,142 @@ sub set_next_call
 	if($nextcall=~/^([0-9]+)\:([0-9]+)/)
 	{
 	    my $seconds=3600*($1-substr($time_of_day,0,2))+60*($2-substr($time_of_day,3,2))-substr($time_of_day,6,2);
-	    plugin_log($plugname, "Naechster Aufruf der Timer-Logik '$t'$daytext um $nextcall.") if $debug;
+	    plugin_log($plugname, "Naechster Aufruf der $type-Logik '$t' $daytext um $nextcall.") if $debug;
 
 	    my $ttime=$systemtime+$seconds+3600*24*$days_until_nextcall;
-	    $plugin_info{$plugname.'__'.$t.'_timer'}=$ttime;
+	    $plugin_info{$plugname.'__'.$t.'_'.$type}=$ttime;
 	}
 	else
 	{
-	    plugin_log($plugname, "Ungueltige Uhrzeit des naechsten Aufrufs der Timer-Logik '$t'$daytext.");# if $debug;
+	    plugin_log($plugname, "Ungueltige Uhrzeit des naechsten Aufrufs der $type-Logik '$t'$daytext.");# if $debug;
+	    delete $plugin_info{$plugname.'__'.$t.'_'.$type};
 	}
     }
     else
     {
-	plugin_log($plugname, "Logik '$t' wird nicht mehr aufgerufen (alle in time=>... festgelegten Termine sind verstrichen).") 
-	    if $logic{$t}{timer};# && $debug;
+	plugin_log($plugname, "Logik '$t' wird von $type nicht mehr aufgerufen (alle in time=>... festgelegten Termine sind verstrichen).") 
+	    if @{$schedule} && $debug;
 
-	delete $plugin_info{$plugname.'__'.$t.'_timer'}; 
+	delete $plugin_info{$plugname.'__'.$t.'_'.$type}; 
     }
 }
+
+# Setzen eines Followup-Calls
+sub set_followup
+{
+    my ($t,$followup,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug)=@_;    my $logic=$plugin_cache{$plugname}{logic};
+    $t='?' unless defined $t;
+    
+    if($t ne '?' && !defined $logic->{$t})
+    {
+	plugin_log($plugname, "'followup' mit unbekannter Ausgangslogik '$t' aufgerufen.");
+    }
+    elsif(!ref $followup)
+    {
+	plugin_log($plugname, "\$logic->{$t}: Fehler in Followup-Definition. Korrekt sind Definitionen wie {'Logik1'=>'3s'} oder {'Logik1'=>{time=>'10:00'}}");
+    }
+    else
+    {
+	$debug=1 if $followup->{debug};
+	for my $q (grep !/^debug$/, keys %{$followup})
+	{	
+	    unless(defined $logic->{$q})
+	    {
+		plugin_log($plugname, "\$logic->{$t}: Followup-Definition verweist auf unbekannte Logik '$q'.");
+	    }
+	    else
+	    {
+		if(!ref $followup->{$q} && $followup->{$q}=~/^([0-9]*)(m|h|min|s)?$/)
+		{
+		    my $delay=$1; 
+		    $delay*=3600 if $2 eq 'h';
+		    $delay*=60 if $2 eq 'm' || $2 eq 'min';
+		    $delay=5 unless defined $delay;
+		    $plugin_info{$plugname.'__'.$q.'_followup'}=$systemtime+$delay;
+		}
+		elsif(!ref $followup->{$q})
+		{
+		    if($followup->{$q} eq 'cancel')
+		    {
+			plugin_log($plugname, "Followup '$q' storniert.") 
+			    if defined $plugin_info{$plugname.'__'.$q.'_followup'} && ($debug || $logic->{$q}{debug});
+		    }
+		    else
+		    {
+			plugin_log($plugname, "Followup-Anfrage fuer '$q' enthaelt '$followup->{$q}'. Korrekt sind Definitionen wie {'Logik1'=>'3s'} oder {'Logik1'=>{time=>'10:00'}}");
+		    }    
+		    delete $plugin_info{$plugname.'__'.$q.'_followup'};
+		}
+		else
+		{
+		    set_next_call('followup',$q,$followup->{$q},$year,$day_of_year,$month,$day_of_month,$calendar_week,
+				  $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,undef);
+		}
+
+		if(($debug || $logic->{$q}{debug}) && defined $plugin_info{$plugname.'__'.$q.'_followup'})
+		{
+		    my $delay=int($plugin_info{$plugname.'__'.$q.'_followup'}-$systemtime);
+		    plugin_log($plugname, "Followup '$q' folgt ".($delay>0 ? "in $delay s.":"sofort."));
+		}
+	    }
+	}
+    }
+}    
+
+# Fuer direkten Aufruf aus einer Logik
+sub followup
+{
+    my ($followup)=@_;
+    
+    my $date=strftime("%W,%a,%u,%m,%d,%Y,%j,%H,%M,%T",localtime);
+    plugin_log($plugname, "Datum/Uhrzeit nicht lesbar: '$date'.") unless ($date=~/^(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+),(.+)$/);
+
+    my $calendar_week=$1+1;
+    my $day_of_week=$2;
+    my $day_of_week_no=$3;
+    my $month=int($4);
+    my $day_of_month=int($5);
+    my $year=int($6);
+    my $day_of_year=int($7);
+    my $hour=int($8);
+    my $minute=int($9);
+    my $time_of_day=$10; # '08:30:43'
+    my $systemtime=time();
+    $date=sprintf("%02d/%02d",$month,$day_of_month);
+
+    # Falls timer-Definition enthalten, muss diese zunaechst standardisiert werden. 
+    for my $q (grep !/^debug$/, keys %{$followup})
+    {
+	next unless ref $followup->{$q};
+	$followup->{$q}=[$followup->{$q}] if ref $followup->{$q} eq 'HASH';
+		
+	for my $s (@{$followup->{$q}})
+	{
+	    standardize_and_expand_single_schedule('?',$s,$followup->{debug});
+	}
+    }
+
+    return set_followup(undef,$followup,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,$hour,$minute,$time_of_day,
+			$systemtime,$followup->{debug});
+}
+
 
 # Es folgt die eigentliche Logik-Engine 
 # Im wesentlichen Vorbesetzen von input und state, Aufrufen der Logik, knx_write, Zurueckschreiben von state
 sub execute_logic
 {
-    my ($t, $ga, $in)=@_; # Logikindex $t, Bustelegramm erhalten auf $ga mit Inhalt $in
+    my ($t,$ga,$in,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date)=@_; # Logikindex $t, Bustelegramm erhalten auf $ga mit Inhalt $in
+    my $logic=$plugin_cache{$plugname}{logic};
 
     # Debuggingflag gesetzt
-    my $debug = $logic{debug} || $logic{$t}{debug}; 
+    my $debug = $logic->{debug} || $logic->{$t}{debug}; 
     
     # als erstes definiere das Input-Array fuer die Logik
     my $input=$in;
 
     # alle receive-GAs
-    my $receive=groupaddress $logic{$t}{receive};
-    my $fetch=groupaddress $logic{$t}{fetch};
+    my $receive=groupaddress $logic->{$t}{receive};
+    my $fetch=groupaddress $logic->{$t}{fetch};
 
     if(defined $fetch)
     {
@@ -943,9 +1382,8 @@ sub execute_logic
     # Array-Fall: bereite Input-Array fuer Logik vor
     if(!ref $receive)
     {
-	# wenn ga gesetzt, steht der Input-Wert in $in
-	# wenn receive undefiniert, gibt es keine receive-GA
-	$in=$input=knx_read($receive, (defined $logic{$t}{eibd_cache}?$logic{$t}{eibd_cache}:300)) if !$ga && $receive;
+	$in=$input=knx_read($receive, (defined $logic->{$t}{eibd_cache}?$logic->{$t}{eibd_cache}:300)) 
+	    if defined $receive && (!defined $ga || $ga ne $receive);
     }
     else
     {
@@ -958,32 +1396,62 @@ sub execute_logic
 	    }
 	    else
 	    {
-		push @{$input}, knx_read($rec, (defined $logic{$t}{eibd_cache}?$logic{$t}{eibd_cache}:300));
+		my $val=knx_read($rec, (defined $logic->{$t}{eibd_cache}?$logic->{$t}{eibd_cache}:300));
+		push @{$input}, $val;
 	    }
 	}
     }
     
-    # ab hier liegt $input komplett vor, und nun muss die Logik ausgewertet 
-    # und das Resultat auf der Transmit-GA uebertragen werden
+    # Alle Inputs definiert?
+    if($logic->{$t}{execute_only_if_input_defined})
+    {
+	if(!ref $receive)
+	{
+	    return undef unless defined $input;
+	}
+	else
+	{
+	    for my $i (@{$input})
+	    {
+		return undef unless defined $i;
+	    }
+	}
+    }
+    
+    # ab hier liegt $input komplett vor. Ggf testen, ob Inhalte sich gaendert haben
+    if($logic->{$t}{execute_on_input_changes_only})
+    {	
+	my $inputstr=((!ref $receive) ? $input : join(";", @{$input})).";";
+
+	if(defined $plugin_cache{$plugname}{inputcache}{$t})
+	{
+	    return undef if $plugin_cache{$plugname}{inputcache}{$t} eq $inputstr;
+	}
+
+	$plugin_cache{$plugname}{inputcache}{$t}=$inputstr;
+    }
+
+    # N un muss die Logik ausgewertet und das Resultat auf der Transmit-GA uebertragen werden
     my $result=undef;
     my %prowlContext=();
+    my $timebefore=time();
     
-    unless(ref $logic{$t}{translate}) 
+    unless(ref $logic->{$t}{translate}) 
     {
 	# Trivialer Fall: translate enthaelt einen fixen Rueckgabewert
-	$plugin_info{$plugname.'_'.$t.'_result'}=$result=$logic{$t}{translate};
-	# prowlContext befüllen
+	$plugin_info{$plugname.'__'.$t.'_result'}=$result=$logic->{$t}{translate};
+	# prowlContext befuelen
 	$prowlContext{result}=$result;
 	$prowlContext{input}=$input;
     }
-    elsif(!ref $logic{$t}{state})
+    elsif(!ref $logic->{$t}{state})
     {
 	# Einfacher aber haeufiger Fall: skalarer $state
 	# $state mit Ergebnis des letzten Aufrufs vorbesetzen
-	my $state=$plugin_info{$plugname.'_'.$t.'_result'};
+	my $state=$plugin_info{$plugname.'__'.$t.'_result'};
 	
 	# Funktionsaufruf, das Ergebnis vom letzten Mal steht in $state
-	$result=$logic{$t}{translate}($state,$input);
+	$result=$logic->{$t}{translate}($t,$state,$ga,$input,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date);
 	
 	# prowlContext befüllen
 	$prowlContext{result}=$result;
@@ -993,28 +1461,28 @@ sub execute_logic
 	# Ergebnis des letzten Aufrufs zurueckschreiben
 	if(defined $result)
 	{
-	    $plugin_info{$plugname.'_'.$t.'_result'}=$result;
+	    $plugin_info{$plugname.'__'.$t.'_result'}=$result;
 	}
 	else
 	{
-	    delete $plugin_info{$plugname.'_'.$t.'_result'};
+	    delete $plugin_info{$plugname.'__'.$t.'_result'};
 	}
     }
     else
     {
 	# Komplexer Fall: $state-Hash aus %logic initialisieren
-	my $state=$logic{$t}{state};
+	my $state=$logic->{$t}{state};
 	my @vars=keys %{$state};
 	push @vars, 'result';
 	
 	# Nun die dynamischen Variablen aus plugin_info hinzufuegen
 	for my $v (@vars)
 	{
-	    $state->{$v}=$plugin_info{$plugname.'_'.$t.'_'.$v} if defined $plugin_info{$plugname.'_'.$t.'_'.$v};
+	    $state->{$v}=$plugin_info{$plugname.'__'.$t.'_'.$v} if defined $plugin_info{$plugname.'__'.$t.'_'.$v};
 	}
 	
 	# Funktionsaufruf, das Ergebnis vom letzten Mal steht in $state->{result}
-	$result=$state->{result}=$logic{$t}{translate}($state,$input);
+	$result=$state->{result}=$logic->{$t}{translate}($t,$state,$ga,$input,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date);
 
 	# prowlContext befüllen
 	$prowlContext{result}=$result;
@@ -1028,42 +1496,46 @@ sub execute_logic
 	{
 	    if(defined $state->{$v})
 	    {
-		$plugin_info{$plugname.'_'.$t.'_'.$v}=$state->{$v};
+		$plugin_info{$plugname.'__'.$t.'_'.$v}=$state->{$v};
 	    }
 	    else
 	    {
 		# wenn die Logik den Wert undef in eine state-Variable schreibt, 
 		# wird beim naechsten Aufruf wieder der Startwert aus %logic genommen,
-		delete $plugin_info{$plugname.'_'.$t.'_'.$v};
+		delete $plugin_info{$plugname.'__'.$t.'_'.$v};
 	    }
 	}
     }
     
     # Prowl-Nachrichten senden, falls definiert
-    if(defined $logic{$t}{prowl})
+    if(defined $logic->{$t}{prowl})
     {
         my %prowlParametersSource;
-        if (ref $logic{$t}{prowl}) {
-            %prowlParametersSource = %{$logic{$t}{prowl}} if (ref $logic{$t}{prowl} eq 'HASH');
-            %prowlParametersSource = $logic{$t}{prowl}(%prowlContext) if (ref $logic{$t}{prowl} eq 'CODE');
+        if (ref $logic->{$t}{prowl}) {
+            %prowlParametersSource = %{$logic->{$t}{prowl}} if (ref $logic->{$t}{prowl} eq 'HASH');
+            %prowlParametersSource = $logic->{$t}{prowl}(%prowlContext) if (ref $logic->{$t}{prowl} eq 'CODE');
         }
         else 
         {
-            %prowlParametersSource = ( event => $logic{$t}{prowl} );
+            %prowlParametersSource = ( event => $logic->{$t}{prowl} );
         }
         
-        if (defined %prowlParametersSource) {
+        if (%prowlParametersSource) {
             sendProwl((
                     debug => $debug,
-                    priority => $prowlParametersSource{priority} || $settings{prowl}{priority},
-                    event => $prowlParametersSource{event} || $settings{prowl}{event},
-                    description => $prowlParametersSource{description} || $settings{prowl}{description},
-                    application => $prowlParametersSource{application} || $settings{prowl}{application},
-                    url => $prowlParametersSource{url} || $settings{prowl}{url},
-                    apikey => $prowlParametersSource{url} || $settings{prowl}{apikey}
+                    priority => $prowlParametersSource{priority} || $settings->{prowl}{priority},
+                    event => $prowlParametersSource{event} || $settings->{prowl}{event},
+                    description => $prowlParametersSource{description} || $settings->{prowl}{description},
+                    application => $prowlParametersSource{application} || $settings->{prowl}{application},
+                    url => $prowlParametersSource{url} || $settings->{prowl}{url},
+                    apikey => $prowlParametersSource{url} || $settings->{prowl}{apikey}
                 ));
         }
     }
+
+    my $timeelapsed=time()-$timebefore;
+    
+    plugin_log($plugname, sprintf("WARNING: $t: time elapsed %0.2fs",$timeelapsed)) if $timeelapsed>0.5;
 
     return $result;
 }
@@ -1074,7 +1546,7 @@ sub groupaddress
 {
     my $short=shift;
 
-    return unless defined $short;
+    return undef unless defined $short;
 
     if(ref $short)
     {
@@ -1109,14 +1581,16 @@ sub sendProwl {
     my (%parameters)=@_;
     my ($priority, $event, $description, $application, $url, $apikey);
 
+    my $settings=$plugin_cache{$plugname}{settings};
+
     # Parameter ermitteln
     # dom, 2012-11-05: $settings auch hier auswerten. Damit kann sendProwl() direkt aus der Logik aufgerufen werden!
-    $priority = $parameters{priority} || $settings{prowl}{priority} || 0;
-    $event = $parameters{event} || $settings{prowl}{event} || '[unbenanntes Ereignis]';
-    $description = $parameters{description} || $settings{prowl}{description} || '';
-    $application = $parameters{application} || $settings{prowl}{application} || 'WireGate KNX';
-    $url = $parameters{url} || $settings{prowl}{url} || '';
-    $apikey = $parameters{apikey} || $settings{prowl}{apikey} || '';
+    $priority = $parameters{priority} || $settings->{prowl}{priority} || 0;
+    $event = $parameters{event} || $settings->{prowl}{event} || '[unbenanntes Ereignis]';
+    $description = $parameters{description} || $settings->{prowl}{description} || '';
+    $application = $parameters{application} || $settings->{prowl}{application} || 'WireGate KNX';
+    $url = $parameters{url} || $settings->{prowl}{url} || '';
+    $apikey = $parameters{apikey} || $settings->{prowl}{apikey} || '';
     
     use LWP::UserAgent;
     use URI::Escape;
@@ -1159,55 +1633,23 @@ sub sendProwl {
     return undef;
 }
 
-# das folgende ist eine modifizierte Version von knx_write fuer Logiken
-# dieses knx_write erlaubt es, Lesetelegramme abzusetzen, ohne auf die Antwort zu warten
-sub my_knx_write {
-    my ($dst,$value,$dpt,$acpi,$dbgmsg) = @_;
-    my $bytes;
-    my $apci = 0x80 unless defined $acpi; # 0x00=read, 0x40=response, 0x80=write
-    $dpt = $eibgaconf{$dst}{'DPTSubId'} unless $dpt; # read dpt from eibgaconf if existing
-    given ($dpt) {
-	when (/^10/) {
-            my %wd=(Mo=>1, Di=>2, Mi=>3, Do=>4, Fr=>5, Sa=>6, So=>7);
-            my $wdpat=join('|',keys %wd);
-            my ($w,$h,$m,$s);
-            return unless ($w,$h,$m,$s)=($value=~/^($wdpat)?\s*([0-2][0-9])\:([0-5][0-9])\:?([0-5][0-9])?\s*/si);
-            return unless defined $h && defined $m;
-            $w=$wd{$w} if defined $wd{$w};
-            $h+=($w<<5) if $w; 
-            $s=0 unless $s;
-            $bytes=pack("CCCCC",0,$apci,$h,$m,$s);
-	}
-	when (/^11/) {
-            my ($y,$m,$d);
-            return unless ($y,$m,$d)=($value=~/^([1-2][0-9][0-9][0-9])\-([0-1][0-9])\-([0-3][0-9])\s*/si);
-            return if $y<1990 || $y>=2090;
-            $y%=100;
-            $bytes=pack("CCCCC",0,$apci,$d,$m,$y);
-	}
-	when (/^12/)             { $bytes = pack ("CCL>", 0, $apci, $value); }  #EIS11.000/DPT12 (4 byte unsigned)
-	when (/^13/)             { $bytes = pack ("CCl>", 0, $apci, $value); }
-	when (/^14/)             { $bytes = pack ("CCf>", 0, $apci, $value); }
-	when (/^16/)             { $bytes = pack ("CCa14", 0, $apci, $value); }
-	when (/^17/)             { $bytes = pack ("CCC", 0, $apci, $value & 0x3F); }
-	when (/^20/)             { $bytes = pack ("CCC", 0, $apci, $value); }
-	when (/^\d\d/)           { return; } # other DPT XX 15 are unhandled
-	when (/^[1,2,3]/)        { $bytes = pack ("CC", 0, $apci | ($value & 0x3f)); } #send 6bit small
-	when (/^4/)              { $bytes = pack ("CCc", 0, $apci, ord($value)); } 
-	when ([5,5.001])         { $bytes = pack ("CCC", 0, $apci, encode_dpt5($value)); } #EIS 6/DPT5.001 1byte
-	when ([5.004,5.005,5.010]) { $bytes = pack ("CCC", 0, $apci, $value); }
-	when (/^5/)              { $bytes = pack ("CCC", 0, $apci, $value); }
-	when (/^6/)              { $bytes = pack ("CCc", 0, $apci, $value); }
-	when (/^7/)              { $bytes = pack ("CCS>", 0, $apci, $value); }
-	when (/^8/)              { $bytes = pack ("CCs>", 0, $apci, $value); } 
-	when (/^9/)              { $bytes = pack ("CCCC", 0, $apci, encode_dpt9($value)); } #EIS5/DPT9 2byte float 
-	default                  { LOGGER('WARN',"None or unsupported DPT: $dpt sent to $dst value $value"); return; }
-    }
-    plugin_log("knx_write","KNX write DPT $dpt: $value ($bytes) to $dst ($dbgmsg)") if ($knxdebug);
-    my $leibcon = EIBConnection->EIBSocketURL($eib_url) or return("Error opening con: $!");
-    if ($leibcon->EIBOpenT_Group(str2addr($dst),1) == -1) { return("Error opening group: $!"); } 
-    my $res=$leibcon->EIBSendAPDU($bytes);
-    $leibcon->EIBClose();
-    return $res;
-}
+sub verify
+{
+    my ($a,$op,$b)=@_;
 
+    return 1 if defined $a && (!defined $op || $b eq 'ANY');
+    return 1 if $op eq '==' && $a==$b;
+    return 1 if $op eq '<=' && $a<=$b;
+    return 1 if $op eq '>=' && $a>=$b;
+    return 1 if $op eq '!=' && $a!=$b;
+    return 1 if $op eq '<' && $a<$b;
+    return 1 if $op eq '>' && $a>$b;
+    return 1 if $op eq 'eq' && $a eq $b;
+    return 1 if $op eq 'lt' && $a lt $b;
+    return 1 if $op eq 'le' && $a le $b;
+    return 1 if $op eq 'gt' && $a gt $b;
+    return 1 if $op eq 'ge' && $a ge $b;
+    return 1 if $op eq 'ne' && $a ne $b;
+
+    return 0;
+}
