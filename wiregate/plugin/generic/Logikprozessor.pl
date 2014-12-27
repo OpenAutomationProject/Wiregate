@@ -75,6 +75,8 @@ $plugin_info{$plugname."_cycle"}=10;
 
 if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plugname}{logic}) 
 {
+    my $delim=$/; # wird spaeter zurueckgeschrieben
+
     # eibpa.conf - falls existent - einlesen
     my %eibpa=();
 
@@ -103,6 +105,8 @@ if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plu
     $lines =~ s/((?:prowl|\'prowl\'|\"prowl\")\s*=>\s*sub\s*\{)/$1 my \(\%context\)=\@\_;my \(\$input,\$state,\$result\)=\(\$context{input},\$context{state},\$context{result}\);/sg; 
     close CONFIG;
     eval $lines;
+    $/=$delim;
+
     return "config error: $@" if $@;
 
     $logic{'_eibd_backend_address'}=$eibd_backend_address if !defined $logic{'_eibd_backend_address'} && defined $eibd_backend_address;
