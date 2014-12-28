@@ -1,0 +1,113 @@
+#!/usr/bin/perl
+#
+# Konfiguration Heizungsregler ##########################################
+#
+%house=(  
+    cycle => 60,
+
+    # Anzahl der Datenpunkte fuer Trendberechnung
+    mindata => 30, 
+
+    inflow_control => 'TS_HE_Zentralvorlauf_Stellwert', # GA zum Setzen der Soll-Vorlauftemperatur
+    inflow_max => 55, # maximale Soll-Vorlauftemperatur
+
+    inflow => 'TO_HE_Zentralvorlauf2', # hausweite Vorlauftemp, falls nicht raumweise messbar
+    outflow => 'TO_HE_Zentralruecklauf', # hausweite Ruecklauftemp, falls nicht raumweise messbar
+    spread => 18, # hausweite Spreizung, falls alle Stricke reissen
+
+    heating => 'HS_Programm_Status', # Status der Therme 
+    heating_off => '1|5', # bei diesen Stati ist die Therme "AUS"
+
+    control_switch =>'HR_Global_Stellwert', # Heizungsregler an- und ausschalten
+    control_status =>'HR_Global_Status', # Status des Heizungsreglers abfragen
+
+    # RRDs der Ventilsteuerungswerte schreiben
+    rrd=>1,
+
+    # PID-Regelparameter fuer alle Raeume, die keine eigenen Parametersaetze (siehe ganz unten) definieren
+    # Falls diese Werte fehlen, wird als Standard (30, 30, 1, 1, 10) genommen
+
+    # Vorausblickende Zeit - D-Koeffizient
+    # groessere Werte sind aggressiver
+    Tv=>20, 
+    
+    # Nachstellzeit - I-Koeffizient, kleinere Werte sind aggressiver
+    # kleinere Werte sind aggressiver    
+    Tn=>50, 
+    
+    # maximaler Beitrag der I-Komponente zur Ventilstellung, verhindert "wind-up"-Effekt
+    # groessere Werte sind aggressiver
+    lim=>0.5, 
+
+    # Proportionalitaetsbereich (K) - Koeffizient vor allen drei (P, I, D)-Regelbeiträgen
+    # kleinere Werte sind aggressiver    
+    prop=>2.0, 
+
+    # alle obigen Koeffizienten (außer lim) beziehen sich auf diesen Referenzspread und werden fuer andere Spreads angepasst
+    # Es kommt im Endeffekt nur auf den Quotienten prop/refspread an!
+    # groessere Werte sind aggressiver
+    refspread=>20, 
+
+    # Definitionen der Raeume (Regelstrecken)
+    WZ  => { control=>'TS_WZ', optimize=>'TZ_WZ', reset=>'TR_WZ', sensor=>'TL_WZ_u_Galerie',
+	     circ=>{
+		 Nord => { actuator=>'VS_WZ_Nord', floor=>'TE_WZ_Nord' },	    
+		 West => { actuator=>'VS_WZ_West', floor=>'TE_WZ_Nord' },
+		 Sued => { actuator=>'VS_WZ_Sued', floor=>'TE_WZ_Nord' },
+	     },
+	     window => ['KF_WZ_Ost','KF_WZ_Sued_L','KF_WZ_Sued_R','KF_WZ_West_L','KF_WZ_West_R',
+			'KK_WZ_Ost','KK_WZ_Sued_L','KK_WZ_Sued_R','KK_WZ_West_L','KK_WZ_West_R',
+		        'VL_WZ_Kamin'], # Kamin als "virtuelles Fenster" realisiert, dies ist noch suboptimal!
+    },
+	
+    SZ  => { control=>'TS_SZ', optimize=>'TZ_SZ', reset=>'TR_SZ', sensor=>'TL_SZ_Waldfenster', #'TL_SZ_Ankleide'], 
+	     circ=>{ 
+		 Ankleide => {actuator=>'VS_SZ_Ankleide',floor=>'TE_SZ_Ankleide'}, 
+		 Mitte => {actuator=>'VS_SZ_Mitte',floor=>'TE_SZ_Mitte'},
+		 Kinderecke => {actuator=>'VS_SZ_Kinderecke'} 
+	     }, 
+	     window=>['KF_SZ_Ankleide','KF_SZ_Bett','KF_SZ_Wald_L','KF_SZ_Wald_R','KF_SZ_Dach',
+		      'KK_SZ_Ankleide','KK_SZ_Bett','KK_SZ_Wald_L','KK_SZ_Wald_R'], 
+    },
+
+    D1 => { control=>'TS_D1', optimize=>'TZ_D1', reset=>'TR_D1', sensor=>'TL_D1', actuator=>'VS_D1_Boden', floor=>'TE_D1', 
+	    window=>['KF_D1','KK_D1'] },
+
+    BA => { control=>'TS_BA', optimize=>'TZ_BA', reset=>'TR_BA', sensor=>'TL_BA', actuator=>'VS_BA_Boden', floor=>'TE_BA', 
+	    window=>['KF_BA_Wanne','KF_BA_Dusche_L','KF_BA_Dusche_R','KF_BA_West',
+		     'KK_BA_Wanne','KK_BA_Dusche_L','KK_BA_Dusche_R','KK_BA_West'] },
+
+    K1 => { control=>'TS_K1', optimize=>'TZ_K1', reset=>'TR_K1', sensor=>'TL_K1', actuator=>'VS_K1', floor=>'TE_K1', 
+	    window=>['KF_K1','KF_K1R','KK_K1'] },
+
+    K2 => { control=>'TS_K2', optimize=>'TZ_K2', reset=>'TR_K2', sensor=>'TL_K2', actuator=>'VS_K2', floor=>'TE_K2', 
+	    window=>['KF_K2','KF_K2R','KK_K2'] },
+
+    K3 => { control=>'TS_K3', optimize=>'TZ_K3', reset=>'TR_K3', sensor=>'TL_K3', actuator=>'VS_K3', floor=>'TE_K3', 
+	    window=>['KF_K3','KF_K3R','KK_K3'] },
+
+    E => { control=>'TS_E', optimize=>'TZ_E', reset=>'TR_E', sensor=>'TL_E', actuator=>'VS_E', floor=>'TE_E', 
+	   window=>['KF_E','KK_E'] },
+
+    F1 => { control=>'TS_F1', optimize=>'TZ_F1', reset=>'TR_F1', sensor=>'TL_F1', actuator=>'VS_F1', floor=>'TE_F1' },
+
+    HW => { control=>'TS_HW', optimize=>'TZ_HW', reset=>'TR_HW', sensor=>'TL_HW', actuator=>'VS_HW', floor=>'TE_HW', 
+	    window=>['KF_HW_L','KF_HW_R','KK_HW_L','KK_HW_R'] },
+
+    AZ => { control=>'TS_AZ', optimize=>'TZ_AZ', reset=>'TR_AZ', sensor=>'TL_AZ', actuator=>'VS_AZ', floor=>'TE_AZ', 
+	    window=>['KF_AZ_L','KF_AZ_R','KK_AZ_L','KK_AZ_R'] },
+
+    EK => { control=>'TS_EK', optimize=>'TZ_EK', reset=>'TR_EK', sensor=>'TL_EK', actuator=>'VS_EK', floor=>'TE_EK', 
+	    window=>['KF_EK_Herd_L','KF_EK_Herd_R','KF_EK_Ecke_L','KF_EK_Ecke_R',
+		     'KK_EK_Herd_L','KK_EK_Herd_R','KK_EK_Ecke_L','KK_EK_Ecke_R'] },
+
+    F2 => { control=>'TS_F2', optimize=>'TZ_F2', reset=>'TR_F2', sensor=>'TL_F2', actuator=>'VS_F2', floor=>'TE_F2', 
+	    window=>['KF_F2','KK_F2'] },
+
+    D2 => { control=>'TS_D2', optimize=>'TZ_D2', reset=>'TR_D2', sensor=>'TL_D2', actuator=>'VS_D2', floor=>'TE_D2', 
+	    window=>['KF_D2','KK_D2'] },
+);
+
+# Ende der Konfiguration ##################################
+
+#$house{D2}{pid}={Tn=>105.516082, Tv=>104.999158, date=>'2013-03-08 10:29:28',lim=>0.500000, prop=>0.143682, refspread=>14.332398, };
