@@ -110,8 +110,8 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # $workingday (=nicht $weekend und nicht $holiday), $time_of_day ("08:34:02"), 
     # $hour ("08"), $day (1 falls zwischen 7 und 23 Uhr, 0 sonst) und $night (entsprechend umgekehrt) 
     # sind für diese Logiken vorbesetzt (bitte nicht darauf schreiben, koennte unverhergesehene Auswirkungen 
-    # auf andere Logiken haben). $holiday beruecksichtigt dabei Neujahr, 1. Mai, 
-    # 3. Oktober, Weihnachten/Ostern/Pfingsten, Christi Himmelfahrt und Fronleichnam als Feiertage.
+    # auf andere Logiken haben). $holiday beruecksichtigt dabei Neujahr, 1. Mai, 3. Oktober, Weihnachten/Ostern/Pfingsten, 
+    # Christi Himmelfahrt und Fronleichnam und die unter %settings in Logikprozessor.conf angegebenen Tage als Feiertage.
 
     # 8. Eine einfache UND-Logik mit zwei Eingaengen. Falls ein Telegramm auf einer der beiden receive-GAs empfangen wird,
     # wird die andere Adresse noch ausgelesen, die Logik angewendet und das Ergebnis auf der transmit-GA uebermittelt
