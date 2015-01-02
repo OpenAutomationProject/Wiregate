@@ -15,7 +15,16 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
 	description => '',
 	url => ''
     },
+
     samurai => "https://user:pass\@samurai.sipgate.net/RPC2", 
+
+    # Hiermit erhaelt man die Moeglichkeit "persoenliche" Feiertage oder Ferien zu verwalten. Diese 
+    # wirken additiv zu den bereits vom Logikprozessor als allgemein angesehen Feiertage. Allgemeine 
+    # Feiertage sind unter Punkt 6 beschrieben.
+    # Die Variable enthaelt eine Liste von "Day-of-Year"-Zahlen, zb "2" entspricht dem zweiten Tag 
+    # des Jahres, also dem 02.01. des aktuellen Jahres. Die Angaben hier wirken sich auf $holiday 
+    # und $workingday aus.
+    holidays=>[364,365,2], 
 );
 
 %logic=(    
