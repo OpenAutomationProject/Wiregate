@@ -986,6 +986,10 @@ sub is_holiday
     # und die auf Ostern bezogenen Kirchenfeiertage: Karfreitag, Ostern (2x), Christi Himmelfahrt, Pfingsten (2x), Fronleichnam
     my @holidays=(1,121+$leapyear,276+$leapyear,359+$leapyear,360+$leapyear,$J-2,$J,$J+1,$J+39,$J+49,$J+50,$J+60);
     
+    # settings aus der .conf auslesen     
+    my $settings=$plugin_cache{$plugname}{settings};     
+    push @holidays, @{$settings->{holidays}} if defined $settings->{holidays};
+                    
     return (grep { $_==$doy } @holidays) ? 1 : 0;
 }
 
