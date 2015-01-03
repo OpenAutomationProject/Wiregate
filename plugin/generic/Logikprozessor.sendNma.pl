@@ -4,7 +4,19 @@
 ##################
 #
 # COMPILE_PLUGIN
-
+#
+# benoetigt einen Konfigurationseintrag in Logikprozessor.conf:
+# %settings=(
+#  nma => {
+#    apikey => "YOUR_API_KEY",
+#	 application => 'SmartHome Logikprozessor',
+#	 targetUrl => 'https://URL_TO_YOUR_VISU/cometvisu',
+#    url => 'http://www.notifymyandroid.com/publicapi/notify'
+#  }
+# );
+# 
+# weitere Erklaerungen: http://knx-user-forum.de/code-schnipsel/19912-neues-plugin-logikprozessor-pl-36.html#post384076
+#
 
 sub sendNma {
     my (%parameters)=@_;
