@@ -1,12 +1,22 @@
 #!/usr/bin/perl -w
 ##################
-# Logikprozessor AddOn: create RSS Log via HTTP::Request
+# Logikprozessor AddOn: create an RSS Log entry using curl; this is executed asynchronous to avoid performance problems 
+# that might occur using HTTP::Request
 ##################
 #
 # COMPILE_PLUGIN
+#
+# benoetigt einen Konfigurationseintrag in Logikprozessor.conf:
+# %settings=(
+#  rssLog => {
+#    url => 'http://wiregateXYZ/cometvisu/plugins/rsslog/rsslog.php' # URL to rsslog.php which writes the entry to the database
+#  }
+# );
+# 
+# weitere Erklaerungen: http://knx-user-forum.de/code-schnipsel/19912-neues-plugin-logikprozessor-pl-36.html#post384199
+#
 
-
-sub addRssLog {
+sub addRssLogViaCurl {
     my (%parameters)=@_;
     my ($title, $content, $tags, $url);
 
