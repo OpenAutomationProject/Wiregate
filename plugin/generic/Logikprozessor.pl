@@ -213,7 +213,14 @@ if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plu
 	$footnote.="(T)" if $logic{$t}{transmit_only_on_request};
 	$footnote.="(R)" if $logic{$t}{recalc_on_request};
 
-	$logic{$t}{reply_to_read_requests}=$reply;
+	if(defined $reply)
+	{
+	    $logic{$t}{reply_to_read_requests}=$reply;
+	}
+	else
+	{
+	    delete $logic{$t}{reply_to_read_requests};
+	}
 	next unless $reply;
 
 	$transmit=[$transmit] unless ref $transmit;
@@ -1102,7 +1109,7 @@ sub standardize_and_expand_single_schedule
 		if($ks=~/^([0-9]+)\/([0-9]+)\-([0-9]+)\/([0-9]+)$/)
 		{
 		    my ($m1,$d1,$m2,$d2)=($1,$2,$3,$4); 
-		    while($m1<$m2 || ($m1==$m2 && $d1<$d2))
+		    while($m1<$m2 || ($m1==$m2 && $d1<=$d2))
 		    {
 			push @{$newlist}, sprintf("%02d\/%02d",$m1,$d1);
 			if($d1==$days_in_month[$m1]) { $m1++; $d1=1; } else { $d1++; }
