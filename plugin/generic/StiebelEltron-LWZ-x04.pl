@@ -1,6 +1,6 @@
 ######################################################################################
 # Plugin StiebelEltron-LWZ-x04
-# V0.1 2014-09-13
+# V0.2 2015-01-11
 # Lizenz: GPLv2
 # Autor: krumboeck (http://knx-user-forum.de/members/krumboeck.html)
 #
@@ -17,6 +17,12 @@
 #
 # TIPP: Bevor sie eine Variable beschreiben, lesen sie diese bitte
 # ein und überprüfen sie die Korrektheit des Wertes.
+#
+# Changelog:
+# 2014-09-13  0.1  Initiale Version veröffentlicht
+# 2015-01-11  0.2  Unterstützung von negativen Temperatur Werten
+#                  Unterstützung von Gruppierten Werten
+#
 #
 ######################################################################################
 
@@ -188,7 +194,7 @@ push @definitions, { name => 'Heizkurve_Steigung', valueId => 0x01, valueSubId =
 push @definitions, { name => 'Raumeinfluss', valueId => 0x01, valueSubId => 0x0F,
 			writeTarget => 0x06, requestTarget => 0x06, responseTarget => 0x0D,
 			decimalFactor => 1, format => 'none', knxTyp => '7' };
-push @definitions, { name => 'Warmwasser_unbekannt', valueId => 0x01, valueSubId => 0x12,
+push @definitions, { name => 'Betriebsart', valueId => 0x01, valueSubId => 0x12,
 			writeTarget => 0x03, requestTarget => 0x03, responseTarget => 0x0D,
 			decimalFactor => 1, format => 'none', knxTyp => '7' };
 push @definitions, { name => 'Sommerbetrieb_Heizgrundeinstellung', valueId => 0x01, valueSubId => 0x16,
@@ -577,6 +583,25 @@ push @definitions, { name => 'Heizgrundeinstellung_Bivalenzpunkt', valueId => 0x
 			decimalFactor => 10, format => 'tenthDegree', knxTyp => '9.001' };
 
 
+my @combinations;
+push @combinations, { name => 'Wärmemenge_Heizen_Summe', def1 => 'Wärmemenge_Heizen_Summe_MWh', def2 => 'Wärmemenge_Heizen_Summe_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Solar_Heizung_Summe', def1 => 'Wärmemenge_Solar_Heizung_Summe_MWh', def2 => 'Wärmemenge_Solar_Heizung_Summe_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Nacherwärmung_Heizen_Summe', def1 => 'Wärmemenge_Nacherwärmung_Heizen_Summe_MWh', def2 => 'Wärmemenge_Nacherwärmung_Heizen_Summe_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Warmwasser_Summe', def1 => 'Wärmemenge_Warmwasser_Summe_MWh', def2 => 'Wärmemenge_Warmwasser_Summe_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Solar_Warmwasser_Summe', def1 => 'Wärmemenge_Solar_Warmwasser_Summe_MWh', def2 => 'Wärmemenge_Solar_Warmwasser_Summe_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Nacherwärmung_Warmwasser_Summe', def1 => 'Wärmemenge_Nacherwärmung_Warmwasser_Summe_MWh', def2 => 'Wärmemenge_Nacherwärmung_Warmwasser_Summe_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Kühlen_Summe', def1 => 'Wärmemenge_Kühlen_Summe_MWh', def2 => 'Wärmemenge_Kühlen_Summe_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Wärmerückgewinnung_Summe', def1 => 'Wärmemenge_Wärmerückgewinnung_Summe_MWh', def2 => 'Wärmemenge_Wärmerückgewinnung_Summe_KWh', knxTyp => '13.013' };
+
+push @combinations, { name => 'Wärmemenge_Heizen_Tag', def1 => 'Wärmemenge_Heizen_Tag_MWh', def2 => 'Wärmemenge_Heizen_Tag_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Solar_Heizung_Tag', def1 => 'Wärmemenge_Solar_Heizung_Tag_MWh', def2 => 'Wärmemenge_Solar_Heizung_Tag_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Nacherwärmung_Heizen_Tag', def1 => 'Wärmemenge_Nacherwärmung_Heizen_Tag_MWh', def2 => 'Wärmemenge_Nacherwärmung_Heizen_Tag_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Warmwasser_Tag', def1 => 'Wärmemenge_Warmwasser_Tag_MWh', def2 => 'Wärmemenge_Warmwasser_Tag_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Solar_Warmwasser_Tag', def1 => 'Wärmemenge_Solar_Warmwasser_Tag_MWh', def2 => 'Wärmemenge_Solar_Warmwasser_Tag_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Nacherwärmung_Warmwasser_Tag', def1 => 'Wärmemenge_Nacherwärmung_Warmwasser_Tag_MWh', def2 => 'Wärmemenge_Nacherwärmung_Warmwasser_Tag_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Kühlen_Tag', def1 => 'Wärmemenge_Kühlen_Tag_MWh', def2 => 'Wärmemenge_Kühlen_Tag_KWh', knxTyp => '13.013' };
+push @combinations, { name => 'Wärmemenge_Wärmerückgewinnung_Tag', def1 => 'Wärmemenge_Wärmerückgewinnung_Tag_MWh', def2 => 'Wärmemenge_Wärmerückgewinnung_Tag_KWh', knxTyp => '13.013' };
+
 
 my @mapped;
 my $interface = 'can0';
@@ -674,7 +699,7 @@ if ($event =~ /socket/) {
 } elsif ($event =~ /cycle/) {
 	foreach my $entry (@mapped) {
 		if ($entry->{cycle}) {
-			send_lwz_request($sc, $c, $canId, $entry);
+			send_lwz_request($sc, $c, $canId, $entry->{name}, $entry->{target});
 		}
 	}
 } elsif ($event =~ /restart|modified/) {
@@ -716,27 +741,35 @@ sub can_if_idx {
 }
 
 sub send_lwz_request {
-	my ($sock, $c, $id, $entry) = @_;
-	my $definition = get_definition($entry->{name});
-	if (defined $definition) {
-		plugin_log($plugname, 'Bearbeite: ' . $definition->{name});
-	} else {
-		plugin_log($plugname, 'Kann Definition nicht finden: ' . $entry->{name});
+	my ($sock, $c, $id, $name, $target) = @_;
+	my $definition = get_definition($name);
+
+	if (! defined $definition) {
+		my $combination = get_combination_definition($name);
+		if (defined $combination) {
+			send_lwz_request($sock, $c, $id, $combination->{def1}, $target);
+			send_lwz_request($sock, $c, $id, $combination->{def2}, $target);
+			return;
+		}
+		plugin_log($plugname, 'Kann Definition nicht finden: ' . $name);
+		return;
 	}
+
+	plugin_log($plugname, 'Bearbeite: ' . $definition->{name});
 	if ($definition->{requestTarget} == TARGET_SYSTEM) {
 		can_send($sock, $c, $id, [(TARGET_SYSTEM<<4) | TYPE_REQUEST, 0x00, 0xFA, $definition->{valueId}, $definition->{valueSubId}, 0x00, 0x00]);
 	} elsif ($definition->{requestTarget} == TARGET_HEIZKREIS) {
-		if (defined $entry->{target}) {
-			if ($entry->{target} == HEIZKREIS_1 || $entry->{target} == HEIZKREIS_2) {
-				can_send($sock, $c, $id, [(TARGET_HEIZKREIS<<4) | TYPE_REQUEST, $entry->{target}, 0xFA, $definition->{valueId}, $definition->{valueSubId}, 0x00, 0x00]);
+		if (defined $target) {
+			if ($target == HEIZKREIS_1 || $target == HEIZKREIS_2) {
+				can_send($sock, $c, $id, [(TARGET_HEIZKREIS<<4) | TYPE_REQUEST, $target, 0xFA, $definition->{valueId}, $definition->{valueSubId}, 0x00, 0x00]);
 			} else {
-				plugin_log($plugname, $entry->{name} . ': Attribut "target" enthält einen ungültigen Wert');
+				plugin_log($plugname, $name . ': Attribut "target" enthält einen ungültigen Wert');
 			}
 		} else {
-			plugin_log($plugname, $entry->{name} . ': Attribut "target" wird benötigt');
+			plugin_log($plugname, $name . ': Attribut "target" wird benötigt');
 		}
 	} else {
-		plugin_log($plugname, $entry->{name} . ': Request type noch nicht implementiert');
+		plugin_log($plugname, $name . ': Request type noch nicht implementiert');
 	}
 }
 
@@ -767,13 +800,44 @@ sub handle_response {
 				my $valueId = $data[3];
 				my $valueSubId = $data[4];
 				if (($source == SOURCE_SYSTEM || $source == SOURCE_HEIZKREIS) && $fix == 0xFA) {
-					my ($entry, $definition) = find_mapping($source, $subSource, $valueId, $valueSubId);
+					my ($entry, $combination, $definition) = find_combination_mapping($source, $subSource, $valueId, $valueSubId);
+					if (! defined $entry) {
+						($entry, $definition) = find_mapping($source, $subSource, $valueId, $valueSubId);
+					}
 					if (defined $entry) {
 						my $value = ($data[5] << 8) | $data[6];
 						my $convertedValue = convert_response_value($definition, $value);
 						if (defined $convertedValue) {
 							plugin_log($plugname, $entry->{name} . ': ' . $convertedValue);
-							knx_write($entry->{knxStatusGA}, $convertedValue, $definition->{knxTyp});		
+							if (defined $combination) {
+								my $currentTime = time();
+								saveCombinationValue($definition->{name}, $convertedValue, $currentTime);
+								my ($def1, $def2, $value1, $value2);
+								if ($combination->{def1} eq $definition->{name}) {
+									$def1 = $definition;
+									$value1 = $convertedValue;
+									$def2 = get_definition($combination->{def2});
+									$value2 = loadCombinationValue($combination->{def2}, $currentTime - 10);
+								} else {
+									$def2 = $definition;
+									$value2 = $convertedValue;
+									$def1 = get_definition($combination->{def1});
+									$value1 = loadCombinationValue($combination->{def1}, $currentTime - 10);
+								}
+								if (!defined $def1 || !defined $def2 || !defined $value1 || !defined $value2) {
+									return;
+								}
+								$value1 = convertValueToTargetTyp($value1, $def1->{knxTyp}, $combination->{knxTyp});
+								$value2 = convertValueToTargetTyp($value2, $def2->{knxTyp}, $combination->{knxTyp});
+								if (!defined $value1 || !defined $value2) {
+									dump_can_message('Kombinationswert konnte nicht in das richtige Format umgewandelt werden', $id, $dlc, \@data);
+									return;
+								}
+								$convertedValue = $value1 + $value2;
+								knx_write($entry->{knxStatusGA}, $convertedValue, $combination->{knxTyp});
+							} else {
+								knx_write($entry->{knxStatusGA}, $convertedValue, $definition->{knxTyp});
+							}		
 						} else {
 							dump_can_message('Wert konnte nicht verarbeitet werden', $id, $dlc, \@data);
 						}
@@ -809,8 +873,46 @@ sub find_mapping {
 	return (undef, undef);
 }
 
+sub find_combination_mapping {
+	my ($source, $subSource, $valueId, $valueSubId) = @_;
+	foreach my $entry (@mapped) {
+		my $combination = get_combination_definition($entry->{name});
+		
+		my $definition = get_definition($combination->{def1});
+		if ($valueId == $definition->{valueId} && $valueSubId == $definition->{valueSubId}) {
+			if ($source == SOURCE_SYSTEM) {
+				if ($subSource == 0x80) {
+					return ($entry, $combination, $definition);
+				}
+			} else {
+				if ($subSource == $entry->{target}) {
+					return ($entry, $combination, $definition);
+				}
+			}
+		}
+
+		$definition = get_definition($combination->{def2});
+		if ($valueId == $definition->{valueId} && $valueSubId == $definition->{valueSubId}) {
+			if ($source == SOURCE_SYSTEM) {
+				if ($subSource == 0x80) {
+					return ($entry, $combination, $definition);
+				}
+			} else {
+				if ($subSource == $entry->{target}) {
+					return ($entry, $combination, $definition);
+				}
+			}
+		}
+
+	}
+	return (undef, undef, undef);
+}
+
 sub convert_response_value {
 	my ($definition, $value) = @_;
+	if ($definition->{format} eq 'tenthDegree') {
+		$value -= 0x10000 if $value >= 0x8000;
+	}
 	if (defined $definition->{decimalFactor}) {
 		return $value / $definition->{decimalFactor};
 	} else {
@@ -820,6 +922,9 @@ sub convert_response_value {
 
 sub convert_to_lwz_value {
 	my ($definition, $value) = @_;
+	if ($definition->{format} eq 'tenthDegree') {
+		$value += 0x10000 if $value < 0;
+	}
 	if (defined $definition->{decimalFactor}) {
 		return $value * $definition->{decimalFactor};
 		my $value1 = (($value * $definition->{decimalFactor}) >> 8) & 0x00FF;
@@ -860,4 +965,50 @@ sub get_definition {
 		}
 	}
 	return undef;
+}
+
+sub get_combination_definition {
+	my ($name) = @_;
+	foreach my $combination (@combinations) {
+		if ($name eq $combination->{name}) {
+			return $combination;
+		}
+	}
+	return undef;
+}
+
+#####################################
+# Wert für Wertekombination speichern
+#####################################
+sub saveCombinationValue {
+	my ($name, $value, $time) = @_;
+	$plugin_info{$plugname . '_Combination_' . $name} = $time . ':' . $value;
+}
+
+
+#################################
+# Wert für Wertekombination laden
+#################################
+sub loadCombinationValue {
+	my ($name, $time) = @_;
+	my $loaded = $plugin_info{$plugname . '_Combination_' . $name};
+	my ($valueTime, $value) = split(':', $loaded, 2);
+	if ($valueTime >= $time) {
+		return $value;
+	} else {
+		return undef;
+	}
+}
+
+sub convertValueToTargetTyp {
+	my ($value, $typ, $targetTyp) = @_;
+	if ($typ eq $targetTyp) {
+		return $value;
+	} elsif ($typ eq '13.010' && $targetTyp eq '13.013') {
+		return $value / 1000;
+	} elsif ($typ eq '13.013' && $targetTyp eq '13.010') {
+		return $value * 1000;
+	} else {
+		return undef;
+	}
 }
