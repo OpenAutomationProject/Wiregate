@@ -15,16 +15,7 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
 	description => '',
 	url => ''
     },
-
     samurai => "https://user:pass\@samurai.sipgate.net/RPC2", 
-
-    # Hiermit erhaelt man die Moeglichkeit "persoenliche" Feiertage oder Ferien zu verwalten. Diese 
-    # wirken additiv zu den bereits vom Logikprozessor als allgemein angesehen Feiertage. Allgemeine 
-    # Feiertage sind unter Punkt 6 beschrieben.
-    # Die Variable enthaelt eine Liste von "Day-of-Year"-Zahlen, zb "2" entspricht dem zweiten Tag 
-    # des Jahres, also dem 02.01. des aktuellen Jahres. Die Angaben hier wirken sich auf $holiday 
-    # und $workingday aus.
-    holidays=>[364,365,2], 
 );
 
 %logic=(    
@@ -101,7 +92,9 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # spaeter auf ein explizites Lesetelegramm hin auf der transmit-Adresse sendet. 
     req => { receive=>'1/2/9', transmit=>'1/2/9', transmit_only_on_request=>1, translate => sub { 2*$input; }, },
 
-    # Uebrigens gibt es neben transmit_only_on_request auch transmit_on_startup und transmit_changes_only.
+    # Uebrigens gibt es neben transmit_only_on_request auch transmit_changes_only (nur neue Werte uebertragen).
+    # Ausserdem gibt es noch transmit_on_startup (bei Neustart des Daemons/Logikprozessors) und transmit_on_config (bei 
+    # Neukonfiguration des Logikprozessors)
 
     # 6. Eine Logik, die einem Lichtanschalten gleich einen Dimmwert hinterherfeuert, und zwar tags und nachts einen verschiedenen:
     dim => { receive=>'2/2/9', transmit=>'2/3/9', translate => sub { return unless $input; $day ? 80 : 3; } },
@@ -110,8 +103,8 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # $workingday (=nicht $weekend und nicht $holiday), $time_of_day ("08:34:02"), 
     # $hour ("08"), $day (1 falls zwischen 7 und 23 Uhr, 0 sonst) und $night (entsprechend umgekehrt) 
     # sind für diese Logiken vorbesetzt (bitte nicht darauf schreiben, koennte unverhergesehene Auswirkungen 
-    # auf andere Logiken haben). $holiday beruecksichtigt dabei Neujahr, 1. Mai, 3. Oktober, Weihnachten/Ostern/Pfingsten, 
-    # Christi Himmelfahrt und Fronleichnam und die unter %settings in Logikprozessor.conf angegebenen Tage als Feiertage.
+    # auf andere Logiken haben). $holiday beruecksichtigt dabei Neujahr, 1. Mai, 
+    # 3. Oktober, Weihnachten/Ostern/Pfingsten, Christi Himmelfahrt und Fronleichnam als Feiertage.
 
     # 8. Eine einfache UND-Logik mit zwei Eingaengen. Falls ein Telegramm auf einer der beiden receive-GAs empfangen wird,
     # wird die andere Adresse noch ausgelesen, die Logik angewendet und das Ergebnis auf der transmit-GA uebermittelt
