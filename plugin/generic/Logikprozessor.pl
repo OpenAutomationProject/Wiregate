@@ -169,7 +169,7 @@ if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plu
 
 	my @keywords=qw(receive fetch trigger transmit translate debug delay timer prowl eibd_cache reply_to_read_requests 
                          ignore_read_requests transmit_only_on_request recalc_on_request state transmit_changes_only
-                         execute_on_input_changes_only cool rrd transmit_on_startup followup prowl execute_only_if_input_defined);
+                         execute_on_input_changes_only cool rrd transmit_on_startup transmit_on_config followup prowl execute_only_if_input_defined);
 	my $keywords="(".join("|",@keywords).")";
 
 	for my $k (keys %{$logic{$t}})
@@ -441,8 +441,16 @@ if($event=~/restart|modified/)
 {
     for my $t (grep !/^(debug$|_)/, keys %{$logic})
     {
-	next unless $logic->{$t}{transmit_on_startup};
-	followup({$t=>0});
+	followup({$t=>0}) if $logic->{$t}{transmit_on_startup};
+    }
+}
+
+# Das Gleiche fuer transmit_on_config
+if($config_modified)
+{
+    for my $t (grep !/^(debug$|_)/, keys %{$logic})
+    {
+	followup({$t=>0}) if $logic->{$t}{transmit_on_config};
     }
 }
 
