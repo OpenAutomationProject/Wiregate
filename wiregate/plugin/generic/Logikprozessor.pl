@@ -673,6 +673,7 @@ if($event=~/bus/)
 	    if($logic->{$t}{delay} && defined $plugin_info{$plugname.'__'.$t.'_delay'}) # Laufender Delay?
 	    {
 		$plugin_info{$plugname.'__'.$t.'_result'}=$prevResult; # altes Resultat wieder aufnehmen
+		$retval.=sprintf("(Logik) -> unveraendert, $prevResult wird in %.0f s gesendet;  ", $plugin_info{$plugname.'__'.$t.'_delay'}-time()) if $debug;
 	    }
 	    next;
 	}
@@ -700,16 +701,8 @@ if($event=~/bus/)
 	    if($logic->{$t}{delay} && defined $plugin_info{$plugname.'__'.$t.'_delay'})
 	    {
 		$plugin_info{$plugname.'__'.$t.'_result'}=$prevResult; # altes Resultat wieder aufnehmen
-
-		if($result eq 'cancel')
-		{
-		    delete $plugin_info{$plugname.'__'.$t.'_delay'};
-		    $retval.="(Logik) -> wartender Delay-Timer geloescht;  " if $debug;
-		}
-		else
-		{
-		    $retval.=sprintf("(Logik) -> unveraendert, $prevResult wird in %.0f s gesendet;  ", $plugin_info{$plugname.'__'.$t.'_delay'}-time()) if $debug;
-		}
+		delete $plugin_info{$plugname.'__'.$t.'_delay'};
+		$retval.="(Logik) -> wartender Delay-Timer geloescht;  " if $debug;
 	    }
 	    else
 	    {
@@ -717,7 +710,7 @@ if($event=~/bus/)
 	    }
 
 	    # Followup durch andere Logik definiert? Dann in Timer-Liste eintragen	    
-	    if($result eq 'cancel' && defined $logic->{$t}{followup})
+	    if($logic->{$t}{followup})
 	    {
 		my $followup=$logic->{$t}{followup};
 
@@ -849,7 +842,7 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 	    set_next_call('timer',$t,$logic->{$t}{timer},$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,
 			  $hour,$minute,$time_of_day,$systemtime,$debug);
 	}
-	elsif($reason eq 'delay' || ($reason eq 'followup' && $plugin_info{$timer}==$scheduled_time)) # kein neus Followup
+	elsif($reason eq 'delay' || ($reason eq 'followup' && $plugin_info{$timer}==$scheduled_time)) # kein neues Followup
 	{
 	    delete $plugin_info{$timer};
 	}
@@ -859,7 +852,7 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 	{
 	    my $transmit=groupaddress $logic->{$t}{transmit};
 
-	    if($transmit)
+	    if($transmit && $result ne 'cancel')
 	    {	
 		$transmit=[$transmit] unless ref $transmit;
 
@@ -887,25 +880,33 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 	    }
 
 	    # Followup durch andere Logik definiert? Dann in Timer-Liste eintragen	    
-	    if(defined $result && defined $logic->{$t}{followup})
+	    if($result eq 'cancel')
 	    {
-		my $followup=$logic->{$t}{followup};
-
-		if($result eq 'cancel')
+		if($logic->{$t}{followup})
 		{
+		    my $followup=$logic->{$t}{followup};
+		
 		    for my $q (grep !/^(debug$|_)/, keys %{$followup})
 		    {
 			plugin_log($plugname, "Followup '$q' storniert.") 
-			    if defined $plugin_info{$plugname.'__'.$q.'_followup'} && ($debug || $logic->{$q}{debug} || $followup->{debug});
-			
+			    if defined $plugin_info{$plugname.'__'.$q.'_followup'} && ($debug || $logic->{$q}{debug} || $followup->{debug});	
 			delete $plugin_info{$plugname.'__'.$q.'_followup'};
+			$retval.="(Logik) -> wartender Followup-Timer geloescht;  " if $debug;
 		    }
 		}
-		else
+
+		if(defined $plugin_info{$plugname.'__'.$t.'_delay'})
 		{
-		    set_followup($t,$followup,$year,$day_of_year,$month,$day_of_month,$calendar_week,
-		                 $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
+		    $plugin_info{$plugname.'__'.$t.'_result'}=$prevResult; # altes Resultat wieder aufnehmen
+		    delete $plugin_info{$plugname.'__'.$t.'_delay'};
+		    $retval.="(Logik) -> wartender Delay-Timer geloescht;  " if $debug;
 		}
+	    }
+	    elsif(defined $result && $logic->{$t}{followup})
+	    {
+		my $followup=$logic->{$t}{followup};
+		set_followup($t,$followup,$year,$day_of_year,$month,$day_of_month,$calendar_week,
+			     $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
 	    }
 	}
     }
