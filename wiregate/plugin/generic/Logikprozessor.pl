@@ -466,10 +466,11 @@ if($event=~/bus/)
     my $keep_subscription=0; # falls am Ende immer noch Null, die GA stornieren
 
     # welche translate-Logik ist aufgerufen?
+    my $timebefore=undef;
     for my $t (sort grep !/^(debug$|_)/, keys %{$logic->{'__'.$ga}})
     {
-	# Flags abfragen
-	my $reply=$logic->{$t}{reply_to_read_requests};
+	$timebefore=time();
+    
 	my $debug = $logic->{debug} || $logic->{$t}{debug}; 
 
 	# transmit hoert auf read- und write-Telegramme
@@ -496,8 +497,8 @@ if($event=~/bus/)
 		# ausser recalc_on_request ist gesetzt, dann wird neu berechnet
 		if($msg{apci} eq "A_GroupValue_Read")
 		{  		
-		    next unless $reply;
-		    
+		    next unless $logic->{$t}{reply_to_read_requests};
+
 		    my $result=$plugin_info{$plugname.'__'.$t.'_result'};
 		    
 		    if(!defined $result || $logic->{$t}{recalc_on_request})
@@ -531,12 +532,11 @@ if($event=~/bus/)
 		    
 		    next;
 		}
-		elsif($reply && !defined $plugin_info{$plugname.'__'.$t.'_delay'}) 
+		elsif(defined $in && !defined $plugin_info{$plugname.'__'.$t.'_delay'}) # Speichern ist verboten, wenn noch ein Delay-Timer laeuft!
 		{
-		    # Speichern hat keinen Zweck, wenn wir spaeter sowieso nicht auf read-requests reagieren
-		    # oder wenn noch ein Delay-Timer laeuft! - dann ist das noch zu sendende Logikresultat gespeichert 
-		    # und darf nicht geaendert werden		    
-		    $plugin_info{$plugname.'__'.$t.'_result'}=$in if defined $in; 
+		    # Speichern hat keinen Sinn, wenn wir diese Info spaeter niemals brauchen.
+		    $plugin_info{$plugname.'__'.$t.'_result'}=$in 
+			if $logic->{$t}{reply_to_read_requests} || $logic->{$t}{reply_to_read_requests}; 
 		}
 	    }
 	}
@@ -675,6 +675,15 @@ if($event=~/bus/)
 		$plugin_info{$plugname.'__'.$t.'_result'}=$prevResult; # altes Resultat wieder aufnehmen
 		$retval.=sprintf("(Logik) -> unveraendert, $prevResult wird in %.0f s gesendet;  ", $plugin_info{$plugname.'__'.$t.'_delay'}-time()) if $debug;
 	    }
+
+	    # Followup definiert, aber keine transmit-Adresse definiert? Dann followup ausloesen 
+	    # (mit transmit-Adresse geschieht das nur, wenn auch was gesendet wurde)
+	    if(!defined $transmit && defined $logic->{$t}{followup})
+	    {
+		set_followup($t,$logic->{$t}{followup},$year,$day_of_year,$month,$day_of_month,$calendar_week,
+			     $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
+	    }
+
 	    next;
 	}
 
@@ -780,13 +789,18 @@ if($event=~/bus/)
 	    # Cool-Periode starten
 	    $plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic->{$t}{cool} if defined $logic->{$t}{cool};
 
-	    # Followup durch andere Logik definiert? Dann in Timer-Liste eintragen	    
+	    # Followup definiert? Dann in Timer-Liste eintragen	    
 	    if(defined $logic->{$t}{followup})
 	    {
 		set_followup($t,$logic->{$t}{followup},$year,$day_of_year,$month,$day_of_month,$calendar_week,
 			     $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
 	    }
 	}
+    }
+    continue
+    {
+	my $deadtime=time()-$timebefore;
+	plugin_log("$plugname $t",sprintf("logic took %.1fs (bus)",$deadtime)) if $deadtime>0.5;
     }
 
     unless($keep_subscription)
@@ -821,6 +835,8 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 	    delete $plugin_info{$timer};
 	    next;
 	}
+
+	my $timebefore=time();
 
 	# Debuggingflag gesetzt
 	my $debug = $logic->{debug} || $logic->{$t}{debug}; 
@@ -909,6 +925,9 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 			     $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
 	    }
 	}
+
+	my $deadtime=time()-$timebefore;
+	plugin_log("$plugname $t",sprintf("logic took %.1fs (timer)",$deadtime)) if $deadtime>0.5;
     }
     else # noch nicht faelliger Timer
     {
@@ -1458,8 +1477,7 @@ sub execute_logic
     # N un muss die Logik ausgewertet und das Resultat auf der Transmit-GA uebertragen werden
     my $result=undef;
     my %prowlContext=();
-    my $timebefore=time();
-    
+
     unless(ref $logic->{$t}{translate}) 
     {
 	# Trivialer Fall: translate enthaelt einen fixen Rueckgabewert
@@ -1556,10 +1574,6 @@ sub execute_logic
                 ));
         }
     }
-
-    my $timeelapsed=time()-$timebefore;
-    
-    plugin_log($plugname, sprintf("WARNING: $t: time elapsed %0.2fs",$timeelapsed)) if $timeelapsed>0.5;
 
     return $result;
 }

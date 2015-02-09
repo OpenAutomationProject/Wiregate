@@ -292,10 +292,10 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # Alle Moeglichkeiten der Option timer stehen zur Verfuegung. Ein wichtiger Unterschied zu timer ist aber, 
     # dass mit dieser followup- Option nur eine EINMALIGE Ausfuehrung der Folgelogik verknuepft ist.  
 
-    # Auch wird der followup-Timer nur gesetzt, wenn davor auch etwas gesendet wurde. Ohne transmit kein followup! 
+    # Falls es transmit-Adressen gibt, wird der followup-Timer NUR DANN gesetzt, wenn davor auch etwas gesendet wurde.  
     # Konsequenterweise wird bei gleichzeitiger Verwendung von delay=>... und followup=>... der Followup-Timer erst mit der verzoegerten
     # Sendung des Telegramms eingerichtet.
-    # Moechte man die evtl. laufenden followup-Timer  loeschen, geht wieder ein einfaches return 'cancel', wie schon bei der Option delay.
+    # Moechte man die evtl. laufenden followup-Timer loeschen, geht wieder ein einfaches return 'cancel', wie schon bei der Option delay.
 
     # Verwendung von followup als Funktion: im Unterschied zur timer-Option laesst sich ein followup-Timer  
     # auch innerhalb einer translate-Funktion ausfuehren: 
