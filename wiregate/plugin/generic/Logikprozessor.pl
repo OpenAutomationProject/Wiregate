@@ -115,7 +115,7 @@ if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plu
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
 	next if $k=~m/^$plugname\_last/;
-	next unless $k=~m/$plugname\__(.*)_(timer|delay|cool|followup)/ && !defined $logic{$1}; 
+	next unless $k=~m/$plugname\__(.*)_(timer|delay|cool|followup|result)/ && !defined $logic{$1}; 
 	delete $plugin_info{$k};
     }
 
