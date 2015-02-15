@@ -251,10 +251,10 @@ if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plu
 	    }
 	}
 
-	plugin_log($plugname, "(T) - transmit_only_on_request gesetzt");
-	plugin_log($plugname, "(R) - recalc_on_request gesetzt");
 	plugin_log($plugname, "Bei folgende Logiken wurde daher reply_to_read_requests=>0 gesetzt:");
 	plugin_log($plugname, join ", ", keys %changed);
+	plugin_log($plugname, "(T) - transmit_only_on_request gesetzt");
+	plugin_log($plugname, "(R) - recalc_on_request gesetzt");
     }
     # Ende Konfiguration pruefen #######################################################
 
@@ -436,12 +436,14 @@ my $eibpa=$plugin_cache{$plugname}{eibpa};
 
 $eibd_backend_address=$logic->{'_eibd_backend_address'} if defined $logic->{'_eibd_backend_address'};
 
+#plugin_log($plugname, $event.($event=~/bus/ ? " $msg{dst} $msg{val}":""));
+
 # Alle Logiken mit transmit_on_startup=>1 als followup vormerken - dadurch kann uns ein Timeout nicht so sehr treffen...
 if($event=~/restart|modified/)
 {
     for my $t (grep !/^(debug$|_)/, keys %{$logic})
     {
-	followup({$t=>0}) if $logic->{$t}{transmit_on_startup};
+	followup({$t=>0}) if $logic->{$t}{transmit_on_startup} || $logic->{$t}{transmit_on_config}; # startup impliziert config
     }
 }
 
@@ -735,7 +737,7 @@ if($event=~/bus/)
 	    next;
 	}
 
-        if($logic->{$t}{transmit_changes_only} && ($result eq $prevResult)) 
+	if($logic->{$t}{transmit_changes_only} && ($result eq $prevResult) && !($event=~/restart|modified/ || $config_modified)) 
 	{
 	    if(ref $logic->{$t}{transmit})
 	    {
@@ -864,7 +866,7 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 	}
 
 	if(defined $result && !$logic->{$t}{transmit_only_on_request} && defined $logic->{$t}{transmit} 
-	   && (!$logic->{$t}{transmit_changes_only} || $result ne $prevResult))
+	   && !($logic->{$t}{transmit_changes_only} && $result eq $prevResult && !($event=~/restart|modified/ || $config_modified)))
 	{
 	    my $transmit=groupaddress $logic->{$t}{transmit};
 
