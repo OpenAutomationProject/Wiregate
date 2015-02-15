@@ -287,7 +287,7 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # Hier wird die zweite Tuer zwei Sekunden spaeter geoeffnet und die dritte drei Sekunden nach der ersten.
     # Statt der 2 und 3 koennte da auch stehen '2s', oder '2min', oder '2h'.
     # Auch moeglich ist es - in diesem Beispiel vielleicht wenig sinnvoll -  eine Definition analog der Option timer zu hinterlegen:
-    Tuer1_oeffnen => { transmit=>'Tuer1', translate=>1, followup=>{time=>'08:00', weekday=>1} }, 
+    Tuer1_oeffnen => { transmit=>'Tuer1', translate=>1, followup=>{'Tuer2_oeffnen'=>{time=>'08:00', weekday=>1}} }, 
     # Hier wuerde die Tur bspw. geoeffnet, wenn das naechste Mal 8 Uhr an einem Wochentag ist. 
     # Alle Moeglichkeiten der Option timer stehen zur Verfuegung. Ein wichtiger Unterschied zu timer ist aber, 
     # dass mit dieser followup- Option nur eine EINMALIGE Ausfuehrung der Folgelogik verknuepft ist.  
