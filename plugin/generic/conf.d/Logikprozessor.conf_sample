@@ -58,7 +58,8 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # * Gibt eine Logik undef zurueck (return undef;), so geschieht NICHTS - auch der delay-Timer laeuft weiter mit dem 
     # bereits vorgemerkten Wert, der dann zu senden ist.
     # * Gibt eine Logik den Text "cancel" zurueck (return "cancel";), so wird der delay-Timer geloescht. Auch hier bleibt
-    # der bereits vorgemerkte Wert weiter vorgemerkt - read-Requests auf die transmit-Adresse werden diesen Wert liefern.
+    # der bereits vorgemerkte Wert weiter vorgemerkt - read-Requests auf die transmit-Adresse werden diesen Wert liefern 
+    # (wenn reply_to_read_requests=>1 gesetzt ist).
     # * Wird eine Logik waehrend der delay-Zeit erneut aufgerufen und liefert weder undef noch "cancel" zurueck, so 
     # wird der delay-Timer neu gesetzt und bei Ablauf der neue Wert gesendet. Der vorher vorgemerkte Wert wird dann also
     # gar nicht gesendet.
@@ -239,7 +240,8 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # 15. Falls Read-Requests an die transmit-Adresse einer Logik geschickt werden, so wird das normalerweise ignoriert,
     # es sei denn, reply_to_read_requests=>1 oder transmit_only_on_requests=>1 ist gesetzt (Uebertragung des letzten Resultats
     # oder - falls keines vorhanden - erneute Berechnung) oder recalc_on_request=>1 ist gesetzt (erneute Ausfuehrung der Logik).
-    # Mit recalc_on_request=>0 wird die Ausfuehrung der Logik in solchen Faellen unterdrueckt.
+    # Mit recalc_on_request=>0 wird die Ausfuehrung der Logik in solchen Faellen unterdrueckt. Der default-Wert für 
+    # reply_to_read_requests ist 0 (also deaktiviert).
     # Bei mehreren transmit-Adressen fuer eine Logik wird grundsaetzlich NIEMALS auf read-requests geantwortet.
 
     # 16. Die Option eibd_cache legt die Cache-Zeit bei knx_read-Aufrufen fest. Default ist 5min.
