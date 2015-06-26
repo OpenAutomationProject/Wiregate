@@ -931,10 +931,8 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 	my $deadtime=time()-$timebefore;
 	plugin_log("$plugname $t",sprintf("logic took %.1fs (timer)",$deadtime)) if $deadtime>0.5;
     }
-    else # noch nicht faelliger Timer
-    {
-	$nexttimer=$timer if !defined $nexttimer || $plugin_info{$timer}<$plugin_info{$nexttimer};
-    }
+
+    $nexttimer=$timer if !defined $nexttimer || $plugin_info{$timer}<$plugin_info{$nexttimer};
 }
 
 # Suche Timer-Logiken, bei denen aus irgendeinem Grund der naechste Aufruf noch nicht berechnet wurde,
