@@ -816,8 +816,7 @@ if($event=~/bus/)
 
 # Ab hier gemeinsamer Code fuer Ausfuehrung auf Bustraffic hin, sowie "zyklische" Ausfuehrung (auf Timer/Followup/Delay hin).
 
-# Evtl. faellige Timer finden, gleichzeitig Timer fuer nachste Aktion setzen
-my $nexttimer=undef;
+# Evtl. faellige Timer finden
 for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_info) # alle Timer
 {
     my $scheduled_time=$plugin_info{$timer};
@@ -931,10 +930,15 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 	my $deadtime=time()-$timebefore;
 	plugin_log("$plugname $t",sprintf("logic took %.1fs (timer)",$deadtime)) if $deadtime>0.5;
     }
-    else # noch nicht faelliger Timer
-    {
+}
+
+# Eigener Lauf um nächsten Timer zu finden. Kann nicht mit der gleichen Schleife davor kombiniert werden, da dort bestimmte Timer noch
+# manipuliert werden.
+
+my $nexttimer=undef;
+for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_info) # alle Timer
+{
 	$nexttimer=$timer if !defined $nexttimer || $plugin_info{$timer}<$plugin_info{$nexttimer};
-    }
 }
 
 # Suche Timer-Logiken, bei denen aus irgendeinem Grund der naechste Aufruf noch nicht berechnet wurde,
