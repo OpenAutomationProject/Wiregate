@@ -167,6 +167,12 @@ if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plu
 	    next; 
 	}
 
+	if(!defined $logic{$t}{transmit} && defined $logic{$t}{followup})
+	{
+	    plugin_log($plugname, "Config err: \$logic{$t}{transmit} nicht definiert, followup wird ignoriert.");
+	    next; 
+	}
+
 	my @keywords=qw(receive fetch trigger transmit translate debug delay timer prowl eibd_cache reply_to_read_requests 
                          ignore_read_requests transmit_only_on_request recalc_on_request state transmit_changes_only
                          execute_on_input_changes_only cool rrd transmit_on_startup transmit_on_config followup prowl execute_only_if_input_defined);
@@ -932,15 +938,6 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
     }
 }
 
-# Eigener Lauf um nächsten Timer zu finden. Kann nicht mit der gleichen Schleife davor kombiniert werden, da dort bestimmte Timer noch
-# manipuliert werden.
-
-my $nexttimer=undef;
-for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_info) # alle Timer
-{
-	$nexttimer=$timer if !defined $nexttimer || $plugin_info{$timer}<$plugin_info{$nexttimer};
-}
-
 # Suche Timer-Logiken, bei denen aus irgendeinem Grund der naechste Aufruf noch nicht berechnet wurde,
 # bspw wegen eines Plugin-Timeouts waehrend der Berechnung
 for my $t (grep defined $logic->{$_}{timer}, grep !/^(debug$|_)/, keys %{$logic})
@@ -954,6 +951,13 @@ for my $t (grep defined $logic->{$_}{timer}, grep !/^(debug$|_)/, keys %{$logic}
     my $debug=$logic->{debug} || $logic->{$t}{debug};
     set_next_call('timer',$t,$logic->{$t}{timer},$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,
 		  $hour,$minute,$time_of_day,$systemtime,$debug);
+}
+
+# naechsten Timer finden
+my $nexttimer=undef;
+for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_info) # alle Timer
+{
+    $nexttimer=$timer if !defined $nexttimer || $plugin_info{$timer}<$plugin_info{$nexttimer};
 }
 
 # Cycle auf naechsten Aufruf setzen
