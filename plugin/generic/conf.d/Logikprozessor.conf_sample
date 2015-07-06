@@ -42,15 +42,14 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
 
     # 5. Hier eine "Treppenlichtfunktion". Auf jeden Schreibzugriff auf die receive-Adresse wird 10min spaeter eine 0 an 
     # die transmit-Adresse (hier gleich) geschickt. 
-    stair => { receive=>'1/2/9', transmit=>'1/2/9', delay=>600, translate => 0, },
+    stair => { receive=>'1/2/9', transmit=>'1/2/9', delay=>600, translate => sub { return ($input eq 1) ? 0 : 'cancel';}, },
     # Verzoegert wird uebrigens nur das Senden, nicht das Ausfuehren der translate-Routine. 
-    # Neu ist hier der "delay"-Parameter, ausserdem der Spezialfall, dass translate einfach eine Konstante 
-    # als Rueckgabewert spezifiziert.
+    # Neu ist hier der "delay"-Parameter
     
     # Weitere Bemerkungen:
     # * translate darf nur entweder eine Konstante oder ausführbarer Code (sub {...}) sein.
-    # * Damit im Fall transmit==receive der Translator nicht auf sein eigenes Schreibtelegramm immer wieder antwortet, 
-    # wird nur dann gesendet, wenn Ergebnis!=Input oder Sender des empfangenen Telegramms!=$eibd_backend_address (Wiregate).
+    # * Damit im Fall transmit==receive der Translator nicht auf sein eigenes Schreibtelegramm immer wieder antwortet,
+    # wird nur das "Aus"-Signal per Delay gesendet 
     # * Wenn waehrend der delay-Zeit erneut ein Receive-Telegramm empfangen wird, wird die Logik erneut ausgefuehrt und
     # die delay-Zeit beginnt von vorne (wie bei einem Treppenlicht die Leuchtzeit bei erneutem Druecken verlaengert wird).
     # * Schreibtelegramme auf die transmit-Adresse waehrend laufender delay-Zeit fuehren NICHT zum Speichern des Wertes 
@@ -86,7 +85,7 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # es sei denn, es kommt ein neuer Wert vom Geraet, dann wird ab sofort dieser neue Wert wiederholt. 
     # Eine solche Logik ist nuetzlich, um sicherzustellen, dass der jeweils aktuelle Wert immer im eibd-Cache vorhanden
     # ist und somit von anderen Logiken genutzt werden kann.
-    repeater => { receive=>'1/2/9', transmit=>'1/2/9', delay=>'5min', transmit=>sub{$input} },
+    repeater => { receive=>'1/2/9', transmit=>'1/2/9', delay=>'5min', translate=>sub{$input} },
     # Randbemerkung: fuer delay koennen auch Werte mit Einheiten wie '5min', '3h' oder '27s' eingesetzt werden
 
     # 5. Hier eine Logik, die den Input bei Eintreffen mit 2 multipliziert, das Resultat aber nur speichert und erst 
@@ -139,6 +138,9 @@ $eibd_backend_address='0.0.0'; # eigene Adresse zur Vermeidung von Zirkellogiken
     # * Die transmit_only_on_request-Klausel funktioniert wie gewohnt
     # * Evtl. spezifizierte receive-Adressen werden beim Timer-Aufruf abgefragt, um das input-Array vorzubesetzen).
     #
+    # Neu ist hier der Spezialfall, dass translate einfach eine Konstante 
+    # als Rueckgabewert spezifiziert.
+    
     # Weitere Infos zu Timer-Spezifikationen
     # * Als timer-Eintrag geht entweder ein einzelner Eintrag timer=>{...} wie oben oder eine Liste solcher Eintraege
     # time=>[{...},{...},{...},...]. 
