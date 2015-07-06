@@ -115,7 +115,7 @@ if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plu
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
 	next if $k=~m/^$plugname\_last/;
-	next unless $k=~m/$plugname\__(.*)_(timer|delay|cool|followup|result)/ && !defined $logic{$1}; 
+	next unless $k=~m/$plugname\__(.*)_(timer|delay|cool|followup|result)$/ && !defined $logic{$1}; 
 	delete $plugin_info{$k};
     }
 
@@ -823,17 +823,17 @@ if($event=~/bus/)
 # Ab hier gemeinsamer Code fuer Ausfuehrung auf Bustraffic hin, sowie "zyklische" Ausfuehrung (auf Timer/Followup/Delay hin).
 
 # Evtl. faellige Timer finden
-for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_info) # alle Timer
+for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)$/, keys %plugin_info) # alle Timer
 {
     my $scheduled_time=$plugin_info{$timer};
-
+    
     # Timer koennte IM LAUFE DIESER SCHLEIFE durch Logikausfuehrungen geloescht worden sein
     next unless defined $scheduled_time; 
 
     if(time()>=$scheduled_time) # Timer faellig? -> dann ausfuehren bzw. Resultat senden
     {
 	# Relevanten Eintrag von %logic ermitteln
-	$timer=~/$plugname\__(.*)_(timer|delay|followup|cool)/;
+	$timer=~/$plugname\__(.*)_(timer|delay|followup|cool)$/;
 	my $t=$1; 
 	my $reason=$2;
 
@@ -992,7 +992,7 @@ for my $t (grep defined $logic->{$_}{timer}, grep !/^(debug$|_)/, keys %{$logic}
 
 # naechsten Timer finden
 my $nexttimer=undef;
-for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_info) # alle Timer
+for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)$/, keys %plugin_info) # alle Timer
 {
     $nexttimer=$timer if !defined $nexttimer || $plugin_info{$timer}<$plugin_info{$nexttimer};
 }
