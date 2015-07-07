@@ -115,7 +115,7 @@ if($event=~/restart|modified/ || $config_modified || !defined $plugin_cache{$plu
     for my $k (grep /^$plugname\_/, keys %plugin_info)
     {
 	next if $k=~m/^$plugname\_last/;
-	next unless $k=~m/$plugname\__(.*)_(timer|delay|cool|followup|result)/ && !defined $logic{$1}; 
+	next unless $k=~m/$plugname\__(.*)_(timer|delay|cool|followup|result)$/ && !defined $logic{$1}; 
 	delete $plugin_info{$k};
     }
 
@@ -823,17 +823,17 @@ if($event=~/bus/)
 # Ab hier gemeinsamer Code fuer Ausfuehrung auf Bustraffic hin, sowie "zyklische" Ausfuehrung (auf Timer/Followup/Delay hin).
 
 # Evtl. faellige Timer finden
-for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_info) # alle Timer
+for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)$/, keys %plugin_info) # alle Timer
 {
     my $scheduled_time=$plugin_info{$timer};
-
+    
     # Timer koennte IM LAUFE DIESER SCHLEIFE durch Logikausfuehrungen geloescht worden sein
     next unless defined $scheduled_time; 
 
     if(time()>=$scheduled_time) # Timer faellig? -> dann ausfuehren bzw. Resultat senden
     {
 	# Relevanten Eintrag von %logic ermitteln
-	$timer=~/$plugname\__(.*)_(timer|delay|followup|cool)/;
+	$timer=~/$plugname\__(.*)_(timer|delay|followup|cool)$/;
 	my $t=$1; 
 	my $reason=$2;
 
@@ -848,16 +848,6 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 	# Debuggingflag gesetzt
 	my $debug = $logic->{debug} || $logic->{$t}{debug}; 
 	
-	# Transmit-GA
-	my $prevResult=$plugin_info{$plugname.'__'.$t.'_result'};
-	my $result=$prevResult; 
-	# zu sendendes Resultat ist bei delay einfach das zuletzt berechnete Ergebnis der Logik (delay)
-
-	# in anderen Faellen (timer-Logik) muss das Ergebnis erst durch Aufruf der Logik-Engine berechnet werden.
-	if($reason ne 'delay')
-	{
-	    $result=execute_logic($t,undef,undef,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date);
-	}
 
 	# Timer loeschen bzw. neu setzen
 	if($reason eq 'timer')
@@ -869,26 +859,74 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 	{
 	    delete $plugin_info{$timer};
 	}
+	
+	
+	# Result bestimmen
+	# Fall A: delay-Aufruf: result wurde schon ausgewertet und im prevResult gespeichert
+	# Fall B: timer/followup-Aufruf: Logik wird erst jetzt ausgewertet, transmitChangesOnly muss ausgewertet werden
+	#         evtl. endet die Verarbeitung dann auch gleich.
 
-	if(defined $result && !$logic->{$t}{transmit_only_on_request} && defined $logic->{$t}{transmit} 
-	   && !($logic->{$t}{transmit_changes_only} && $result eq $prevResult && !($event=~/restart|modified/ || $config_modified)))
+	my $prevResult=$plugin_info{$plugname.'__'.$t.'_result'};
+	my $result; 
+
+	if($reason eq 'delay')
 	{
-	    my $transmit=groupaddress $logic->{$t}{transmit};
+	    $result=$prevResult;
+	} else {
+	    # timer oder followup
+	    $result=execute_logic($t,undef,undef,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date);
+	    
+	    if($logic->{$t}{transmit_changes_only} && ($result eq $prevResult) && !($event=~/restart|modified/ || $config_modified)) 
+	    {
+	        if(ref $logic->{$t}{transmit})
+	            {
+		        $retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result unveraendert -> nichts zu senden ($reason);  " if $debug;
+	            }
+	            else
+	            {
+		        $retval.="\$logic->{$t}{transmit}(Logik) -> ".$logic->{$t}{transmit}.":$result unveraendert -> nichts zu senden ($reason);  " if $debug;
+	        }
+	        next;
+            }	    
+	}	
 
-	    if($transmit && $result ne 'cancel')
-	    {	
-		$transmit=[$transmit] unless ref $transmit;
+	# In bestimmten Faellen wird dennoch nicht oder nicht sofort gesendet:
+	if($logic->{$t}{transmit_only_on_request})
+	{
+	    if(ref $logic->{$t}{transmit})
+	    {
+		$retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result gespeichert ($reason);  " if $debug;
+	    }
+	    else
+	    {
+		$retval.="\$logic->{$t}{transmit}(Logik) -> ".$logic->{$t}{transmit}.":$result gespeichert ($reason);  " if $debug;
+	    }
+	    next;
+	}
 
-		for my $trm (@{$transmit})
-		{
-		    knx_write($trm, $result); # DPT aus eibga.conf		    
-		}
+	if(!defined $logic->{$t}{transmit} || !defined $result)	    
+	{
+	    $retval.="\$logic->{$t}{transmit}(Logik) -> nichts zu senden;  " if $debug;
+	    next;
+	}
 
-		update_rrd($logic->{$t}{rrd},'',$result) if defined $logic->{$t}{rrd};
 
-		if($debug)
-		{
-		    if(ref $logic->{$t}{transmit})
+	my $transmit=groupaddress $logic->{$t}{transmit};
+
+	if($transmit && $result ne 'cancel')
+	{	
+	    $transmit=[$transmit] unless ref $transmit;
+
+	    for my $trm (@{$transmit})
+	    {
+		knx_write($trm, $result); # DPT aus eibga.conf		    
+	    }
+
+	    update_rrd($logic->{$t}{rrd},'',$result) if defined $logic->{$t}{rrd};
+
+	    if($debug)
+	    {
+		if(ref $logic->{$t}{transmit})
 		    {
 			$retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result gesendet ($reason);  ";
 		    }
@@ -931,7 +969,6 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_i
 		set_followup($t,$followup,$year,$day_of_year,$month,$day_of_month,$calendar_week,
 			     $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
 	    }
-	}
 
 	my $deadtime=time()-$timebefore;
 	plugin_log("$plugname $t",sprintf("logic took %.1fs (timer)",$deadtime)) if $deadtime>0.5;
@@ -955,7 +992,7 @@ for my $t (grep defined $logic->{$_}{timer}, grep !/^(debug$|_)/, keys %{$logic}
 
 # naechsten Timer finden
 my $nexttimer=undef;
-for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)/, keys %plugin_info) # alle Timer
+for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)$/, keys %plugin_info) # alle Timer
 {
     $nexttimer=$timer if !defined $nexttimer || $plugin_info{$timer}<$plugin_info{$nexttimer};
 }
