@@ -992,7 +992,7 @@ for my $t (grep defined $logic->{$_}{timer}, grep !/^(debug$|_)/, keys %{$logic}
 
 # naechsten Timer finden
 my $nexttimer=undef;
-for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)$/, keys %plugin_info) # alle Timer
+for my $timer (grep /$plugname\__.*_(timer|delay|followup)$/, keys %plugin_info) # alle Timer
 {
     $nexttimer=$timer if !defined $nexttimer || $plugin_info{$timer}<$plugin_info{$nexttimer};
 }
