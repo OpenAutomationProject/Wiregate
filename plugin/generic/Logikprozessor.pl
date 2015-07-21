@@ -827,152 +827,148 @@ for my $timer (grep /$plugname\__.*_(timer|delay|followup|cool)$/, keys %plugin_
 {
     my $scheduled_time=$plugin_info{$timer};
     
-    # Timer koennte IM LAUFE DIESER SCHLEIFE durch Logikausfuehrungen geloescht worden sein
-    next unless defined $scheduled_time; 
+    # Timer koennte IM LAUFE DIESER SCHLEIFE durch Logikausfuehrungen geloescht worden sein. Also pruefen, ob Timer existiert und faellig ist
+    # Timer faellig? -> dann ausfuehren bzw. Resultat senden
+    next unless defined $scheduled_time && time()>=$scheduled_time; 
 
-    if(time()>=$scheduled_time) # Timer faellig? -> dann ausfuehren bzw. Resultat senden
+    # Relevanten Eintrag von %logic ermitteln
+    my ($t,$reason) = ($timer=~/$plugname\__(.*)_(timer|delay|followup|cool)$/);
+
+    if($reason eq 'cool' || !defined $logic->{$t})
     {
-	# Relevanten Eintrag von %logic ermitteln
-	$timer=~/$plugname\__(.*)_(timer|delay|followup|cool)$/;
-	my $t=$1; 
-	my $reason=$2;
+	delete $plugin_info{$timer};
+	next;
+    }
 
-	if($reason eq 'cool' || !defined $logic->{$t})
-	{
-	    delete $plugin_info{$timer};
-	    next;
-	}
+    my $timebefore=time();
 
-	my $timebefore=time();
-
-	# Debuggingflag gesetzt
-	my $debug = $logic->{debug} || $logic->{$t}{debug}; 
+    # Debuggingflag gesetzt
+    my $debug = $logic->{debug} || $logic->{$t}{debug}; 	
+    
+    # Timer loeschen bzw. neu setzen
+    if($reason eq 'timer')
+    {
+	set_next_call('timer',$t,$logic->{$t}{timer},$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,
+		      $hour,$minute,$time_of_day,$systemtime,$debug);
+    }
+    elsif($reason eq 'delay' || $reason eq 'followup') # kein neues Followup
+    {
+	delete $plugin_info{$timer};
+    }	
 	
+    # Result bestimmen
+    # Fall A: delay-Aufruf: result wurde schon ausgewertet und im prevResult gespeichert
+    # Fall B: timer/followup-Aufruf: Logik wird erst jetzt ausgewertet, transmitChangesOnly muss ausgewertet werden
+    #         evtl. endet die Verarbeitung dann auch gleich.
 
-	# Timer loeschen bzw. neu setzen
-	if($reason eq 'timer')
-	{
-	    set_next_call('timer',$t,$logic->{$t}{timer},$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week_no,
-			  $hour,$minute,$time_of_day,$systemtime,$debug);
-	}
-	elsif($reason eq 'delay' || ($reason eq 'followup' && $plugin_info{$timer}==$scheduled_time)) # kein neues Followup
-	{
-	    delete $plugin_info{$timer};
-	}
+    my $prevResult=$plugin_info{$plugname.'__'.$t.'_result'};
+    my $result; 
+    
+    if($reason eq 'delay')
+    {
+	$result=$prevResult;
+    } 
+    else 
+    {
+	# timer oder followup
+	$result=execute_logic($t,undef,undef,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date);
 	
-	
-	# Result bestimmen
-	# Fall A: delay-Aufruf: result wurde schon ausgewertet und im prevResult gespeichert
-	# Fall B: timer/followup-Aufruf: Logik wird erst jetzt ausgewertet, transmitChangesOnly muss ausgewertet werden
-	#         evtl. endet die Verarbeitung dann auch gleich.
-
-	my $prevResult=$plugin_info{$plugname.'__'.$t.'_result'};
-	my $result; 
-
-	if($reason eq 'delay')
-	{
-	    $result=$prevResult;
-	} else {
-	    # timer oder followup
-	    $result=execute_logic($t,undef,undef,$year,$day_of_year,$month,$day_of_month,$calendar_week,$day_of_week,$day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$weekend,$weekday,$holiday,$workingday,$day,$night,$date);
-	    
-	    if($logic->{$t}{transmit_changes_only} && ($result eq $prevResult) && !($event=~/restart|modified/ || $config_modified)) 
-	    {
-	        if(ref $logic->{$t}{transmit})
-	            {
-		        $retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result unveraendert -> nichts zu senden ($reason);  " if $debug;
-	            }
-	            else
-	            {
-		        $retval.="\$logic->{$t}{transmit}(Logik) -> ".$logic->{$t}{transmit}.":$result unveraendert -> nichts zu senden ($reason);  " if $debug;
-	        }
-	        next;
-            }	    
-	}	
-
-	# In bestimmten Faellen wird dennoch nicht oder nicht sofort gesendet:
-	if($logic->{$t}{transmit_only_on_request})
+	if($logic->{$t}{transmit_changes_only} && ($result eq $prevResult) && !($event=~/restart|modified/ || $config_modified)) 
 	{
 	    if(ref $logic->{$t}{transmit})
 	    {
-		$retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result gespeichert ($reason);  " if $debug;
+		$retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result unveraendert -> nichts zu senden ($reason);  " if $debug;
 	    }
 	    else
 	    {
-		$retval.="\$logic->{$t}{transmit}(Logik) -> ".$logic->{$t}{transmit}.":$result gespeichert ($reason);  " if $debug;
+		$retval.="\$logic->{$t}{transmit}(Logik) -> ".$logic->{$t}{transmit}.":$result unveraendert -> nichts zu senden ($reason);  " if $debug;
 	    }
 	    next;
-	}
+	}	    
+    }	
 
-	if(!defined $logic->{$t}{transmit} || !defined $result)	    
+    # In bestimmten Faellen wird dennoch nicht oder nicht sofort gesendet:
+    if($logic->{$t}{transmit_only_on_request})
+    {
+	if(ref $logic->{$t}{transmit})
 	{
-	    $retval.="\$logic->{$t}{transmit}(Logik) -> nichts zu senden;  " if $debug;
-	    next;
+	    $retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result gespeichert ($reason);  " if $debug;
 	}
-
-
-	my $transmit=groupaddress $logic->{$t}{transmit};
-
-	if($transmit && $result ne 'cancel')
-	{	
-	    $transmit=[$transmit] unless ref $transmit;
-
-	    for my $trm (@{$transmit})
-	    {
-		knx_write($trm, $result); # DPT aus eibga.conf		    
-	    }
-
-	    update_rrd($logic->{$t}{rrd},'',$result) if defined $logic->{$t}{rrd};
-
-	    if($debug)
-	    {
-		if(ref $logic->{$t}{transmit})
-		    {
-			$retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result gesendet ($reason);  ";
-		    }
-		    else
-		    {
-			$retval.="\$logic->{$t}{transmit}(Logik) -> ".$logic->{$t}{transmit}.":$result gesendet ($reason);  ";
-		    }
-		}
-
-		# Cool-Periode starten
-		$plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic->{$t}{cool} if defined $logic->{$t}{cool};
-	    }
-
-	    # Followup durch andere Logik definiert? Dann in Timer-Liste eintragen	    
-	    if($result eq 'cancel')
-	    {
-		if($logic->{$t}{followup})
-		{
-		    my $followup=$logic->{$t}{followup};
-		
-		    for my $q (grep !/^(debug$|_)/, keys %{$followup})
-		    {
-			plugin_log($plugname, "Followup '$q' storniert.") 
-			    if defined $plugin_info{$plugname.'__'.$q.'_followup'} && ($debug || $logic->{$q}{debug} || $followup->{debug});	
-			delete $plugin_info{$plugname.'__'.$q.'_followup'};
-			$retval.="(Logik) -> wartender Followup-Timer geloescht;  " if $debug;
-		    }
-		}
-
-		if(defined $plugin_info{$plugname.'__'.$t.'_delay'})
-		{
-		    $plugin_info{$plugname.'__'.$t.'_result'}=$prevResult; # altes Resultat wieder aufnehmen
-		    delete $plugin_info{$plugname.'__'.$t.'_delay'};
-		    $retval.="(Logik) -> wartender Delay-Timer geloescht;  " if $debug;
-		}
-	    }
-	    elsif(defined $result && $logic->{$t}{followup})
-	    {
-		my $followup=$logic->{$t}{followup};
-		set_followup($t,$followup,$year,$day_of_year,$month,$day_of_month,$calendar_week,
-			     $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
-	    }
-
-	my $deadtime=time()-$timebefore;
-	plugin_log("$plugname $t",sprintf("logic took %.1fs (timer)",$deadtime)) if $deadtime>0.5;
+	else
+	{
+	    $retval.="\$logic->{$t}{transmit}(Logik) -> ".$logic->{$t}{transmit}.":$result gespeichert ($reason);  " if $debug;
+	}
+	next;
     }
+    
+    if(!defined $logic->{$t}{transmit} || !defined $result)	    
+    {
+	$retval.="\$logic->{$t}{transmit}(Logik) -> nichts zu senden;  " if $debug;
+	next;
+    }
+    
+    
+    my $transmit=groupaddress $logic->{$t}{transmit};
+    
+    if($transmit && $result ne 'cancel')
+    {	
+	$transmit=[$transmit] unless ref $transmit;
+	
+	for my $trm (@{$transmit})
+	{
+	    knx_write($trm, $result); # DPT aus eibga.conf		    
+	}
+	
+	update_rrd($logic->{$t}{rrd},'',$result) if defined $logic->{$t}{rrd};
+	
+	if($debug)
+	{
+	    if(ref $logic->{$t}{transmit})
+	    {
+		$retval.="\$logic->{$t}{transmit}(Logik) -> [".join(",",@{$logic->{$t}{transmit}})."]:$result gesendet ($reason);  ";
+	    }
+	    else
+	    {
+		$retval.="\$logic->{$t}{transmit}(Logik) -> ".$logic->{$t}{transmit}.":$result gesendet ($reason);  ";
+	    }
+	}
+	
+	# Cool-Periode starten
+	$plugin_info{$plugname.'__'.$t.'_cool'}=time()+$logic->{$t}{cool} if defined $logic->{$t}{cool};
+    }
+    
+    # Followup durch andere Logik definiert? Dann in Timer-Liste eintragen	    
+    if($result eq 'cancel')
+    {
+	if($logic->{$t}{followup})
+	{
+	    my $followup=$logic->{$t}{followup};
+	    
+	    for my $q (grep !/^(debug$|_)/, keys %{$followup})
+	    {
+		plugin_log($plugname, "Followup '$q' storniert.") 
+		    if defined $plugin_info{$plugname.'__'.$q.'_followup'} && ($debug || $logic->{$q}{debug} || $followup->{debug});	
+		delete $plugin_info{$plugname.'__'.$q.'_followup'};
+		$retval.="(Logik) -> wartender Followup-Timer geloescht;  " if $debug;
+	    }
+	}
+	
+	if(defined $plugin_info{$plugname.'__'.$t.'_delay'})
+	{
+	    $plugin_info{$plugname.'__'.$t.'_result'}=$prevResult; # altes Resultat wieder aufnehmen
+	    delete $plugin_info{$plugname.'__'.$t.'_delay'};
+	    $retval.="(Logik) -> wartender Delay-Timer geloescht;  " if $debug;
+	}
+    }
+    elsif(defined $result && $logic->{$t}{followup})
+    {
+	my $followup=$logic->{$t}{followup};
+	set_followup($t,$followup,$year,$day_of_year,$month,$day_of_month,$calendar_week,
+		     $day_of_week_no,$hour,$minute,$time_of_day,$systemtime,$debug);
+    }
+    
+    my $deadtime=time()-$timebefore;
+    plugin_log("$plugname $t",sprintf("logic took %.1fs (timer)",$deadtime)) if $deadtime>0.5;
 }
 
 # Suche Timer-Logiken, bei denen aus irgendeinem Grund der naechste Aufruf noch nicht berechnet wurde,
