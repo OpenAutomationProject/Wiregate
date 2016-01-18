@@ -1,0 +1,161 @@
+# Regenmengenmessung abtasten und verarbeiten
+# V1.01 2013-10-30
+#return;
+use Date::Calc qw(:all);
+
+### Definitionen 
+### Hier werden die Werte/Gruppenadressen definiert
+my $Impuls_ga = "10/1/100";             # Binaereingang Status DPT1
+my $Intensitaet_ga = "10/1/101";        # Leistung, Regenintensität, etc. DPT9
+
+my @Zaehler;
+# Akt_ga ist immer der aktuelle Zählerstand, Alt_ga ist der jeweile Zählerstand der Vorperiode
+push @Zaehler, { name => 'Zaehlerstand', Akt_ga => '10/1/102', Alt_ga => ''}; 
+push @Zaehler, { name => 'Tageszaehler', Akt_ga => '10/1/103', Alt_ga => '10/1/104'}; 
+push @Zaehler, { name => 'Wochenzaehler', Akt_ga => '10/1/105', Alt_ga => '10/1/106'}; 
+push @Zaehler, { name => 'Monatszaehler', Akt_ga => '10/1/107', Alt_ga => '10/1/108'};
+push @Zaehler, { name => 'Jahreszaehler', Akt_ga => '10/1/109', Alt_ga => '10/1/110'};
+push @Zaehler, { name => 'Userzaehler', Akt_ga => '10/1/111', Alt_ga => '10/1/112'};
+
+my $Userzaehler_ResetTime_ga = "10/1/113";  # Zaehlerstand DPT14
+my $Userzaehler_ResetDate_ga = "10/1/114";  # Zaehlerstand DPT14
+my $Reset_Userzaehler_ga = "10/1/115";  # Reset User-Zaehlerstand DPT1
+
+# Als Impuls wird jede Änderung der Impuls_ga gezaehlt 0=>1 und 1=>0
+# Sollte der Regenmengenzähler etc. nicht zw. 0 und 1 wechseln, sondern nur kurze Impulse schicken,
+# so ist der Binäreingang auf UM zu parametrieren. 
+
+# Die Einheit der Menge je impuls wird auch für die Intensitäts bzw. Leistungsberechnung verwendet
+# 0.3mm/Impuls => Intensität wird mit mm/h ausgegeben
+# 0.001kWh/Impuls => Leistung wird in kW ausgegeben, wenn Watt gewünscht => 1Wh/Impuls eingeben
+my $Menge_je_Impuls = 0.3;            # 0.3mm je Impuls = 0.3L/m2 je Impuls
+
+my $Min_Intervall = 5;                # zB >5s Telegramm wir nur gesendet, wenn mind. 5s vergangen sind 
+                                      #    Bei 5s erfolgt eine Aktualisierung alle max. 5 und min. 10sec
+my $Zyklisch_Senden = 1;              # bei 1 => Sende alle 5min sämtliche Zahlerstände
+                                      # bei 0 => kein zyklischen Senden
+my $MaxImpulsAbstand = 15;            # nur relevant wenn kein zykl. senden, die Intensitaet wird nach dieser Zeit in [min] gesendet
+                                      # wenn kein Impuls mehr erfolgt ist 
+### Ende Definitionen
+
+# Eigenen Aufruf-Zyklus auf 300 Sekunden setzen
+# Zyklischer Aufruf fuer rrd-update
+$plugin_info{$plugname.'_cycle'} = 300;
+
+# Manuelles setzen des Zaehlerstandes. Zeile einkommentieren und editieren, speichern, 
+# wieder auskommentieren und erneut speichern.
+#$plugin_info{$plugname.'_Zaehlerstand'} = 178;
+#foreach my $element (@Zaehler) {
+#  $plugin_info{$plugname."_$element->{name}"} = 0;
+#  $plugin_info{$plugname."_$element->{name}_alt"} = 0;
+#}
+#return;
+
+# Reset der Tages/Wochen/Monats/Jahres-Zaehler jeweils innerhalb der ersten 5min nach Mitternacht
+my $sec;
+my $min;
+my $hour;
+my $mday;
+my $mon;
+my $year;
+my $wday;  # Wochentag 0-6 entspricht So-Sa
+my $yday;
+my $isdst;
+($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+$year += 1900;
+$mon += 1;
+
+my $write = $plugin_info{$plugname.'_written'};
+if (($hour == 0 and $min > 5) and $write == 0) {
+# Sicherstellen, dass Reset nur 1x Aufgerufen wird
+  $plugin_info{$plugname.'_written'} = 1;
+  $plugin_info{$plugname.'_Tageszaehler_alt'} = $plugin_info{$plugname.'_Tageszaehler'};
+  $plugin_info{$plugname.'_Tageszaehler'} = 0;       # Tageszahler 0 setzen
+  if ($wday == 1) { # Montag
+    $plugin_info{$plugname.'_Wochenzaehler_alt'} = $plugin_info{$plugname.'_Wochenzaehler'};
+    $plugin_info{$plugname.'_Wochenzaehler'} = 0;    # Wochenzaehler 0 setzen
+  }
+  if ($mday == 1) { # 1. Tag des Monats
+    $plugin_info{$plugname.'_Monatszaehler_alt'} = $plugin_info{$plugname.'_Monatszaehler'}; 
+    $plugin_info{$plugname.'_Monatszaehler'} = 0;    # Monatszaehler 0 setzen
+  }
+  if ($yday == 0) { # 1. Tag des Jahres
+    $plugin_info{$plugname.'_Jahreszaehler_alt'} = $plugin_info{$plugname.'_Jahreszaehler'}; 
+    $plugin_info{$plugname.'_Jahreszaehler'} = 0;    # Jahreszaehler 0 setzen
+  }
+
+}
+elsif (($hour == 1 and $min > 0) and $write == 1) {
+  $plugin_info{$plugname.'_written'} = 0;  
+}
+# Plugin an Gruppenadressen "anmelden"
+$plugin_subscribe{$Impuls_ga}{$plugname} = 1;
+$plugin_subscribe{$Reset_Userzaehler_ga}{$plugname} = 1;
+
+# aktuelle Zeit merken, um überall mit der exakt gleichen Zeit zu rechnen
+my $Zeit_aktuell = time();
+  
+# Auf Reset Telegram EIN reagieren => Userzaehlerstand zuruecksetzen
+if ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $Reset_Userzaehler_ga) {
+  $plugin_info{$plugname.'_Userzaehler_alt'} = $plugin_info{$plugname.'_Userzaehler'}; 
+  $plugin_info{$plugname.'_Userzaehler'} = 0;    # Userzaehler 0 setzen
+  #Reset Datum/Zeit auf den Bus schicken
+  #Remanent speichern????
+  #eibsend_time_resp($Userzaehler_ResetTime_ga);
+
+  return;
+}
+# Auf Write Befehl EIN/AUS reagieren, zyklischen Aufruf ignorieren
+elsif ($msg{'apci'} eq "A_GroupValue_Write" and $msg{'dst'} eq $Impuls_ga) {
+  # bei jedem Aufruf Zaehlerstand um eine Einheit erhöhen
+  
+  foreach my $element (@Zaehler) {
+    $plugin_info{$plugname."_$element->{name}"} = $plugin_info{$plugname."_$element->{name}"} + $Menge_je_Impuls;
+  }
+  $plugin_info{$plugname.'_ZS_tlast'} = $Zeit_aktuell ;
+  $plugin_info{$plugname.'_impulse'} = $plugin_info{$plugname.'_impulse'} + 1;
+  
+  # Intesitaet/Zaehlerstand auf Bus schicken nur wenn Intervall überschritten 
+  if ($Zeit_aktuell - $plugin_info{$plugname.'_tlast'} > $Min_Intervall )  {
+    # Intensitaet = Impulse*Menge_je_Impuls*3600/dt
+    my $Intensitaet_aktuell = $plugin_info{$plugname.'_impulse'} * 3600.0 * $Menge_je_Impuls/($Zeit_aktuell-$plugin_info{$plugname.'_tlast'});
+    
+    knx_write($Intensitaet_ga,$Intensitaet_aktuell,9);      # Intensitaet als DPT9 auf den Bus schreiben
+    foreach my $element (@Zaehler) {
+      if ($element->{Akt_ga}) {
+        knx_write($element->{Akt_ga},$plugin_info{$plugname."_$element->{name}"},14);    # Zaehlerstand als DPT14 auf den Bus schreiben    
+      }
+    }
+    $plugin_info{$plugname.'_tlast'} = $Zeit_aktuell;
+    $plugin_info{$plugname.'_impulse'} = 0;
+  }
+  return;
+}
+else {
+# zyklischer Aufruf ==> rrd aktualisieren
+  # Intensitaet fuer rrd wird bereits gemittelt aus den Impulsen der letztem 5min berechnet. 
+  my $Menge= ($plugin_info{$plugname.'_Zaehlerstand'}-$plugin_info{$plugname.'_Zaehlerstand2'});
+  my $Intensitaet= $Menge * 3600.0 /($Zeit_aktuell-$plugin_info{$plugname.'_tlast2'});
+  # Zeit/Zaehlerstand zum rrd-Speicherzeitpunkt merken
+  $plugin_info{$plugname.'_tlast2'} = $Zeit_aktuell;
+  $plugin_info{$plugname.'_Zaehlerstand2'} = $plugin_info{$plugname.'_Zaehlerstand'};
+  
+  if (($Zyklisch_Senden == 1) or (time()- $plugin_info{$plugname.'_tlast'} > ($MaxImpulsAbstand * 60))) {
+    knx_write($Intensitaet_ga,$Intensitaet,9);
+  }
+  
+  update_rrd("Regen_Intensitaet","",$Intensitaet);
+  foreach my $element (@Zaehler) {
+    update_rrd("Regen_$element->{name}","",$plugin_info{$plugname."_$element->{name}"});
+
+    if ($Zyklisch_Senden == 1) {
+      if ($element->{Akt_ga}) {
+        knx_write($element->{Akt_ga},$plugin_info{$plugname."_$element->{name}"},14);    # Zaehlerstand als DPT14 auf den Bus schreiben    
+      }
+      if ($element->{Alt_ga}) {
+        knx_write($element->{Alt_ga},$plugin_info{$plugname."_$element->{name}_alt"},14);    # Zaehlerstand als DPT14 auf den Bus schreiben    
+      }
+    }
+  }
+}
+return;
