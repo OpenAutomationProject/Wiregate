@@ -19,12 +19,12 @@ my $dummy;
 if (%msg) {
   if ($msg{'apci'} eq "A_GroupValue_Write" and $ga eq $msg{'dst'}) {
 	if($msg{'data'}+0) {
-		$dummy = `update-rc.de $daemon defaults`;
+		$dummy = `update-rc.d $daemon defaults`;
 		$dummy = `/etc/init.d/$daemon restart`;
 		return; # "started $daemon
 	} else {
 		$dummy = `/etc/init.d/$daemon stop`;
-		$dummy = `update-rc.de $daemon remove`;
+		$dummy = `update-rc.d $daemon remove`;
 		return; # "stopped $daemon
 	}
   }
