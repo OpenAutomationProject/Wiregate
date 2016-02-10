@@ -1,0 +1,22 @@
+#!/usr/bin/perl
+#
+# 1-Wire Monitor.pl - Configuration
+#
+
+# Call cycle in seconds, default: 300
+# Trouble Shooting: 5-30s- Important! Do not use this for normal operation!
+$PluginCycle = 300;
+
+# rsslog.php address
+$RssLog = "http://localhost/cometvisu/plugins/rsslog/rsslog.php";
+
+# OWFS address (uncached!)
+$OWFS = "http://localhost:3001/uncached";
+
+# Copy the OWFS output to this file
+$OWFS_Output = "/tmp/1-wire-monitor-plugin.html";
+
+# Show iButtons in rsslog
+# iButtons come and go each time they are connected
+# Therefore only show them if $ShowIButtons is set to 1 - else set to 0
+$ShowIButtons = 1;
